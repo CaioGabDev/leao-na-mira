@@ -1,0 +1,15 @@
+{
+  "name": "tiktok-live-tracker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "tiktok-live-connector": "latest",
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  }
+}
