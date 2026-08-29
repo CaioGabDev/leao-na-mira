@@ -1,5 +1,5 @@
 const fs = require('fs');
-const FILE = 'live.json';
+const FILE = process.env.RAILWAY_ENVIRONMENT ? '/data/live.json' : 'live.json';
 
 // Tudo fica em memória (rápido, sem travar em picos de taps).
 // O disco só é atualizado periodicamente (ver saveToDisk).
