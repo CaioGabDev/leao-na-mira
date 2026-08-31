@@ -19,6 +19,12 @@ let currentConnection = null;
 let lastEventAt = Date.now();
 let reconnecting = false;
 
+// Cada conexão criada ganha um número. Só os eventos da conexão MAIS RECENTE
+// são processados — isso evita contar em dobro caso uma conexão "antiga"
+// ainda esteja viva quando uma nova é criada.
+let connectionCounter = 0;
+let activeConnectionId = 0;
+
 function broadcastLiveStatus() {
   io.emit('live_status', { online: liveOnline });
 }
@@ -30,11 +36,15 @@ function broadcastRanking() {
 }
 
 function forceReconnect(motivo) {
-  if (reconnecting) return; // evita disparar reconexão duplicada
+  if (reconnecting) return;
   reconnecting = true;
   console.log(`Forçando reconexão (motivo: ${motivo})`);
   liveOnline = false;
   broadcastLiveStatus();
+
+  // Invalida a conexão atual IMEDIATAMENTE — mesmo que o disconnect()
+  // demore ou falhe, os eventos dela passam a ser ignorados a partir daqui.
+  activeConnectionId = -1;
 
   try {
     if (currentConnection) currentConnection.disconnect();
@@ -49,11 +59,13 @@ function forceReconnect(motivo) {
 }
 
 function startTikTokConnection() {
+  const myId = ++connectionCounter;
   const connection = new ConnectionClass(TIKTOK_USERNAME, {});
   currentConnection = connection;
 
   connection.connect().then(state => {
-    console.log(`Conectado à live de @${TIKTOK_USERNAME} (roomId ${state.roomId})`);
+    console.log(`Conectado à live de @${TIKTOK_USERNAME} (roomId ${state.roomId}) [conn #${myId}]`);
+    activeConnectionId = myId; // só agora essa conexão passa a valer
     liveOnline = true;
     lastEventAt = Date.now();
     broadcastLiveStatus();
@@ -64,16 +76,17 @@ function startTikTokConnection() {
   });
 
   connection.on('error', err => {
-    console.error('Erro do connection (evento error):', err?.message || err);
+    console.error(`Erro do connection [conn #${myId}]:`, err?.message || err);
   });
 
-  // Dispara quando o streamer encerra a live de propósito
   connection.on('streamEnd', (reason) => {
+    if (myId !== activeConnectionId) return;
     console.log('Live encerrada pelo streamer (streamEnd):', reason);
     forceReconnect('streamEnd');
   });
 
   connection.on('like', data => {
+    if (myId !== activeConnectionId) return; // ignora eco de conexão antiga
     lastEventAt = Date.now();
     const uniqueId = data.user?.displayId || data.user?.uniqueId || data.uniqueId;
     const nickname = data.user?.nickname || data.nickname;
@@ -83,6 +96,7 @@ function startTikTokConnection() {
   });
 
   connection.on('gift', data => {
+    if (myId !== activeConnectionId) return; // ignora eco de conexão antiga
     if (data.gift?.type === 1 && !data.repeatEnd) return;
     lastEventAt = Date.now();
 
@@ -102,22 +116,24 @@ function startTikTokConnection() {
   });
 
   connection.on('disconnected', () => {
-    console.log('Desconectado da live. Tentando reconectar...');
+    if (myId !== activeConnectionId) return;
+    console.log(`Desconectado da live [conn #${myId}]. Tentando reconectar...`);
     liveOnline = false;
+    activeConnectionId = -1;
     broadcastLiveStatus();
     setTimeout(startTikTokConnection, 5000);
   });
 }
 
-// Watchdog: se o app acha que está "online" mas não chega NENHUM evento
-// (like/gift) por muito tempo, provavelmente a live antiga fechou e o
-// app ficou "pendurado" numa conexão morta. Força reconexão nesse caso.
-const WATCHDOG_TIMEOUT_MS = 90 * 1000; // 90s sem evento = suspeito
+// Watchdog: tempo bem mais generoso pra não confundir "silêncio normal"
+// com "conexão morta". 5 minutos sem NENHUM like/presente é bem incomum
+// numa live ativa com audiência.
+const WATCHDOG_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutos
 setInterval(() => {
   if (liveOnline && !reconnecting && Date.now() - lastEventAt > WATCHDOG_TIMEOUT_MS) {
     forceReconnect('watchdog: sem eventos há muito tempo');
   }
-}, 20000);
+}, 30000);
 
 app.post('/api/reset', (req, res) => {
   db.resetAll();
