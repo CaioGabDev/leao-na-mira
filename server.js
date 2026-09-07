@@ -85,15 +85,21 @@ function startTikTokConnection() {
     forceReconnect('streamEnd');
   });
 
-  connection.on('like', data => {
-    if (myId !== activeConnectionId) return; // ignora eco de conexão antiga
-    lastEventAt = Date.now();
-    const uniqueId = data.user?.displayId || data.user?.uniqueId || data.uniqueId;
-    const nickname = data.user?.nickname || data.nickname;
-    const count = data.count || data.likeCount || 1;
-    db.addLikes(uniqueId, nickname, count);
-    broadcastRanking();
-  });
+connection.on('like', data => {
+  if (myId !== activeConnectionId) return;
+  console.log('LIKE RAW:', JSON.stringify({
+    uniqueId: data.user?.displayId || data.user?.uniqueId || data.uniqueId,
+    nickname: data.user?.nickname || data.nickname,
+    count: data.count,
+    likeCount: data.likeCount
+  }));
+  lastEventAt = Date.now();
+  const uniqueId = data.user?.displayId || data.user?.uniqueId || data.uniqueId;
+  const nickname = data.user?.nickname || data.nickname;
+  const count = data.count || data.likeCount || 1;
+  db.addLikes(uniqueId, nickname, count);
+  broadcastRanking();
+});
 
   connection.on('gift', data => {
     if (myId !== activeConnectionId) return; // ignora eco de conexão antiga
