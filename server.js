@@ -1,8 +1,8 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
-const { TikTokLiveConnection } = require('tiktok-live-connector');
-const ConnectionClass = TikTokLiveConnection;
+const { TikTokLiveConnection } = require('tiktok-live-api');
+const ConnectionClass = WebcastPushConnection;
 const db = require('./db');
 
 const TIKTOK_USERNAME = process.env.TIKTOK_USERNAME || 'vitorb0rba';
@@ -61,7 +61,7 @@ function forceReconnect(motivo) {
 function startTikTokConnection() {
   const myId = ++connectionCounter;
   const connection = new ConnectionClass(TIKTOK_USERNAME, {
-  signApiKey: process.env.EULERSTREAM_API_KEY
+  signApiKey: process.env.TIKTOOL_API_KEY
 });
   currentConnection = connection;
 
