@@ -60,7 +60,9 @@ function forceReconnect(motivo) {
 
 function startTikTokConnection() {
   const myId = ++connectionCounter;
-  const connection = new ConnectionClass(TIKTOK_USERNAME, {});
+  const connection = new ConnectionClass(TIKTOK_USERNAME, {
+  signApiKey: process.env.EULERSTREAM_API_KEY
+});
   currentConnection = connection;
 
   connection.connect().then(state => {
