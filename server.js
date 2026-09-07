@@ -1,8 +1,7 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
-const { WebcastPushConnection } = require('@tiktool/live');
-const ConnectionClass = WebcastPushConnection;
+const { TikTokLive } = require('@tiktool/live');
 const db = require('./db');
 
 const TIKTOK_USERNAME = process.env.TIKTOK_USERNAME || 'vitorb0rba';
@@ -15,136 +14,73 @@ app.use(express.static('public'));
 app.use(express.json());
 
 let liveOnline = false;
-let currentConnection = null;
-let lastEventAt = Date.now();
-let reconnecting = false;
-
-// Cada conexão criada ganha um número. Só os eventos da conexão MAIS RECENTE
-// são processados — isso evita contar em dobro caso uma conexão "antiga"
-// ainda esteja viva quando uma nova é criada.
-let connectionCounter = 0;
-let activeConnectionId = 0;
 
 function broadcastLiveStatus() {
   io.emit('live_status', { online: liveOnline });
 }
 
-const POWERUP_GIFTS = ['GG', 'Rocket', 'Universe'];
-
 function broadcastRanking() {
   io.emit('ranking', db.getRanking());
 }
 
-function forceReconnect(motivo) {
-  if (reconnecting) return;
-  reconnecting = true;
-  console.log(`Forçando reconexão (motivo: ${motivo})`);
-  liveOnline = false;
-  broadcastLiveStatus();
+const POWERUP_GIFTS = ['GG', 'Rocket', 'Universe'];
 
-  // Invalida a conexão atual IMEDIATAMENTE — mesmo que o disconnect()
-  // demore ou falhe, os eventos dela passam a ser ignorados a partir daqui.
-  activeConnectionId = -1;
-
-  try {
-    if (currentConnection) currentConnection.disconnect();
-  } catch (e) {
-    console.error('Erro ao desconectar conexão antiga:', e?.message || e);
-  }
-
-  setTimeout(() => {
-    reconnecting = false;
-    startTikTokConnection();
-  }, 5000);
-}
+// O evento 'like' traz o TOTAL acumulado por usuário, não um incremento.
+// Guardamos o último total visto de cada pessoa pra calcular a diferença.
+const lastLikeTotal = {};
 
 function startTikTokConnection() {
-  const myId = ++connectionCounter;
-  const connection = new ConnectionClass(TIKTOK_USERNAME, {
-  signApiKey: process.env.TIKTOOL_API_KEY
-});
-  currentConnection = connection;
-
-  connection.connect().then(state => {
-    console.log(`Conectado à live de @${TIKTOK_USERNAME} (roomId ${state.roomId}) [conn #${myId}]`);
-    activeConnectionId = myId; // só agora essa conexão passa a valer
-    liveOnline = true;
-    lastEventAt = Date.now();
-    broadcastLiveStatus();
-  }).catch(err => {
-    console.error('Erro ao conectar na live:', err?.message || err, err?.response?.data || '');
-    console.log('Tentando novamente em 10s...');
-    setTimeout(startTikTokConnection, 10000);
+  const client = new TikTokLive({
+    uniqueId: TIKTOK_USERNAME,
+    apiKey: process.env.TIKTOOL_API_KEY
   });
 
-  connection.on('error', err => {
-    console.error(`Erro do connection [conn #${myId}]:`, err?.message || err);
+  client.on('chat', () => {}); // não usamos, mas deixa registrado se quiser expandir depois
+
+  client.on('like', event => {
+    const uniqueId = event.userId || event.user?.uniqueId || event.nickname;
+    const nickname = event.nickname;
+    const total = event.totalLikeCount || 0;
+
+    const anterior = lastLikeTotal[uniqueId] || 0;
+    const delta = total - anterior;
+
+    if (delta > 0) {
+      db.addLikes(uniqueId, nickname, delta);
+      broadcastRanking();
+    }
+    lastLikeTotal[uniqueId] = total;
   });
 
-  connection.on('streamEnd', (reason) => {
-    if (myId !== activeConnectionId) return;
-    console.log('Live encerrada pelo streamer (streamEnd):', reason);
-    forceReconnect('streamEnd');
-  });
-
-connection.on('like', data => {
-  if (myId !== activeConnectionId) return;
-  console.log('LIKE RAW:', JSON.stringify({
-    uniqueId: data.user?.displayId || data.user?.uniqueId || data.uniqueId,
-    nickname: data.user?.nickname || data.nickname,
-    count: data.count,
-    likeCount: data.likeCount
-  }));
-  lastEventAt = Date.now();
-  const uniqueId = data.user?.displayId || data.user?.uniqueId || data.uniqueId;
-  const nickname = data.user?.nickname || data.nickname;
-  const count = data.count || data.likeCount || 1;
-  db.addLikes(uniqueId, nickname, count);
-  broadcastRanking();
-});
-
-  connection.on('gift', data => {
-    if (myId !== activeConnectionId) return; // ignora eco de conexão antiga
-    if (data.gift?.type === 1 && !data.repeatEnd) return;
-    lastEventAt = Date.now();
-
-    const uniqueId = data.user?.displayId || data.user?.uniqueId || data.uniqueId;
-    const nickname = data.user?.nickname || data.nickname;
-    const giftName = data.gift?.name;
-    const diamondCount = data.gift?.diamondCount || 0;
-    const repeatCount = data.repeatCount || 1;
+  client.on('gift', event => {
+    const uniqueId = event.userId || event.user?.uniqueId || event.nickname;
+    const nickname = event.nickname;
+    const giftName = event.giftName;
+    const value = event.diamondCount || 0;
 
     const isPowerUp = POWERUP_GIFTS.includes(giftName);
     if (isPowerUp) {
       db.addPowerUp(uniqueId, nickname, giftName);
     } else {
-      db.addGift(uniqueId, nickname, giftName, diamondCount * repeatCount);
+      db.addGift(uniqueId, nickname, giftName, value);
     }
     broadcastRanking();
   });
 
-  connection.on('disconnected', () => {
-    if (myId !== activeConnectionId) return;
-    console.log(`Desconectado da live [conn #${myId}]. Tentando reconectar...`);
-    liveOnline = false;
-    activeConnectionId = -1;
+  client.connect().then(() => {
+    console.log(`Conectado à live de @${TIKTOK_USERNAME}`);
+    liveOnline = true;
     broadcastLiveStatus();
-    setTimeout(startTikTokConnection, 5000);
+  }).catch(err => {
+    console.error('Erro ao conectar na live:', err?.message || err);
+    console.log('Tentando novamente em 10s...');
+    setTimeout(startTikTokConnection, 10000);
   });
 }
 
-// Watchdog: tempo bem mais generoso pra não confundir "silêncio normal"
-// com "conexão morta". 5 minutos sem NENHUM like/presente é bem incomum
-// numa live ativa com audiência.
-const WATCHDOG_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutos
-setInterval(() => {
-  if (liveOnline && !reconnecting && Date.now() - lastEventAt > WATCHDOG_TIMEOUT_MS) {
-    forceReconnect('watchdog: sem eventos há muito tempo');
-  }
-}, 30000);
-
 app.post('/api/reset', (req, res) => {
   db.resetAll();
+  Object.keys(lastLikeTotal).forEach(k => delete lastLikeTotal[k]);
   broadcastRanking();
   res.json({ ok: true });
 });
