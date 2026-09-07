@@ -51,6 +51,13 @@ function forceReconnect(motivo) {
   }, 5000);
 }
 
+function getAvatar(data) {
+  return data.profilePictureUrl
+    || data.user?.avatarThumb?.urlList?.[0]
+    || data.user?.profilePicture?.url
+    || null;
+}
+
 function startTikTokConnection() {
   const myId = ++connectionCounter;
   const connection = new ConnectionClass(TIKTOK_USERNAME, {
@@ -80,35 +87,36 @@ function startTikTokConnection() {
     forceReconnect('streamEnd');
   });
 
-  connection.on('like', data => {
-    if (myId !== activeConnectionId) return;
-    lastEventAt = Date.now();
-    const uniqueId = data.user?.displayId || data.user?.uniqueId || data.uniqueId;
-    const nickname = data.user?.nickname || data.nickname;
-    const count = data.count || data.likeCount || 1;
-    db.addLikes(uniqueId, nickname, count);
-    broadcastRanking();
-  });
+connection.on('like', data => {
+  if (myId !== activeConnectionId) return;
+  lastEventAt = Date.now();
+  const uniqueId = data.user?.displayId || data.user?.uniqueId || data.uniqueId;
+  const nickname = data.user?.nickname || data.nickname;
+  const count = data.count || data.likeCount || 1;
+  db.addLikes(uniqueId, nickname, count, getAvatar(data));
+  broadcastRanking();
+});
 
-  connection.on('gift', data => {
-    if (myId !== activeConnectionId) return;
-    if (data.gift?.type === 1 && !data.repeatEnd) return;
-    lastEventAt = Date.now();
+connection.on('gift', data => {
+  if (myId !== activeConnectionId) return;
+  if (data.gift?.type === 1 && !data.repeatEnd) return;
+  lastEventAt = Date.now();
 
-    const uniqueId = data.user?.displayId || data.user?.uniqueId || data.uniqueId;
-    const nickname = data.user?.nickname || data.nickname;
-    const giftName = data.gift?.name;
-    const diamondCount = data.gift?.diamondCount || 0;
-    const repeatCount = data.repeatCount || 1;
+  const uniqueId = data.user?.displayId || data.user?.uniqueId || data.uniqueId;
+  const nickname = data.user?.nickname || data.nickname;
+  const giftName = data.gift?.name;
+  const diamondCount = data.gift?.diamondCount || 0;
+  const repeatCount = data.repeatCount || 1;
+  const avatar = getAvatar(data);
 
-    const isPowerUp = POWERUP_GIFTS.includes(giftName);
-    if (isPowerUp) {
-      db.addPowerUp(uniqueId, nickname, giftName);
-    } else {
-      db.addGift(uniqueId, nickname, giftName, diamondCount * repeatCount);
-    }
-    broadcastRanking();
-  });
+  const isPowerUp = POWERUP_GIFTS.includes(giftName);
+  if (isPowerUp) {
+    db.addPowerUp(uniqueId, nickname, giftName, avatar);
+  } else {
+    db.addGift(uniqueId, nickname, giftName, diamondCount * repeatCount, avatar);
+  }
+  broadcastRanking();
+});
 
   connection.on('disconnected', () => {
     if (myId !== activeConnectionId) return;
@@ -146,6 +154,11 @@ app.get('/api/user/:uniqueId', (req, res) => {
 io.on('connection', socket => {
   socket.emit('ranking', db.getRanking());
   socket.emit('live_status', { online: liveOnline });
+});
+
+connection.on('roomUser', data => {
+  if (myId !== activeConnectionId) return;
+  io.emit('viewer_count', { count: data.viewerCount || 0 });
 });
 
 process.on('uncaughtException', (err) => {

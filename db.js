@@ -26,13 +26,15 @@ setInterval(saveToDisk, 5000);
 process.on('SIGINT', () => { saveToDisk(); process.exit(); });
 process.on('exit', saveToDisk);
 
-function ensureUser(uniqueId, nickname) {
+function ensureUser(uniqueId, nickname, avatar) {
   if (!state.users[uniqueId]) {
     state.users[uniqueId] = {
-      uniqueId, nickname, likes: 0, gifts_count: 0, gifts_value: 0, powerups: {}
+      uniqueId, nickname, avatar: avatar || null,
+      likes: 0, gifts_count: 0, gifts_value: 0, powerups: {}
     };
   } else {
     state.users[uniqueId].nickname = nickname;
+    if (avatar) state.users[uniqueId].avatar = avatar;
   }
 }
 
@@ -40,11 +42,10 @@ function ensureUser(uniqueId, nickname) {
 const pendingLikes = {};
 const likeActionRef = {};
 
-function addLikes(uniqueId, nickname, count) {
-  ensureUser(uniqueId, nickname);
+function addLikes(uniqueId, nickname, count, avatar) {
+  ensureUser(uniqueId, nickname, avatar);
   state.users[uniqueId].likes += count;
   dirty = true;
-
   if (!pendingLikes[uniqueId]) pendingLikes[uniqueId] = { nickname, count: 0 };
   pendingLikes[uniqueId].nickname = nickname;
   pendingLikes[uniqueId].count += count;
@@ -73,8 +74,8 @@ setInterval(flushLikeBuffer, 10000);
 // Ex: se "Rose" for enviada 50 vezes pela mesma pessoa, vira 1 linha só com count:50 e value somado.
 const giftActionRef = {}; // chave: `${uniqueId}::${giftName}`
 
-function addGift(uniqueId, nickname, giftName, value) {
-  ensureUser(uniqueId, nickname);
+function addGift(uniqueId, nickname, giftName, value, avatar) {
+  ensureUser(uniqueId, nickname, avatar);
   state.users[uniqueId].gifts_count += 1;
   state.users[uniqueId].gifts_value += value;
   dirty = true;
@@ -99,8 +100,8 @@ function logGiftAction(uniqueId, nickname, giftName, value) {
   dirty = true;
 }
 
-function addPowerUp(uniqueId, nickname, name) {
-  ensureUser(uniqueId, nickname);
+function addPowerUp(uniqueId, nickname, name, avatar) {
+  ensureUser(uniqueId, nickname, avatar);
   const powerups = state.users[uniqueId].powerups;
   powerups[name] = (powerups[name] || 0) + 1;
   dirty = true;
