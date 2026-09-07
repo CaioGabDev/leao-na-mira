@@ -8,7 +8,7 @@
     "start": "node server.js"
   },
   "dependencies": {
-    "tiktok-live-api": "latest",
+    "@tiktool/live": "latest",
     "express": "^4.19.2",
     "socket.io": "^4.7.5"
   }
