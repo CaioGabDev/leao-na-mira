@@ -10,7 +10,6 @@ const TIKTOK_USERNAME = process.env.TIKTOK_USERNAME || 'vitorb0rba';
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
-
 app.use(express.static('public'));
 app.use(express.json());
 
@@ -126,6 +125,11 @@ connection.on('gift', data => {
     broadcastLiveStatus();
     setTimeout(startTikTokConnection, 5000);
   });
+
+  connection.on('roomUser', data => {
+  if (myId !== activeConnectionId) return;
+  io.emit('viewer_count', { count: data.viewerCount || 0 });
+});
 }
 
 const WATCHDOG_TIMEOUT_MS = 5 * 60 * 1000;
@@ -156,10 +160,6 @@ io.on('connection', socket => {
   socket.emit('live_status', { online: liveOnline });
 });
 
-connection.on('roomUser', data => {
-  if (myId !== activeConnectionId) return;
-  io.emit('viewer_count', { count: data.viewerCount || 0 });
-});
 
 process.on('uncaughtException', (err) => {
   console.error('Exceção não tratada:', err);
