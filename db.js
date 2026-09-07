@@ -135,8 +135,7 @@ const MAX_ACTIONS = 5000; // limite de segurança: nunca deixa o histórico cres
 function getRanking() {
   return Object.values(state.users)
     .map(u => ({ ...u, score: u.likes + u.gifts_value * 10 }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 50);
+    .sort((a, b) => b.score - a.score);
 }
 
 function getUserProfile(uniqueId) {
