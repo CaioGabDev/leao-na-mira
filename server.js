@@ -30,6 +30,18 @@ function broadcastRanking() {
   io.emit('ranking', db.getRanking());
 }
 
+let liveFeed = [];
+function pushFeed(event) {
+  event.timestamp = Date.now();
+  liveFeed.push(event);
+  if (liveFeed.length > 50) liveFeed.shift();
+  io.emit('live_feed_event', event);
+}
+
+function broadcastGlobalStats() {
+  io.emit('global_stats', db.getGlobalStats());
+}
+
 function forceReconnect(motivo) {
   if (reconnecting) return;
   reconnecting = true;
@@ -55,6 +67,23 @@ function getAvatar(data) {
     || data.user?.avatarThumb?.urlList?.[0]
     || data.user?.profilePicture?.url
     || null;
+}
+
+const translationCache = {};
+
+async function translateGiftName(name) {
+  if (!name) return name;
+  if (translationCache[name]) return translationCache[name];
+  try {
+    const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(name)}&langpair=en|pt-BR`);
+    const data = await res.json();
+    const translated = data?.responseData?.translatedText || name;
+    translationCache[name] = translated;
+    return translated;
+  } catch (e) {
+    console.error('Erro ao traduzir presente:', e.message);
+    return name; // se falhar, usa o nome original em inglês
+  }
 }
 
 function startTikTokConnection() {
@@ -96,25 +125,75 @@ connection.on('like', data => {
   broadcastRanking();
 });
 
-connection.on('gift', data => {
+connection.on('chat', data => {
+  if (myId !== activeConnectionId) return;
+  const uniqueId = data.user?.displayId || data.user?.uniqueId || data.uniqueId;
+  const nickname = data.user?.nickname || data.nickname;
+  const avatar = getAvatar(data);
+  const comment = data.comment || '';
+  db.addComment(uniqueId, nickname, avatar);
+  broadcastGlobalStats();
+  pushFeed({ type: 'chat', uniqueId, nickname, avatar, text: comment });
+});
+
+connection.on('social', data => {
+  if (myId !== activeConnectionId) return;
+  const uniqueId = data.user?.displayId || data.user?.uniqueId || data.uniqueId;
+  const nickname = data.user?.nickname || data.nickname;
+  const avatar = getAvatar(data);
+  const label = (data.label || data.displayType || '').toLowerCase();
+
+  if (label.includes('follow')) {
+    db.addFollow(uniqueId, nickname, avatar);
+    broadcastRanking();
+    broadcastGlobalStats();
+    pushFeed({ type: 'follow', uniqueId, nickname, avatar });
+  } else if (label.includes('share')) {
+    db.addShare(uniqueId, nickname, avatar);
+    broadcastRanking();
+    broadcastGlobalStats();
+    pushFeed({ type: 'share', uniqueId, nickname, avatar });
+  }
+});
+
+connection.on('member', data => {
+  if (myId !== activeConnectionId) return;
+  const uniqueId = data.user?.displayId || data.user?.uniqueId || data.uniqueId;
+  const nickname = data.user?.nickname || data.nickname;
+  const avatar = getAvatar(data);
+  pushFeed({ type: 'join', uniqueId, nickname, avatar });
+});
+
+connection.on('roomUser', data => {
+  if (myId !== activeConnectionId) return;
+  const count = data.viewerCount || 0;
+  db.updateViewerCount(count);
+  broadcastGlobalStats();
+  io.emit('viewer_count', { count });
+});
+
+connection.on('gift', async data => {
   if (myId !== activeConnectionId) return;
   if (data.gift?.type === 1 && !data.repeatEnd) return;
   lastEventAt = Date.now();
 
   const uniqueId = data.user?.displayId || data.user?.uniqueId || data.uniqueId;
   const nickname = data.user?.nickname || data.nickname;
-  const giftName = data.gift?.name;
+  const giftNameEn = data.gift?.name;
   const diamondCount = data.gift?.diamondCount || 0;
   const repeatCount = data.repeatCount || 1;
   const avatar = getAvatar(data);
 
-  const isPowerUp = POWERUP_GIFTS.includes(giftName);
+  const isPowerUp = POWERUP_GIFTS.includes(giftNameEn);
+  const giftNamePt = await translateGiftName(giftNameEn); 
+
   if (isPowerUp) {
-    db.addPowerUp(uniqueId, nickname, giftName, avatar);
+    db.addPowerUp(uniqueId, nickname, giftNamePt, avatar);
   } else {
-    db.addGift(uniqueId, nickname, giftName, diamondCount * repeatCount, avatar);
+    db.addGift(uniqueId, nickname, giftNamePt, diamondCount * repeatCount, avatar);
   }
   broadcastRanking();
+  broadcastGlobalStats();
 });
 
   connection.on('disconnected', () => {
@@ -158,6 +237,8 @@ app.get('/api/user/:uniqueId', (req, res) => {
 io.on('connection', socket => {
   socket.emit('ranking', db.getRanking());
   socket.emit('live_status', { online: liveOnline });
+  socket.emit('live_feed_init', liveFeed);
+  socket.emit('global_stats', db.getGlobalStats());
 });
 
 

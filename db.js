@@ -5,6 +5,7 @@ const FILE = process.env.RAILWAY_ENVIRONMENT ? '/data/live.json' : 'live.json';
 // O disco só é atualizado periodicamente (ver saveToDisk).
 let state = { users: {}, actions: [] };
 
+
 if (fs.existsSync(FILE)) {
   try {
     state = JSON.parse(fs.readFileSync(FILE, 'utf-8'));
@@ -14,6 +15,18 @@ if (fs.existsSync(FILE)) {
     console.error('Erro ao ler live.json, começando do zero:', e.message);
   }
 }
+
+state.global = state.global || {
+  totalDiamonds: 0,
+  totalLikes: 0,
+  totalComments: 0,
+  totalFollows: 0,
+  totalShares: 0,
+  peakViewers: 0,
+  currentViewers: 0,
+  uniqueViewers: 0,
+  startedAt: Date.now()
+};
 
 let dirty = false;
 
@@ -30,8 +43,11 @@ function ensureUser(uniqueId, nickname, avatar) {
   if (!state.users[uniqueId]) {
     state.users[uniqueId] = {
       uniqueId, nickname, avatar: avatar || null,
-      likes: 0, gifts_count: 0, gifts_value: 0, powerups: {}
+      likes: 0, gifts_count: 0, gifts_value: 0, powerups: {},
+      comments: 0, followed: false, shared: false,
+      firstSeenAt: Date.now()
     };
+    state.global.uniqueViewers += 1;
   } else {
     state.users[uniqueId].nickname = nickname;
     if (avatar) state.users[uniqueId].avatar = avatar;
@@ -45,6 +61,7 @@ const likeActionRef = {};
 function addLikes(uniqueId, nickname, count, avatar) {
   ensureUser(uniqueId, nickname, avatar);
   state.users[uniqueId].likes += count;
+  state.global.totalLikes += count; // NOVO
   dirty = true;
   if (!pendingLikes[uniqueId]) pendingLikes[uniqueId] = { nickname, count: 0 };
   pendingLikes[uniqueId].nickname = nickname;
@@ -78,6 +95,7 @@ function addGift(uniqueId, nickname, giftName, value, avatar) {
   ensureUser(uniqueId, nickname, avatar);
   state.users[uniqueId].gifts_count += 1;
   state.users[uniqueId].gifts_value += value;
+  state.global.totalDiamonds += value; // NOVO
   dirty = true;
   logGiftAction(uniqueId, nickname, giftName, value);
 }
@@ -151,6 +169,10 @@ function getUserProfile(uniqueId) {
 function resetAll() {
   state.users = {};
   state.actions = [];
+  state.global = {
+    totalDiamonds: 0, totalLikes: 0, totalComments: 0, totalFollows: 0, totalShares: 0,
+    peakViewers: 0, currentViewers: 0, uniqueViewers: 0, startedAt: Date.now()
+  };
   Object.keys(pendingLikes).forEach(k => delete pendingLikes[k]);
   Object.keys(likeActionRef).forEach(k => delete likeActionRef[k]);
   Object.keys(giftActionRef).forEach(k => delete giftActionRef[k]);
@@ -159,4 +181,42 @@ function resetAll() {
   saveToDisk();
 }
 
-module.exports = { addLikes, addGift, addPowerUp, getRanking, getUserProfile, resetAll };
+function addComment(uniqueId, nickname, avatar) {
+  ensureUser(uniqueId, nickname, avatar);
+  state.users[uniqueId].comments += 1;
+  state.global.totalComments += 1;
+  dirty = true;
+}
+
+function addFollow(uniqueId, nickname, avatar) {
+  ensureUser(uniqueId, nickname, avatar);
+  if (!state.users[uniqueId].followed) {
+    state.users[uniqueId].followed = true;
+    state.global.totalFollows += 1;
+    dirty = true;
+  }
+}
+
+function addShare(uniqueId, nickname, avatar) {
+  ensureUser(uniqueId, nickname, avatar);
+  if (!state.users[uniqueId].shared) {
+    state.users[uniqueId].shared = true;
+    state.global.totalShares += 1;
+    dirty = true;
+  }
+}
+
+function updateViewerCount(count) {
+  state.global.currentViewers = count;
+  if (count > state.global.peakViewers) state.global.peakViewers = count;
+  dirty = true;
+}
+
+function getGlobalStats() {
+  return {
+    ...state.global,
+    uptimeSeconds: Math.floor((Date.now() - state.global.startedAt) / 1000)
+  };
+}
+
+module.exports = { addLikes, addGift, addPowerUp, getRanking, getUserProfile, resetAll, getGlobalStats, updateViewerCount, addComment, addFollow, addShare };

@@ -160,6 +160,33 @@
   }
   .modal-empty { text-align: center; color: var(--muted); padding: 20px 0; font-size: 14px; }
 
+  .stats-bar {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+  gap: 8px; margin: 20px 0 28px;
+}
+.stats-card {
+  background: rgba(20,10,8,0.6); border: 1px solid rgba(255,122,26,0.25);
+  border-radius: 14px; padding: 10px 8px; text-align: center;
+}
+.stats-card .num { font-family: 'Anton', sans-serif; font-size: 20px; color: var(--gold); }
+.stats-card .lbl { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+
+.feed-panel {
+  background: rgba(15,7,5,0.7); border: 1px solid rgba(255,122,26,0.2);
+  border-radius: 16px; padding: 14px; margin-bottom: 24px; max-height: 220px; overflow-y: auto;
+}
+.feed-title { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--gold); font-weight: 700; margin-bottom: 8px; }
+.feed-item { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 5px 0; border-bottom: 1px solid rgba(255,122,26,0.08); animation: fadeIn 0.3s ease; }
+.feed-item:last-child { border-bottom: none; }
+.feed-avatar { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; background: #2a1810; flex-shrink: 0; }
+.feed-text { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.feed-text b { color: var(--text); }
+
+.badge-tag {
+  font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 999px;
+  background: rgba(255,122,26,0.15); color: var(--gold); margin-left: 4px;
+}
+
   @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
   @keyframes flashUp { 0% { border-color: #4ade80; } 100% { border-color: rgba(255,122,26,0.25); } }
 </style>
@@ -184,7 +211,12 @@
     <span class="status-dot"></span>
     <span>Live offline — mostrando resultados da última live</span>
   </div>
+  <div class="stats-bar" id="statsBar"></div>
 
+<div class="feed-panel">
+  <div class="feed-title">🔴 Ao vivo agora</div>
+  <div id="feedList"></div>
+</div>
   <div class="podium" id="podium"></div>
 
   <div class="toolbar">
@@ -195,6 +227,7 @@
     <div style="display:flex; gap:10px;">
       <button class="sort-btn active" id="sortLikes" data-sort="likes">❤️ Likes</button>
       <button class="sort-btn" id="sortGifts" data-sort="gifts_value">🎁 Presentes</button>
+      <button class="sort-btn" id="sortComments" data-sort="comments">💬 Comentários</button>
     </div>
     <button class="reset-btn" id="resetBtn">Resetar dados</button>
   </div>
@@ -268,6 +301,68 @@
     visibleCount += PAGE_SIZE;
     render();
   });
+
+  const statsBarEl = document.getElementById('statsBar');
+const feedListEl = document.getElementById('feedList');
+let globalStartedAt = null;
+
+function formatUptime(seconds) {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  return h > 0 ? `${h}h${String(m).padStart(2,'0')}m` : `${m}m${String(s).padStart(2,'0')}s`;
+}
+
+function renderStatsBar(stats) {
+  globalStartedAt = Date.now() - stats.uptimeSeconds * 1000;
+  statsBarEl.innerHTML = `
+    <div class="stats-card"><div class="num">${stats.currentViewers.toLocaleString('pt-BR')}</div><div class="lbl">Assistindo</div></div>
+    <div class="stats-card"><div class="num">${stats.peakViewers.toLocaleString('pt-BR')}</div><div class="lbl">Pico</div></div>
+    <div class="stats-card"><div class="num">${stats.uniqueViewers.toLocaleString('pt-BR')}</div><div class="lbl">Únicos</div></div>
+    <div class="stats-card"><div class="num">${stats.totalDiamonds.toLocaleString('pt-BR')}</div><div class="lbl">💎 Total</div></div>
+    <div class="stats-card"><div class="num">${stats.totalComments.toLocaleString('pt-BR')}</div><div class="lbl">💬 Coment.</div></div>
+    <div class="stats-card"><div class="num">${stats.totalFollows.toLocaleString('pt-BR')}</div><div class="lbl">➕ Seguiram</div></div>
+    <div class="stats-card"><div class="num" id="uptimeVal">${formatUptime(stats.uptimeSeconds)}</div><div class="lbl">⏱ Duração</div></div>
+  `;
+}
+
+socket.on('global_stats', renderStatsBar);
+
+setInterval(() => {
+  if (globalStartedAt) {
+    const el = document.getElementById('uptimeVal');
+    if (el) el.textContent = formatUptime(Math.floor((Date.now() - globalStartedAt) / 1000));
+  }
+}, 1000);
+
+const FEED_ICONS = { chat: '💬', follow: '➕', share: '🔁', join: '👋', gift: '🎁' };
+function feedLine(event) {
+  const icon = FEED_ICONS[event.type] || '•';
+  const nome = event.nickname || event.uniqueId;
+  let texto = '';
+  if (event.type === 'chat') texto = `<b>${nome}</b>: ${event.text}`;
+  else if (event.type === 'follow') texto = `<b>${nome}</b> começou a seguir`;
+  else if (event.type === 'share') texto = `<b>${nome}</b> compartilhou a live`;
+  else if (event.type === 'join') texto = `<b>${nome}</b> entrou na live`;
+  return `
+    <div class="feed-item">
+      <img class="feed-avatar" src="${avatarOf(event)}" onerror="this.src='${FALLBACK_AVATAR}'">
+      <span>${icon}</span>
+      <span class="feed-text">${texto}</span>
+    </div>
+  `;
+}
+
+function addFeedItem(event) {
+  feedListEl.insertAdjacentHTML('afterbegin', feedLine(event));
+  while (feedListEl.children.length > 30) feedListEl.removeChild(feedListEl.lastChild);
+}
+
+socket.on('live_feed_init', events => {
+  feedListEl.innerHTML = '';
+  events.slice().reverse().forEach(addFeedItem);
+});
+socket.on('live_feed_event', addFeedItem);
 
   socket.on('live_status', ({ online }) => {
     statusBanner.classList.toggle('show', !online);
@@ -370,7 +465,11 @@
         <div class="row ${rankClass} ${rankedUp ? 'rank-up' : ''}" data-uid="${u.uniqueId}">
           <div class="rank">${i + 1}</div>
           <img class="row-avatar" src="${avatarOf(u)}" onerror="this.src='${FALLBACK_AVATAR}'">
-          <div class="name">${crown ? `<span class="crown">${crown}</span>` : ''}${u.nickname || u.uniqueId}</div>
+          <div class="name">
+  ${crown ? `<span class="crown">${crown}</span>` : ''}${u.nickname || u.uniqueId}
+  ${u.followed ? '<span class="badge-tag">Seguiu</span>' : ''}
+  ${u.shared ? '<span class="badge-tag">🔁</span>' : ''}
+</div>
           <div class="stats">
             <div class="stat">❤️ <span class="val">${u.likes}</span></div>
             <div class="stat">🎁 <span class="val">${u.gifts_value}</span></div>
