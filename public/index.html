@@ -221,7 +221,18 @@
     <span class="status-dot"></span>
     <span>Live offline — mostrando resultados da última live</span>
   </div>
-  <div class="stats-bar" id="statsBar"></div>
+  <div style="text-align:center;font-size:11px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;">
+  Tudo somado · todas as lives
+</div>
+<div class="stats-bar" id="statsBar"></div>
+
+<div style="text-align:center; margin: 4px 0 20px;">
+  <button id="toggleHistoryBtn" class="sort-btn" type="button">📜 Ver histórico de lives</button>
+</div>
+<div class="feed-panel" id="historyPanel" style="display:none;">
+  <div class="feed-title">Histórico de lives (até o último reset)</div>
+  <div id="historyList"></div>
+</div>
 
 <div class="feed-panel">
   <div id="feedList"></div>
@@ -321,7 +332,51 @@ function formatUptime(seconds) {
   const s = seconds % 60;
   return h > 0 ? `${h}h${String(m).padStart(2,'0')}m` : `${m}m${String(s).padStart(2,'0')}s`;
 }
+const historyPanel = document.getElementById('historyPanel');
+const historyList = document.getElementById('historyList');
+const toggleHistoryBtn = document.getElementById('toggleHistoryBtn');
+let historyLoaded = false;
 
+toggleHistoryBtn.addEventListener('click', async () => {
+  const estaAberto = historyPanel.style.display !== 'none';
+  if (estaAberto) {
+    historyPanel.style.display = 'none';
+    toggleHistoryBtn.textContent = '📜 Ver histórico de lives';
+    return;
+  }
+  historyPanel.style.display = 'block';
+  toggleHistoryBtn.textContent = '📜 Esconder histórico';
+  if (historyLoaded) return;
+
+  try {
+    const res = await fetch('/api/sessions');
+    const sessions = await res.json();
+    historyLoaded = true;
+
+    if (!sessions.length) {
+      historyList.innerHTML = '<div class="modal-empty">Nenhuma live finalizada ainda.</div>';
+      return;
+    }
+
+    historyList.innerHTML = sessions.map(s => {
+      const data = new Date(s.startedAt).toLocaleString('pt-BR');
+      return `
+        <div class="feed-item" style="flex-direction:column; align-items:flex-start; gap:2px;">
+          <div class="feed-text"><b>${data}</b> — ⏱ ${formatUptime(s.durationSeconds)}</div>
+          <div class="feed-text">
+            💎 ${s.totalDiamonds.toLocaleString('pt-BR')} ·
+            ❤️ ${s.totalLikes.toLocaleString('pt-BR')} ·
+            💬 ${s.totalComments.toLocaleString('pt-BR')} ·
+            ➕ ${s.totalFollows.toLocaleString('pt-BR')} ·
+            👀 pico ${s.peakViewers.toLocaleString('pt-BR')}
+          </div>
+        </div>
+      `;
+    }).join('');
+  } catch (e) {
+    historyList.innerHTML = '<div class="modal-empty">Erro ao carregar histórico.</div>';
+  }
+});
 function renderStatsBar(stats) {
   globalStartedAt = Date.now() - stats.uptimeSeconds * 1000;
   statsBarEl.innerHTML = `

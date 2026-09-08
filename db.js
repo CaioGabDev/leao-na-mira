@@ -16,6 +16,7 @@ if (fs.existsSync(FILE)) {
   }
 }
 state.tropa = state.tropa || [];
+state.sessions = state.sessions || []; // histórico de lives já finalizadas
 
 state.global = state.global || {
   totalDiamonds: 0,
@@ -28,6 +29,10 @@ state.global = state.global || {
   uniqueViewers: 0,
   startedAt: Date.now()
 };
+// campos novos, com default pra não quebrar live.json antigo
+state.global.lastLiveDurationSeconds = state.global.lastLiveDurationSeconds || 0;
+state.global.sessionPeakViewers = state.global.sessionPeakViewers || 0;
+state.currentSessionSnapshot = state.currentSessionSnapshot || null;
 
 let dirty = false;
 
@@ -48,7 +53,7 @@ function ensureUser(uniqueId, nickname, avatar) {
       comments: 0, followed: false, shared: false,
       gifterLevel: 0, memberLevel: 0,
       firstSeenAt: Date.now()
-      
+
     };
     state.global.uniqueViewers += 1;
   } else {
@@ -221,9 +226,12 @@ function resetAll() {
   state.users = {};
   state.actions = [];
   state.tropa = [];
+  state.sessions = [];
+  state.currentSessionSnapshot = null;
   state.global = {
     totalDiamonds: 0, totalLikes: 0, totalComments: 0, totalFollows: 0, totalShares: 0,
-    peakViewers: 0, currentViewers: 0, uniqueViewers: 0, startedAt: Date.now()
+    peakViewers: 0, currentViewers: 0, uniqueViewers: 0, startedAt: Date.now(),
+    lastLiveDurationSeconds: 0, sessionPeakViewers: 0
   };
   Object.keys(pendingLikes).forEach(k => delete pendingLikes[k]);
   Object.keys(likeActionRef).forEach(k => delete likeActionRef[k]);
@@ -261,27 +269,77 @@ function addShare(uniqueId, nickname, avatar) {
 function updateViewerCount(count) {
   state.global.currentViewers = count;
   if (count > state.global.peakViewers) state.global.peakViewers = count;
+  if (count > (state.global.sessionPeakViewers || 0)) state.global.sessionPeakViewers = count;
   dirty = true;
 }
 
+// Chamado quando a conexão com a live é estabelecida (live entrou no ar).
+// Tira uma "foto" dos totais atuais pra depois calcular só o que essa live
+// específica gerou (delta), e zera o pico de espectadores dessa sessão.
 function markLiveOnline() {
+  const now = Date.now();
   state.global.liveActive = true;
-  state.global.startedAt = Date.now();
+  state.global.startedAt = now;
+  state.global.sessionPeakViewers = 0;
+
+  state.currentSessionSnapshot = {
+    startedAt: now,
+    totalDiamonds: state.global.totalDiamonds,
+    totalLikes: state.global.totalLikes,
+    totalComments: state.global.totalComments,
+    totalFollows: state.global.totalFollows,
+    totalShares: state.global.totalShares
+  };
   dirty = true;
 }
 
+// Chamado quando a live cai/termina. Calcula os números só dessa live
+// (delta contra o snapshot tirado no markLiveOnline) e guarda no histórico.
+// O uptime não zera: fica congelado na duração dessa live até a próxima começar.
 function markLiveOffline() {
+  if (state.global.liveActive && state.currentSessionSnapshot) {
+    const snap = state.currentSessionSnapshot;
+    const endedAt = Date.now();
+    const durationSeconds = Math.floor((endedAt - snap.startedAt) / 1000);
+
+    // só registra no histórico lives com alguma duração mínima (evita "lixo"
+    // de reconexões picadas de poucos segundos)
+    if (durationSeconds >= 10) {
+      state.sessions.push({
+        id: snap.startedAt,
+        startedAt: snap.startedAt,
+        endedAt,
+        durationSeconds,
+        totalDiamonds: state.global.totalDiamonds - snap.totalDiamonds,
+        totalLikes: state.global.totalLikes - snap.totalLikes,
+        totalComments: state.global.totalComments - snap.totalComments,
+        totalFollows: state.global.totalFollows - snap.totalFollows,
+        totalShares: state.global.totalShares - snap.totalShares,
+        peakViewers: state.global.sessionPeakViewers || 0
+      });
+      if (state.sessions.length > 200) state.sessions.shift(); // limite de segurança
+      state.global.lastLiveDurationSeconds = durationSeconds;
+    }
+  }
   state.global.liveActive = false;
+  state.currentSessionSnapshot = null;
   dirty = true;
 }
 
 function getGlobalStats() {
-  return {
-    ...state.global,
-    uptimeSeconds: state.global.liveActive
-      ? Math.floor((Date.now() - state.global.startedAt) / 1000)
-      : 0
-  };
+  const uptimeSeconds = state.global.liveActive
+    ? Math.floor((Date.now() - state.global.startedAt) / 1000)
+    : (state.global.lastLiveDurationSeconds || 0);
+  return { ...state.global, uptimeSeconds };
 }
 
-module.exports = { addLikes, addGift, addPowerUp, getRanking, getUserProfile, resetAll, getGlobalStats, updateViewerCount, addComment, addFollow, addShare, markLiveOnline, markLiveOffline, checkLevelUp };
+// Histórico de lives já finalizadas (mais recente primeiro), até o último reset.
+function getSessions() {
+  return [...state.sessions].sort((a, b) => b.startedAt - a.startedAt);
+}
+
+module.exports = {
+  addLikes, addGift, addPowerUp, getRanking, getUserProfile, resetAll,
+  getGlobalStats, updateViewerCount, addComment, addFollow, addShare,
+  markLiveOnline, markLiveOffline, checkLevelUp, getTropa, getSessions
+};

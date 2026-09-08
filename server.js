@@ -251,6 +251,10 @@ app.get('/api/user/:uniqueId', (req, res) => {
   res.json(profile);
 });
 
+app.get('/api/sessions', (req, res) => {
+  res.json(db.getSessions());
+});
+
 io.on('connection', socket => {
   socket.emit('ranking', db.getRanking());
   socket.emit('live_status', { online: liveOnline });
