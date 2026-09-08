@@ -348,6 +348,16 @@
   <div class="eyebrow">gerador de arte</div>
   <h1>MURAL DA TROPA</h1>
   <p>Cadastra o pessoal, escolhe o nível e o tipo, e gera a imagem final para compartilhar.</p>
+  <a href="/index.html" style="
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-top: 14px; text-decoration: none;
+  background: transparent; border: 1.5px solid var(--line);
+  color: var(--ink-dim); font-weight: 700; font-size: 13px;
+  padding: 9px 18px; border-radius: 999px;
+  font-family: 'Rajdhani', sans-serif; letter-spacing: 0.5px;
+">
+  ⬅️ Voltar pro Ranking
+</a>
 </header>
 
 <div class="wrap">
@@ -868,7 +878,7 @@ socket.on('tropa_add', item => {
   renderBiblioteca();
   gerarBrasasDoPoster();
   render();
-  
+
 socket.on('tropa_add', ({ nome, nivel, tipo, avatar }) => {
   // evita duplicar se a pessoa já está na lista com nível igual ou maior
   const existente = pessoas.find(p => p.nome.toLowerCase() === nome.toLowerCase() && p.tipo === tipo);
