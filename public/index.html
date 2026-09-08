@@ -5,190 +5,246 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ranking da Live</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Anton&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bungee&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #0a0605;
+    --bg: #0a0807;
+    --card: #150f0b;
+    --card-2: #0f0b08;
+    --line: #2b2119;
+    --ink: #f3e9dc;
+    --ink-dim: #9c8b7d;
+    --ink-faint: #5a4c40;
+    --gold: #ffb03a;
     --ember1: #ff7a1a;
     --ember2: #ff2d2d;
-    --gold: #ffb03a;
-    --text: #f2e6da;
-    --muted: #9c8b7d;
+    --sidebar-w: 300px;
   }
   * { box-sizing: border-box; }
   html, body {
     margin: 0; height: 100%;
-    background: radial-gradient(ellipse at 50% -10%, #2a1208 0%, var(--bg) 55%, #000 100%);
-    color: var(--text); font-family: 'Rajdhani', sans-serif; overflow-x: hidden;
+    background:
+      radial-gradient(700px 420px at 12% -6%, rgba(255,122,26,.14), transparent 60%),
+      radial-gradient(900px 600px at 100% 0%, rgba(255,45,45,.08), transparent 55%),
+      var(--bg);
+    color: var(--ink); font-family: 'Rajdhani', sans-serif; font-weight: 600;
+    overflow-x: hidden;
   }
-  canvas#embers, canvas#confetti {
-    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  a { color: inherit; }
+  canvas#embers, canvas#confetti { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+  canvas#confetti { z-index: 60; }
+
+  /* ---------- SHELL ---------- */
+  .shell {
+    position: relative; z-index: 1;
+    max-width: 1180px; margin: 0 auto;
+    padding: 28px 20px 70px;
+    display: grid;
+    grid-template-columns: var(--sidebar-w) 1fr;
+    gap: 26px;
+    align-items: start;
   }
-  canvas#confetti { z-index: 50; }
-  .wrap { position: relative; z-index: 1; max-width: 640px; margin: 0 auto; padding: 40px 18px 60px; }
-  header { text-align: center; margin-bottom: 24px; }
-  .eyebrow { letter-spacing: 6px; font-size: 12px; color: var(--gold); font-weight: 700; text-transform: uppercase; }
-  h1 {
-    font-family: 'Anton', sans-serif; font-size: clamp(38px, 10vw, 64px); line-height: 0.95;
-    margin: 6px 0 0; letter-spacing: 1px; text-transform: uppercase;
-    background: linear-gradient(180deg, #ffe9b0 0%, var(--gold) 25%, var(--ember1) 55%, var(--ember2) 85%, #7a0f0f 100%);
+  @media (max-width: 880px) {
+    .shell { grid-template-columns: 1fr; }
+  }
+
+  /* ---------- SIDEBAR ---------- */
+  .sidebar {
+    display: flex; flex-direction: column; gap: 18px;
+    position: sticky; top: 20px;
+  }
+  @media (max-width: 880px) { .sidebar { position: static; } }
+
+  .brand-card {
+    background: linear-gradient(165deg, var(--card), var(--card-2));
+    border: 1px solid var(--line); border-radius: 18px; padding: 22px 20px;
+  }
+  .eyebrow {
+    display: flex; align-items: center; gap: 7px;
+    font-size: 11.5px; letter-spacing: .14em; color: var(--gold); font-weight: 700;
+  }
+  .eyebrow .dot { width: 6px; height: 6px; border-radius: 50%; background: #4ade80; box-shadow: 0 0 6px #4ade80; flex-shrink:0; }
+  .eyebrow.is-offline .dot { background: #ff3b3b; box-shadow: 0 0 6px #ff3b3b; }
+  h1.brand-title {
+    font-family: 'Bungee', sans-serif; font-weight: 400;
+    font-size: 30px; line-height: 1.05; letter-spacing: .01em;
+    margin: 10px 0 6px;
+    background: linear-gradient(180deg, #ffe9b0 0%, var(--gold) 30%, var(--ember1) 65%, #a3230f 100%);
     -webkit-background-clip: text; background-clip: text; color: transparent;
-    text-shadow: 0 0 30px rgba(255, 90, 20, 0.35);
-    filter: drop-shadow(0 4px 0 rgba(0,0,0,0.5));
   }
-  .sub { margin-top: 8px; color: var(--muted); font-size: 14px; font-weight: 600; letter-spacing: 1px; }
+  .brand-sub { font-size: 13.5px; color: var(--ink-dim); margin: 0; }
 
-  .viewer-badge {
-    display: inline-flex; align-items: center; gap: 6px;
-    background: rgba(255,122,26,0.12); border: 1px solid rgba(255,122,26,0.3);
-    border-radius: 999px; padding: 6px 14px; font-size: 13px; font-weight: 700;
-    color: var(--gold); margin-top: 12px;
+  .viewer-line {
+    display: flex; align-items: center; gap: 8px;
+    margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line);
+    font-size: 13px; color: var(--ink-dim); font-weight: 700;
   }
-  .viewer-dot { width: 6px; height: 6px; border-radius: 50%; background: #4ade80; box-shadow: 0 0 6px #4ade80; }
+  .viewer-line .num { color: var(--ink); font-size: 15px; }
+  .viewer-line[hidden] { display: none; }
 
-  /* PÓDIO */
-  .podium {
-    display: flex; align-items: flex-end; justify-content: center; gap: 10px;
-    margin: 28px 0 32px;
+  .sidebar-section {
+    background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px 16px 18px;
   }
-  .podium-slot {
-    display: flex; flex-direction: column; align-items: center; gap: 6px;
-    cursor: pointer; transition: transform 0.2s ease;
+  .sidebar-section h2 {
+    font-family: 'Bungee', sans-serif; font-weight: 400; font-size: 12px;
+    letter-spacing: .06em; color: var(--ink-dim); margin: 0 0 12px;
   }
-  .podium-slot:hover { transform: translateY(-4px); }
-  .podium-avatar {
-    width: 64px; height: 64px; border-radius: 50%; object-fit: cover;
-    border: 3px solid var(--muted); background: #2a1810;
-  }
-  .podium-slot.p1 .podium-avatar { width: 84px; height: 84px; border-color: var(--gold); box-shadow: 0 0 20px rgba(255,176,58,0.5); }
-  .podium-slot.p2 .podium-avatar { border-color: #ffcf9e; }
-  .podium-slot.p3 .podium-avatar { border-color: #ff9d6a; }
-  .podium-name { font-size: 13px; font-weight: 700; max-width: 90px; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .podium-stat { font-size: 12px; color: var(--muted); font-weight: 600; }
-  .podium-bar {
-    width: 90px; border-radius: 8px 8px 0 0;
-    background: linear-gradient(180deg, rgba(255,176,58,0.25), rgba(255,90,20,0.1));
-    border: 1px solid rgba(255,122,26,0.3); border-bottom: none;
-    display: flex; align-items: flex-start; justify-content: center; padding-top: 6px;
-  }
-  .podium-slot.p1 .podium-bar { height: 70px; }
-  .podium-slot.p2 .podium-bar { height: 46px; }
-  .podium-slot.p3 .podium-bar { height: 30px; }
-  .podium-medal { font-size: 20px; }
 
-  .list { display: flex; flex-direction: column; gap: 12px; }
-  .row {
-    display: grid; grid-template-columns: 40px 32px 1fr auto; align-items: center; gap: 10px;
-    background: linear-gradient(180deg, rgba(40,18,10,0.9), rgba(15,7,5,0.9));
-    border: 1px solid rgba(255,122,26,0.25); border-radius: 999px; padding: 8px 18px;
-    box-shadow: 0 0 0 1px rgba(0,0,0,0.4) inset, 0 6px 18px rgba(0,0,0,0.45);
-    animation: fadeIn 0.4s ease; cursor: pointer; transition: border-color 0.3s ease, transform 0.3s ease;
+  .stats-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
   }
-  .row.rank-up { animation: fadeIn 0.4s ease, flashUp 0.8s ease; }
-  .row.top1 { border-color: rgba(255,176,58,0.75); box-shadow: 0 0 22px rgba(255,140,20,0.35), 0 6px 18px rgba(0,0,0,0.45); }
-  .row.top2 { border-color: rgba(255,122,26,0.55); }
-  .row.top3 { border-color: rgba(255,90,60,0.45); }
-  .rank { font-family: 'Anton', sans-serif; font-size: 18px; color: var(--muted); text-align: center; }
-  .top1 .rank { color: var(--gold); }
-  .top2 .rank { color: #ffcf9e; }
-  .top3 .rank { color: #ff9d6a; }
-  .row-avatar { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; background: #2a1810; }
-  .name { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .stats { display: flex; gap: 14px; font-size: 14px; font-weight: 600; color: var(--muted); }
-  .stat { display: flex; align-items: center; gap: 4px; }
-  .stat .val { color: var(--text); font-weight: 700; transition: color 0.3s ease; }
-  .stat .val.bump { color: var(--gold); }
+  .stats-card {
+    background: var(--card-2); border: 1px solid var(--line);
+    border-radius: 12px; padding: 10px 8px; text-align: center;
+  }
+  .stats-card .num { font-family: 'Bungee', sans-serif; font-size: 17px; color: var(--gold); }
+  .stats-card .lbl { font-size: 10px; color: var(--ink-dim); margin-top: 3px; }
 
-  .toolbar, .toolbar-row2 { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; align-items: center; }
-  .toolbar-row2 { justify-content: space-between; }
-  .search-input {
-    flex: 1; min-width: 140px; background: rgba(20,10,8,0.6); border: 1px solid rgba(255,122,26,0.3);
-    border-radius: 999px; padding: 10px 16px; color: var(--text); font-family: 'Rajdhani', sans-serif;
-    font-weight: 600; font-size: 14px; outline: none;
+  .nav-btn {
+    display: flex; align-items: center; justify-content: center; gap: 7px;
+    width: 100%; text-decoration: none; cursor: pointer;
+    background: linear-gradient(180deg, var(--gold), var(--ember1));
+    color: #2a1400; font-weight: 700; font-size: 13.5px;
+    padding: 12px 14px; border-radius: 12px; border: none;
+    font-family: 'Rajdhani', sans-serif;
   }
-  .search-input::placeholder { color: var(--muted); }
-  .sort-btn {
-    background: rgba(20,10,8,0.6); border: 1px solid rgba(255,122,26,0.3); color: var(--muted);
-    font-family: 'Rajdhani', sans-serif; font-weight: 700; font-size: 13px; padding: 10px 16px;
-    border-radius: 999px; cursor: pointer; white-space: nowrap; transition: all 0.2s ease;
+
+  .ghost-btn {
+    display: flex; align-items: center; justify-content: center; gap: 7px;
+    width: 100%; cursor: pointer; background: transparent;
+    border: 1.5px solid var(--line); color: var(--ink-dim);
+    font-weight: 700; font-size: 13px; padding: 11px 14px; border-radius: 12px;
+    font-family: 'Rajdhani', sans-serif;
   }
-  .sort-btn:hover { border-color: var(--gold); color: var(--text); }
-  .sort-btn.active { background: linear-gradient(180deg, var(--gold), var(--ember1)); color: #2a1400; border-color: transparent; }
-  .empty { text-align: center; color: var(--muted); padding: 40px 0; font-size: 15px; letter-spacing: 1px; }
+  .ghost-btn:hover { border-color: var(--ink-faint); color: var(--ink); }
+  .danger-btn { border-color: rgba(255,61,26,.4); color: #ff8a6a; }
+  .danger-btn:hover { border-color: var(--ember2); color: var(--ember2); }
+
+  /* ---------- MAIN ---------- */
+  .main { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
 
   .status-banner {
     display: none; align-items: center; justify-content: center; gap: 8px;
-    background: rgba(90,20,20,0.4); border: 1px solid rgba(255,70,70,0.4); border-radius: 999px;
-    padding: 8px 16px; font-size: 13px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
-    color: #ff9a9a; margin: 0 auto 24px; width: fit-content;
+    background: rgba(90,20,20,0.35); border: 1px solid rgba(255,70,70,0.4); border-radius: 999px;
+    padding: 9px 16px; font-size: 13px; font-weight: 700; letter-spacing: .04em;
+    color: #ff9a9a; width: fit-content; margin: 0 auto;
   }
   .status-banner.show { display: flex; }
   .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #ff3b3b; box-shadow: 0 0 8px #ff3b3b; }
 
-  .load-more-btn, .reset-btn {
-    font-family: 'Rajdhani', sans-serif; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
-    border-radius: 999px; cursor: pointer; transition: all 0.2s ease;
+  .podium { display: flex; align-items: flex-end; justify-content: center; gap: 12px; padding-top: 6px; }
+  .podium-slot { display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer; transition: transform 0.2s ease; }
+  .podium-slot:hover { transform: translateY(-4px); }
+  .podium-avatar { width: 64px; height: 64px; border-radius: 50%; object-fit: cover; border: 3px solid var(--ink-faint); background: #2a1810; }
+  .podium-slot.p1 .podium-avatar { width: 86px; height: 86px; border-color: var(--gold); box-shadow: 0 0 22px rgba(255,176,58,0.5); }
+  .podium-slot.p2 .podium-avatar { border-color: #ffcf9e; }
+  .podium-slot.p3 .podium-avatar { border-color: #ff9d6a; }
+  .podium-name { font-size: 13px; font-weight: 700; max-width: 96px; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .podium-stat { font-size: 12px; color: var(--ink-dim); font-weight: 600; }
+  .podium-bar {
+    width: 96px; border-radius: 10px 10px 0 0;
+    background: linear-gradient(180deg, rgba(255,176,58,0.22), rgba(255,90,20,0.08));
+    border: 1px solid rgba(255,122,26,0.28); border-bottom: none;
   }
-  .load-more-btn {
-    display: block; margin: 20px auto 0; background: rgba(20,10,8,0.6); border: 1px solid rgba(255,122,26,0.3);
-    color: var(--muted); font-size: 13px; padding: 10px 24px;
-  }
-  .load-more-btn:hover { border-color: var(--gold); color: var(--text); }
-  .reset-btn { background: transparent; border: 1px solid rgba(255,122,26,0.35); color: var(--muted); font-size: 12px; padding: 8px 18px; }
-  .reset-btn:hover { color: var(--ember2); border-color: var(--ember2); }
+  .podium-slot.p1 .podium-bar { height: 72px; }
+  .podium-slot.p2 .podium-bar { height: 48px; }
+  .podium-slot.p3 .podium-bar { height: 30px; }
+  .podium-medal { font-size: 20px; }
 
-  /* MODAL DE PERFIL */
-  .modal-overlay {
-    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 100;
-    align-items: center; justify-content: center; padding: 20px;
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px 18px; }
+  .panel-title {
+    font-family: 'Bungee', sans-serif; font-weight: 400; font-size: 12px;
+    letter-spacing: .06em; color: var(--gold); margin: 0 0 10px;
   }
+
+  .feed-panel { max-height: 190px; overflow-y: auto; }
+  .feed-item { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .feed-item:last-child { border-bottom: none; }
+  .feed-avatar { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; background: #2a1810; flex-shrink: 0; }
+  .feed-text { color: var(--ink-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .feed-text b { color: var(--ink); }
+  .feed-empty { text-align: center; color: var(--ink-faint); font-size: 13px; padding: 14px 0; }
+
+  /* Controls row above the ranking list */
+  .list-controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .search-input {
+    flex: 1; min-width: 160px; background: var(--card-2); border: 1px solid var(--line);
+    border-radius: 999px; padding: 10px 16px; color: var(--ink); font-family: 'Rajdhani', sans-serif;
+    font-weight: 600; font-size: 14px; outline: none;
+  }
+  .search-input::placeholder { color: var(--ink-faint); }
+  .search-input:focus { border-color: var(--gold); }
+  .sort-group { display: flex; gap: 8px; flex-wrap: wrap; }
+  .sort-btn {
+    background: var(--card-2); border: 1px solid var(--line); color: var(--ink-dim);
+    font-family: 'Rajdhani', sans-serif; font-weight: 700; font-size: 13px; padding: 10px 15px;
+    border-radius: 999px; cursor: pointer; white-space: nowrap; transition: all 0.15s ease;
+  }
+  .sort-btn:hover { border-color: var(--gold); color: var(--ink); }
+  .sort-btn.active { background: linear-gradient(180deg, var(--gold), var(--ember1)); color: #2a1400; border-color: transparent; }
+
+  .list { display: flex; flex-direction: column; gap: 10px; }
+  .row {
+    display: grid; grid-template-columns: 34px 32px 1fr auto; align-items: center; gap: 10px;
+    background: linear-gradient(180deg, rgba(40,18,10,0.55), rgba(15,7,5,0.55));
+    border: 1px solid var(--line); border-radius: 999px; padding: 8px 16px;
+    cursor: pointer; transition: border-color 0.3s ease;
+  }
+  .row.rank-up { animation: flashUp 0.8s ease; }
+  .row.top1 { border-color: rgba(255,176,58,0.7); box-shadow: 0 0 18px rgba(255,140,20,0.28); }
+  .row.top2 { border-color: rgba(255,122,26,0.5); }
+  .row.top3 { border-color: rgba(255,90,60,0.4); }
+  .rank { font-family: 'Bungee', sans-serif; font-size: 15px; color: var(--ink-dim); text-align: center; }
+  .top1 .rank { color: var(--gold); }
+  .top2 .rank { color: #ffcf9e; }
+  .top3 .rank { color: #ff9d6a; }
+  .row-avatar { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; background: #2a1810; }
+  .name { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .stats { display: flex; gap: 14px; font-size: 13.5px; font-weight: 600; color: var(--ink-dim); }
+  .stat { display: flex; align-items: center; gap: 4px; }
+  .stat .val { color: var(--ink); font-weight: 700; }
+  .badge-tag { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 999px; background: rgba(255,122,26,0.15); color: var(--gold); }
+  .empty { text-align: center; color: var(--ink-dim); padding: 40px 0; font-size: 15px; }
+
+  .load-more-btn {
+    display: block; margin: 4px auto 0; background: var(--card-2); border: 1px solid var(--line);
+    color: var(--ink-dim); font-family: 'Rajdhani', sans-serif; font-weight: 700; letter-spacing: .03em;
+    font-size: 13px; padding: 10px 24px; border-radius: 999px; cursor: pointer;
+  }
+  .load-more-btn:hover { border-color: var(--gold); color: var(--ink); }
+
+  /* History */
+  .history-toggle {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    cursor: pointer; user-select: none;
+  }
+  .history-toggle .caret { color: var(--ink-dim); font-size: 12px; transition: transform .2s ease; }
+  .history-toggle.open .caret { transform: rotate(180deg); }
+  .history-list { display: none; flex-direction: column; gap: 8px; margin-top: 12px; }
+  .history-list.show { display: flex; }
+  .history-item {
+    background: var(--card-2); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px;
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .history-item .when { font-size: 13.5px; font-weight: 700; }
+  .history-item .nums { font-size: 12.5px; color: var(--ink-dim); }
+
+  /* Modal */
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 100; align-items: center; justify-content: center; padding: 20px; }
   .modal-overlay.show { display: flex; }
-  .modal-box {
-    background: linear-gradient(180deg, #1a0e08, #0a0605); border: 1px solid rgba(255,122,26,0.4);
-    border-radius: 20px; padding: 24px; max-width: 400px; width: 100%; max-height: 80vh; overflow-y: auto;
-  }
-  .modal-close { float: right; background: none; border: none; color: var(--muted); font-size: 22px; cursor: pointer; }
+  .modal-box { background: linear-gradient(180deg, #1a0e08, #0a0605); border: 1px solid var(--line); border-radius: 20px; padding: 24px; max-width: 400px; width: 100%; max-height: 80vh; overflow-y: auto; }
+  .modal-close { float: right; background: none; border: none; color: var(--ink-dim); font-size: 22px; cursor: pointer; }
   .modal-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
   .modal-avatar { width: 56px; height: 56px; border-radius: 50%; object-fit: cover; background: #2a1810; }
   .modal-name { font-size: 18px; font-weight: 700; }
-  .modal-summary { display: flex; gap: 16px; margin-bottom: 16px; font-size: 14px; color: var(--muted); }
+  .modal-summary { display: flex; gap: 16px; margin-bottom: 16px; font-size: 14px; color: var(--ink-dim); }
   .modal-summary .val { color: var(--gold); font-weight: 700; }
   .modal-gift-list { display: flex; flex-direction: column; gap: 8px; }
-  .modal-gift-row {
-    display: flex; justify-content: space-between; align-items: center;
-    background: rgba(255,122,26,0.08); border-radius: 10px; padding: 8px 12px; font-size: 14px;
-  }
-  .modal-empty { text-align: center; color: var(--muted); padding: 20px 0; font-size: 14px; }
+  .modal-gift-row { display: flex; justify-content: space-between; align-items: center; background: rgba(255,122,26,0.08); border-radius: 10px; padding: 8px 12px; font-size: 14px; }
+  .modal-empty { text-align: center; color: var(--ink-dim); padding: 20px 0; font-size: 14px; }
 
-  .stats-bar {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
-  gap: 8px; margin: 20px 0 28px;
-}
-.stats-card {
-  background: rgba(20,10,8,0.6); border: 1px solid rgba(255,122,26,0.25);
-  border-radius: 14px; padding: 10px 8px; text-align: center;
-}
-.stats-card .num { font-family: 'Anton', sans-serif; font-size: 20px; color: var(--gold); }
-.stats-card .lbl { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
-
-.feed-panel {
-  background: rgba(15,7,5,0.7); border: 1px solid rgba(255,122,26,0.2);
-  border-radius: 16px; padding: 14px; margin-bottom: 24px; max-height: 220px; overflow-y: auto;
-}
-.feed-title { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--gold); font-weight: 700; margin-bottom: 8px; }
-.feed-item { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 5px 0; border-bottom: 1px solid rgba(255,122,26,0.08); animation: fadeIn 0.3s ease; }
-.feed-item:last-child { border-bottom: none; }
-.feed-avatar { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; background: #2a1810; flex-shrink: 0; }
-.feed-text { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.feed-text b { color: var(--text); }
-
-.badge-tag {
-  font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 999px;
-  background: rgba(255,122,26,0.15); color: var(--gold); margin-left: 4px;
-}
-
-  @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-  @keyframes flashUp { 0% { border-color: #4ade80; } 100% { border-color: rgba(255,122,26,0.25); } }
+  @keyframes flashUp { 0% { border-color: #4ade80; } 100% { border-color: var(--line); } }
 </style>
 </head>
 <body>
@@ -196,67 +252,82 @@
 <canvas id="embers"></canvas>
 <canvas id="confetti"></canvas>
 
-<div class="wrap">
-  <header>
-    <div class="eyebrow">Ao vivo agora</div>
-    <h1>Ranking da Live</h1>
-    <div class="sub">Quem mais tá na treta hoje 🔥</div>
-    <a href="/mural.html" style="
-  display: inline-flex; align-items: center; gap: 6px;
-  margin-top: 14px; text-decoration: none;
-  background: linear-gradient(180deg, var(--gold), var(--ember1));
-  color: #2a1400; font-weight: 700; font-size: 13px;
-  padding: 10px 20px; border-radius: 999px;
-  font-family: 'Rajdhani', sans-serif; letter-spacing: 0.5px;
-">
-  🖼️ Ver Mural da Tropa
-</a>
-    <div class="viewer-badge" id="viewerBadge" style="display:none;">
-      <span class="viewer-dot"></span>
-      <span id="viewerCount">0</span> assistindo
+<div class="shell">
+
+  <!-- ================= SIDEBAR ================= -->
+  <aside class="sidebar">
+
+    <div class="brand-card">
+      <div class="eyebrow" id="liveEyebrow"><span class="dot"></span>Ao vivo agora</div>
+      <h1 class="brand-title">Ranking da Live</h1>
+      <p class="brand-sub">Quem mais tá na treta hoje 🔥</p>
+      <div class="viewer-line" id="viewerBadge" hidden>
+        👀 <span class="num" id="viewerCount">0</span> assistindo agora
+      </div>
     </div>
-  </header>
 
-  <div class="status-banner" id="statusBanner">
-    <span class="status-dot"></span>
-    <span>Live offline — mostrando resultados da última live</span>
-  </div>
-  <div style="text-align:center;font-size:11px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;">
-  Tudo somado · todas as lives
-</div>
-<div class="stats-bar" id="statsBar"></div>
-
-<div style="text-align:center; margin: 4px 0 20px;">
-  <button id="toggleHistoryBtn" class="sort-btn" type="button">📜 Ver histórico de lives</button>
-</div>
-<div class="feed-panel" id="historyPanel" style="display:none;">
-  <div class="feed-title">Histórico de lives (até o último reset)</div>
-  <div id="historyList"></div>
-</div>
-
-<div class="feed-panel">
-  <div id="feedList"></div>
-</div>
-  <div class="podium" id="podium"></div>
-
-  <div class="toolbar">
-    <input type="text" class="search-input" id="searchInput" placeholder="Buscar usuário...">
-  </div>
-
-  <div class="toolbar-row2">
-    <div style="display:flex; gap:10px;">
-      <button class="sort-btn active" id="sortLikes" data-sort="likes">❤️ Likes</button>
-      <button class="sort-btn" id="sortGifts" data-sort="gifts_value">🎁 Presentes</button>
-      <button class="sort-btn" id="sortComments" data-sort="comments">💬 Comentários</button>
+    <div class="sidebar-section">
+      <h2>Números da live</h2>
+      <div class="stats-grid" id="statsBar"></div>
     </div>
-    <button class="reset-btn" id="resetBtn">Resetar dados</button>
-  </div>
 
-  <div class="list" id="ranking">
-    <div class="empty">Esperando a live começar...</div>
-  </div>
+    <div class="sidebar-section" style="display:flex; flex-direction:column; gap:8px;">
+      <h2>Ações</h2>
+      <a class="nav-btn" href="/mural.html">🖼️ Ver Mural da Tropa</a>
+      <button class="ghost-btn" id="toggleHistoryBtn">
+        <span>📜 Histórico de lives</span>
+      </button>
+      <button class="ghost-btn danger-btn" id="resetBtn">🗑️ Resetar dados</button>
+    </div>
 
-  <button class="load-more-btn" id="loadMoreBtn" style="display:none;">Carregar mais</button>
+  </aside>
+
+  <!-- ================= MAIN ================= -->
+  <main class="main">
+
+    <div class="status-banner" id="statusBanner">
+      <span class="status-dot"></span>
+      <span>Live offline — mostrando resultados da última live</span>
+    </div>
+
+    <div class="podium" id="podium"></div>
+
+    <section class="panel">
+      <div class="panel-title">Feed ao vivo</div>
+      <div class="feed-panel" id="feedPanel">
+        <div id="feedList"></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title">Ranking</div>
+
+      <div class="list-controls" style="margin-bottom: 14px;">
+        <input type="text" class="search-input" id="searchInput" placeholder="Buscar usuário...">
+        <div class="sort-group">
+          <button class="sort-btn active" data-sort="likes">❤️ Likes</button>
+          <button class="sort-btn" data-sort="gifts_value">🎁 Presentes</button>
+          <button class="sort-btn" data-sort="comments">💬 Comentários</button>
+        </div>
+      </div>
+
+      <div class="list" id="ranking">
+        <div class="empty">Esperando a live começar...</div>
+      </div>
+
+      <button class="load-more-btn" id="loadMoreBtn" style="display:none;">Carregar mais</button>
+    </section>
+
+    <section class="panel" id="historySection" style="display:none;">
+      <div class="history-toggle" id="historyToggleRow">
+        <div class="panel-title" style="margin:0;">Histórico de lives · até o último reset</div>
+        <span class="caret">▾</span>
+      </div>
+      <div class="history-list" id="historyList"></div>
+    </section>
+
+  </main>
+
 </div>
 
 <div class="modal-overlay" id="modalOverlay">
@@ -282,6 +353,7 @@
   const container = document.getElementById('ranking');
   const podiumEl = document.getElementById('podium');
   const statusBanner = document.getElementById('statusBanner');
+  const liveEyebrow = document.getElementById('liveEyebrow');
   const resetBtn = document.getElementById('resetBtn');
   const searchInput = document.getElementById('searchInput');
   const sortButtons = document.querySelectorAll('.sort-btn');
@@ -323,117 +395,79 @@
   });
 
   const statsBarEl = document.getElementById('statsBar');
-const feedListEl = document.getElementById('feedList');
-let globalStartedAt = null;
+  const feedListEl = document.getElementById('feedList');
+  let globalStartedAt = null;
 
-function formatUptime(seconds) {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
-  return h > 0 ? `${h}h${String(m).padStart(2,'0')}m` : `${m}m${String(s).padStart(2,'0')}s`;
-}
-const historyPanel = document.getElementById('historyPanel');
-const historyList = document.getElementById('historyList');
-const toggleHistoryBtn = document.getElementById('toggleHistoryBtn');
-let historyLoaded = false;
-
-toggleHistoryBtn.addEventListener('click', async () => {
-  const estaAberto = historyPanel.style.display !== 'none';
-  if (estaAberto) {
-    historyPanel.style.display = 'none';
-    toggleHistoryBtn.textContent = '📜 Ver histórico de lives';
-    return;
+  function formatUptime(seconds) {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    return h > 0 ? `${h}h${String(m).padStart(2,'0')}m` : `${m}m${String(s).padStart(2,'0')}s`;
   }
-  historyPanel.style.display = 'block';
-  toggleHistoryBtn.textContent = '📜 Esconder histórico';
-  if (historyLoaded) return;
 
-  try {
-    const res = await fetch('/api/sessions');
-    const sessions = await res.json();
-    historyLoaded = true;
+  function renderStatsBar(stats) {
+    globalStartedAt = Date.now() - stats.uptimeSeconds * 1000;
+    statsBarEl.innerHTML = `
+      <div class="stats-card"><div class="num">${stats.currentViewers.toLocaleString('pt-BR')}</div><div class="lbl">Assistindo</div></div>
+      <div class="stats-card"><div class="num">${stats.peakViewers.toLocaleString('pt-BR')}</div><div class="lbl">Pico</div></div>
+      <div class="stats-card"><div class="num">${stats.uniqueViewers.toLocaleString('pt-BR')}</div><div class="lbl">Únicos</div></div>
+      <div class="stats-card"><div class="num">${stats.totalDiamonds.toLocaleString('pt-BR')}</div><div class="lbl">💎 Total</div></div>
+      <div class="stats-card"><div class="num">${stats.totalComments.toLocaleString('pt-BR')}</div><div class="lbl">💬 Coment.</div></div>
+      <div class="stats-card"><div class="num">${stats.totalFollows.toLocaleString('pt-BR')}</div><div class="lbl">➕ Seguiram</div></div>
+      <div class="stats-card" style="grid-column: span 2;"><div class="num" id="uptimeVal">${formatUptime(stats.uptimeSeconds)}</div><div class="lbl">⏱ Duração da live</div></div>
+    `;
+  }
 
-    if (!sessions.length) {
-      historyList.innerHTML = '<div class="modal-empty">Nenhuma live finalizada ainda.</div>';
-      return;
+  socket.on('global_stats', renderStatsBar);
+
+  setInterval(() => {
+    if (globalStartedAt) {
+      const el = document.getElementById('uptimeVal');
+      if (el) el.textContent = formatUptime(Math.floor((Date.now() - globalStartedAt) / 1000));
     }
+  }, 1000);
 
-    historyList.innerHTML = sessions.map(s => {
-      const data = new Date(s.startedAt).toLocaleString('pt-BR');
-      return `
-        <div class="feed-item" style="flex-direction:column; align-items:flex-start; gap:2px;">
-          <div class="feed-text"><b>${data}</b> — ⏱ ${formatUptime(s.durationSeconds)}</div>
-          <div class="feed-text">
-            💎 ${s.totalDiamonds.toLocaleString('pt-BR')} ·
-            ❤️ ${s.totalLikes.toLocaleString('pt-BR')} ·
-            💬 ${s.totalComments.toLocaleString('pt-BR')} ·
-            ➕ ${s.totalFollows.toLocaleString('pt-BR')} ·
-            👀 pico ${s.peakViewers.toLocaleString('pt-BR')}
-          </div>
-        </div>
-      `;
-    }).join('');
-  } catch (e) {
-    historyList.innerHTML = '<div class="modal-empty">Erro ao carregar histórico.</div>';
+  const FEED_ICONS = { chat: '💬', follow: '➕', share: '🔁', join: '👋', gift: '🎁' };
+  function feedLine(event) {
+    const icon = FEED_ICONS[event.type] || '•';
+    const nome = event.nickname || event.uniqueId;
+    let texto = '';
+    if (event.type === 'chat') texto = `<b>${nome}</b>: ${event.text}`;
+    else if (event.type === 'follow') texto = `<b>${nome}</b> começou a seguir`;
+    else if (event.type === 'share') texto = `<b>${nome}</b> compartilhou a live`;
+    else if (event.type === 'join') texto = `<b>${nome}</b> entrou na live`;
+    return `
+      <div class="feed-item">
+        <img class="feed-avatar" src="${avatarOf(event)}" onerror="this.src='${FALLBACK_AVATAR}'">
+        <span>${icon}</span>
+        <span class="feed-text">${texto}</span>
+      </div>
+    `;
   }
-});
-function renderStatsBar(stats) {
-  globalStartedAt = Date.now() - stats.uptimeSeconds * 1000;
-  statsBarEl.innerHTML = `
-    <div class="stats-card"><div class="num">${stats.currentViewers.toLocaleString('pt-BR')}</div><div class="lbl">Assistindo</div></div>
-    <div class="stats-card"><div class="num">${stats.peakViewers.toLocaleString('pt-BR')}</div><div class="lbl">Pico</div></div>
-    <div class="stats-card"><div class="num">${stats.uniqueViewers.toLocaleString('pt-BR')}</div><div class="lbl">Únicos</div></div>
-    <div class="stats-card"><div class="num">${stats.totalDiamonds.toLocaleString('pt-BR')}</div><div class="lbl">💎 Total</div></div>
-    <div class="stats-card"><div class="num">${stats.totalComments.toLocaleString('pt-BR')}</div><div class="lbl">💬 Coment.</div></div>
-    <div class="stats-card"><div class="num">${stats.totalFollows.toLocaleString('pt-BR')}</div><div class="lbl">➕ Seguiram</div></div>
-    <div class="stats-card"><div class="num" id="uptimeVal">${formatUptime(stats.uptimeSeconds)}</div><div class="lbl">⏱ Duração</div></div>
-  `;
-}
 
-socket.on('global_stats', renderStatsBar);
-
-setInterval(() => {
-  if (globalStartedAt) {
-    const el = document.getElementById('uptimeVal');
-    if (el) el.textContent = formatUptime(Math.floor((Date.now() - globalStartedAt) / 1000));
+  function addFeedItem(event) {
+    feedListEl.insertAdjacentHTML('afterbegin', feedLine(event));
+    while (feedListEl.children.length > 30) feedListEl.removeChild(feedListEl.lastChild);
   }
-}, 1000);
 
-const FEED_ICONS = { chat: '💬', follow: '➕', share: '🔁', join: '👋', gift: '🎁' };
-function feedLine(event) {
-  const icon = FEED_ICONS[event.type] || '•';
-  const nome = event.nickname || event.uniqueId;
-  let texto = '';
-  if (event.type === 'chat') texto = `<b>${nome}</b>: ${event.text}`;
-  else if (event.type === 'follow') texto = `<b>${nome}</b> começou a seguir`;
-  else if (event.type === 'share') texto = `<b>${nome}</b> compartilhou a live`;
-  else if (event.type === 'join') texto = `<b>${nome}</b> entrou na live`;
-  return `
-    <div class="feed-item">
-      <img class="feed-avatar" src="${avatarOf(event)}" onerror="this.src='${FALLBACK_AVATAR}'">
-      <span>${icon}</span>
-      <span class="feed-text">${texto}</span>
-    </div>
-  `;
-}
-
-function addFeedItem(event) {
-  feedListEl.insertAdjacentHTML('afterbegin', feedLine(event));
-  while (feedListEl.children.length > 30) feedListEl.removeChild(feedListEl.lastChild);
-}
-
-socket.on('live_feed_init', events => {
-  feedListEl.innerHTML = '';
-  events.slice().reverse().forEach(addFeedItem);
-});
-socket.on('live_feed_event', addFeedItem);
+  socket.on('live_feed_init', events => {
+    feedListEl.innerHTML = events.length ? '' : '<div class="feed-empty">Nada por aqui ainda.</div>';
+    events.slice().reverse().forEach(addFeedItem);
+  });
+  socket.on('live_feed_event', event => {
+    const emptyEl = feedListEl.querySelector('.feed-empty');
+    if (emptyEl) emptyEl.remove();
+    addFeedItem(event);
+  });
 
   socket.on('live_status', ({ online }) => {
     statusBanner.classList.toggle('show', !online);
+    liveEyebrow.classList.toggle('is-offline', !online);
+    liveEyebrow.lastChild.textContent = online ? 'Ao vivo agora' : 'Live offline';
   });
 
   socket.on('viewer_count', ({ count }) => {
-    viewerBadge.style.display = 'inline-flex';
+    viewerBadge.hidden = false;
     viewerCountEl.textContent = count.toLocaleString('pt-BR');
   });
 
@@ -450,7 +484,7 @@ socket.on('live_feed_event', addFeedItem);
       alert('Erro ao resetar. Verifica se o servidor está rodando.');
     } finally {
       resetBtn.disabled = false;
-      resetBtn.textContent = 'Resetar dados';
+      resetBtn.innerHTML = '🗑️ Resetar dados';
     }
   });
 
@@ -468,7 +502,7 @@ socket.on('live_feed_event', addFeedItem);
     if (!top3.length) { podiumEl.innerHTML = ''; return; }
 
     const medals = ['🥇', '🥈', '🥉'];
-    const order = [1, 0, 2]; // renderiza 2º, 1º, 3º na tela (1º no meio, mais alto)
+    const order = [1, 0, 2];
 
     podiumEl.innerHTML = order
       .filter(i => top3[i])
@@ -562,6 +596,52 @@ socket.on('live_feed_event', addFeedItem);
     previousRankMap = newRankMap;
 
     loadMoreBtn.style.display = list.length > visibleCount ? 'block' : 'none';
+  }
+
+  // ---------- HISTÓRICO DE LIVES ----------
+  const historySection = document.getElementById('historySection');
+  const historyToggleRow = document.getElementById('historyToggleRow');
+  const historyListEl = document.getElementById('historyList');
+  const toggleHistoryBtn = document.getElementById('toggleHistoryBtn');
+  let historyLoaded = false;
+  let historyOpen = false;
+
+  function setHistoryOpen(open) {
+    historyOpen = open;
+    historySection.style.display = 'block';
+    historyToggleRow.classList.toggle('open', open);
+    historyListEl.classList.toggle('show', open);
+    if (open) {
+      historySection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      loadHistory();
+    }
+  }
+
+  toggleHistoryBtn.addEventListener('click', () => setHistoryOpen(!historyOpen));
+  historyToggleRow.addEventListener('click', () => setHistoryOpen(!historyOpen));
+
+  async function loadHistory() {
+    if (historyLoaded) return;
+    try {
+      const res = await fetch('/api/sessions');
+      const sessions = await res.json();
+      historyLoaded = true;
+      if (!sessions.length) {
+        historyListEl.innerHTML = '<div class="modal-empty">Nenhuma live finalizada ainda.</div>';
+        return;
+      }
+      historyListEl.innerHTML = sessions.map(s => {
+        const data = new Date(s.startedAt).toLocaleString('pt-BR');
+        return `
+          <div class="history-item">
+            <div class="when">${data} · ⏱ ${formatUptime(s.durationSeconds)}</div>
+            <div class="nums">💎 ${s.totalDiamonds.toLocaleString('pt-BR')} · ❤️ ${s.totalLikes.toLocaleString('pt-BR')} · 💬 ${s.totalComments.toLocaleString('pt-BR')} · ➕ ${s.totalFollows.toLocaleString('pt-BR')} · 👀 pico ${s.peakViewers.toLocaleString('pt-BR')}</div>
+          </div>
+        `;
+      }).join('');
+    } catch (e) {
+      historyListEl.innerHTML = '<div class="modal-empty">Erro ao carregar histórico.</div>';
+    }
   }
 
   // ---------- MODAL DE PERFIL ----------
