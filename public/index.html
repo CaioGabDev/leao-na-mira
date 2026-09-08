@@ -71,7 +71,7 @@
     border: 1px solid rgba(255,122,26,0.3); border-bottom: none;
     display: flex; align-items: flex-start; justify-content: center; padding-top: 6px;
   }
-  .podium-slot.p1 .podium-bar { height: 70px; order: -1; }
+  .podium-slot.p1 .podium-bar { height: 70px; }
   .podium-slot.p2 .podium-bar { height: 46px; }
   .podium-slot.p3 .podium-bar { height: 30px; }
   .podium-medal { font-size: 20px; }
@@ -214,7 +214,6 @@
   <div class="stats-bar" id="statsBar"></div>
 
 <div class="feed-panel">
-  <div class="feed-title">🔴 Ao vivo agora</div>
   <div id="feedList"></div>
 </div>
   <div class="podium" id="podium"></div>
@@ -416,7 +415,11 @@ socket.on('live_feed_event', addFeedItem);
             <div class="podium-medal">${medals[i]}</div>
             <img class="podium-avatar" src="${avatarOf(u)}" onerror="this.src='${FALLBACK_AVATAR}'">
             <div class="podium-name">${u.nickname || u.uniqueId}</div>
-            <div class="podium-stat">❤️ ${u[currentSort === 'gifts_value' ? 'gifts_value' : 'likes']}</div>
+            <div class="podium-stat">
+  ${currentSort === 'comments' ? `💬 ${u.comments || 0}`
+    : currentSort === 'gifts_value' ? `🎁 ${u.gifts_value}`
+    : `❤️ ${u.likes}`}
+</div>
             <div class="podium-bar"></div>
           </div>
         `;
@@ -470,10 +473,13 @@ socket.on('live_feed_event', addFeedItem);
   ${u.followed ? '<span class="badge-tag">Seguiu</span>' : ''}
   ${u.shared ? '<span class="badge-tag">🔁</span>' : ''}
 </div>
-          <div class="stats">
-            <div class="stat">❤️ <span class="val">${u.likes}</span></div>
-            <div class="stat">🎁 <span class="val">${u.gifts_value}</span></div>
-          </div>
+<div class="stats">
+  ${currentSort === 'comments'
+    ? `<div class="stat">💬 <span class="val">${u.comments || 0}</span></div>`
+    : `<div class="stat">❤️ <span class="val">${u.likes}</span></div>
+       <div class="stat">🎁 <span class="val">${u.gifts_value}</span></div>`
+  }
+</div>
         </div>
       `;
     }).join('');

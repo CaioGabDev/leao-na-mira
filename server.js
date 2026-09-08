@@ -47,6 +47,7 @@ function forceReconnect(motivo) {
   reconnecting = true;
   console.log(`Forçando reconexão (motivo: ${motivo})`);
   liveOnline = false;
+  db.markLiveOffline();
   broadcastLiveStatus();
   activeConnectionId = -1;
 
@@ -97,6 +98,7 @@ function startTikTokConnection() {
     console.log(`Conectado à live de @${TIKTOK_USERNAME} (roomId ${state.roomId}) [conn #${myId}]`);
     activeConnectionId = myId;
     liveOnline = true;
+    db.markLiveOnline();
     lastEventAt = Date.now();
     broadcastLiveStatus();
   }).catch(err => {
@@ -200,6 +202,7 @@ connection.on('gift', async data => {
     if (myId !== activeConnectionId) return;
     console.log(`Desconectado da live [conn #${myId}]. Tentando reconectar...`);
     liveOnline = false;
+    db.markLiveOffline();
     activeConnectionId = -1;
     broadcastLiveStatus();
     setTimeout(startTikTokConnection, 5000);

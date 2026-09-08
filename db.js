@@ -212,11 +212,24 @@ function updateViewerCount(count) {
   dirty = true;
 }
 
+function markLiveOnline() {
+  state.global.liveActive = true;
+  state.global.startedAt = Date.now();
+  dirty = true;
+}
+
+function markLiveOffline() {
+  state.global.liveActive = false;
+  dirty = true;
+}
+
 function getGlobalStats() {
   return {
     ...state.global,
-    uptimeSeconds: Math.floor((Date.now() - state.global.startedAt) / 1000)
+    uptimeSeconds: state.global.liveActive
+      ? Math.floor((Date.now() - state.global.startedAt) / 1000)
+      : 0
   };
 }
 
-module.exports = { addLikes, addGift, addPowerUp, getRanking, getUserProfile, resetAll, getGlobalStats, updateViewerCount, addComment, addFollow, addShare };
+module.exports = { addLikes, addGift, addPowerUp, getRanking, getUserProfile, resetAll, getGlobalStats, updateViewerCount, addComment, addFollow, addShare, markLiveOnline, markLiveOffline };
