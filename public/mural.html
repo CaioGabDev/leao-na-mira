@@ -1,0 +1,889 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Mural da Tropa</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bungee&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="/socket.io/socket.io.js"></script>
+<style>
+  :root{
+    --bg: #0A0807;
+    --bg-2: #150F0B;
+    --ink: #F3E9DC;
+    --ink-dim: #A9998A;
+    --presenteador: #3E7BFA;
+    --presenteador-glow: rgba(62,123,250,.55);
+    --presenteador-bg: rgba(62,123,250,.12);
+    --membro: #FF7A1A;
+    --membro-glow: rgba(255,122,26,.55);
+    --membro-bg: rgba(255,122,26,.12);
+    --superfa: #C64FF2;
+    --superfa-glow: rgba(198,79,242,.55);
+    --superfa-bg: rgba(198,79,242,.12);
+    --card: #17120E;
+    --line: #2B2119;
+    --radius: 16px;
+    --poster-radius: 18px;
+  }
+
+  *{ box-sizing:border-box; }
+  html,body{ height:100%; }
+
+  body{
+    margin:0;
+    background:
+      radial-gradient(700px 400px at 15% 0%, rgba(255,122,26,.16), transparent 60%),
+      radial-gradient(600px 500px at 90% 10%, rgba(62,123,250,.12), transparent 60%),
+      radial-gradient(900px 600px at 50% 110%, rgba(255,90,20,.15), transparent 60%),
+      var(--bg);
+    color: var(--ink);
+    font-family:'Rajdhani', sans-serif;
+    font-weight:600;
+    min-height:100vh;
+    padding-bottom:60px;
+    position:relative;
+    overflow-x:hidden;
+  }
+
+  .embers{ position:fixed; inset:0; pointer-events:none; z-index:0; overflow:hidden; }
+  .ember{
+    position:absolute;
+    bottom:-10px;
+    width:4px; height:4px;
+    border-radius:50%;
+    background: radial-gradient(circle, #FFB35C 0%, #FF7A1A 60%, transparent 100%);
+    opacity:.8;
+    animation: rise linear infinite;
+  }
+  @keyframes rise{
+    0%{ transform: translateY(0) translateX(0); opacity:0; }
+    10%{ opacity:.9; }
+    100%{ transform: translateY(-110vh) translateX(20px); opacity:0; }
+  }
+
+  header{ position:relative; z-index:1; padding: 46px 20px 26px; text-align:center; }
+  header .eyebrow{ font-size:12px; letter-spacing:.28em; text-transform:uppercase; color: var(--membro); font-weight:700; }
+  header h1{
+    font-family:'Bungee', sans-serif; font-weight:400;
+    font-size: clamp(30px, 5vw, 52px);
+    margin: 10px 0 10px; letter-spacing: .02em;
+    background: linear-gradient(180deg, #FFD9A8 0%, #FF7A1A 55%, #C6420A 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    text-shadow: 0 0 26px rgba(255,122,26,.35);
+    line-height:1.05;
+  }
+  header p{ color: var(--ink-dim); max-width: 560px; margin: 0 auto; font-size: 15px; }
+
+  .wrap{
+    position:relative; z-index:1;
+    max-width: 1080px; margin: 0 auto; padding: 0 20px;
+    display:grid; grid-template-columns: 340px 1fr; gap: 22px;
+  }
+  @media (max-width: 820px){ .wrap{ grid-template-columns: 1fr; } }
+
+  .panel{
+    background: linear-gradient(160deg, var(--card), #0D0A08);
+    border-radius: var(--radius);
+    padding: 22px;
+    border: 1px solid var(--line);
+    box-shadow: 0 20px 40px -20px rgba(0,0,0,.7);
+  }
+
+  .panel h2{
+    font-family:'Bungee', sans-serif; font-weight:400; font-size: 16px;
+    letter-spacing:.03em; margin: 0 0 16px; color: #FFD9A8;
+    display:flex; align-items:center; gap:8px;
+  }
+
+  label{
+    display:block; font-size: 12px; letter-spacing:.08em; text-transform:uppercase;
+    font-weight: 700; color: var(--ink-dim); margin: 14px 0 6px;
+  }
+  label:first-of-type{ margin-top:0; }
+
+  input[type=text], input[type=number]{
+    width:100%; padding: 11px 12px; border-radius: 10px;
+    border: 1.5px solid var(--line); background: #0D0907;
+    font-family: 'Rajdhani', sans-serif; font-weight:600; font-size: 15px;
+    color: var(--ink); outline: none;
+    transition: border-color .15s ease, box-shadow .15s ease;
+  }
+  input::placeholder{ color:#5A4C40; }
+  input:focus{ border-color: var(--membro); box-shadow: 0 0 0 3px var(--membro-bg); }
+
+  /* --- Biblioteca (quick-add) --- */
+  .biblioteca-box{ margin-bottom: 4px; }
+  .biblioteca-box label{ display:flex; align-items:center; gap:6px; }
+  .chips{
+    display:flex; flex-wrap:wrap; gap:6px;
+    max-height: 150px; overflow-y:auto;
+    padding-right:2px;
+  }
+  .chip{
+    display:flex; align-items:center; gap:6px;
+    background:#0D0907; border:1.5px solid var(--line);
+    border-radius: 999px; padding: 5px 6px 5px 12px;
+    font-size: 13px; font-weight:700; color: var(--ink-dim);
+    cursor:pointer; transition: all .12s ease;
+  }
+  .chip:hover{ border-color:#FF7A1A; color: var(--ink); background: var(--membro-bg); }
+  .chip .x{
+    width:18px; height:18px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    background:#1D1610; color:#8A7A6A; font-size:11px; line-height:1;
+    flex-shrink:0;
+  }
+  .chip .x:hover{ background:#FF3D1A; color:#fff; }
+  .chips-empty{ font-size:12.5px; color:#5A4C40; font-style:italic; }
+
+  .tipo-row{ display:flex; gap:8px; margin-top:6px; }
+  .tipo-opt{
+    flex:1; text-align:center; padding:9px 4px; border-radius: 10px;
+    border: 1.5px solid var(--line); font-size: 12.5px; font-weight:700;
+    text-transform:uppercase; letter-spacing:.03em; cursor:pointer; user-select:none;
+    transition: all .15s ease; background:#0D0907; color: var(--ink-dim);
+  }
+  .tipo-opt[data-tipo="presenteador"].active{ background:var(--presenteador-bg); border-color:var(--presenteador); color:#8FB2FF; box-shadow:0 0 14px -2px var(--presenteador-glow) inset; }
+  .tipo-opt[data-tipo="membro"].active{ background:var(--membro-bg); border-color:var(--membro); color:#FFB27A; box-shadow:0 0 14px -2px var(--membro-glow) inset; }
+  .tipo-opt[data-tipo="superfã"].active{ background:var(--superfa-bg); border-color:var(--superfa); color:#E4A8FA; box-shadow:0 0 14px -2px var(--superfa-glow) inset; }
+
+  .btn{
+    font-family:'Bungee', sans-serif; font-weight:400; font-size: 13px;
+    letter-spacing:.03em; text-transform:uppercase; border:none; border-radius: 10px;
+    padding: 13px 16px; cursor:pointer;
+    transition: transform .1s ease, opacity .15s ease, box-shadow .15s ease;
+  }
+  .btn:active{ transform: scale(.97); }
+  .btn-primary{
+    background: linear-gradient(90deg, #FF7A1A, #FF3D1A); color:#1A0D05;
+    width:100%; margin-top:18px; box-shadow: 0 8px 20px -6px rgba(255,90,20,.55);
+  }
+  .btn-primary:hover{ opacity:.92; }
+  .btn-ghost{ background: transparent; border:1.5px solid var(--line); color: var(--ink-dim); }
+  .btn-ghost:hover{ border-color:#5A4C40; color:var(--ink); }
+  .btn-danger{ background: rgba(255,61,26,.14); border:1.5px solid rgba(255,61,26,.4); color:#FF8A6A; }
+
+  #cancelEdit{ display:none; width:100%; margin-top:8px; }
+
+  .patches{ display:flex; flex-direction:column; gap:10px; }
+
+  .patch{
+    display:flex; align-items:center; justify-content:space-between; gap: 12px;
+    padding: 12px 18px; border-radius: 999px;
+    background: linear-gradient(90deg, #100C09, #17110C);
+    border: 1.5px solid var(--line);
+  }
+  .patch.presenteador{ border-color: rgba(62,123,250,.55); box-shadow: 0 0 22px -8px var(--presenteador-glow), inset 0 0 14px -6px var(--presenteador-glow); }
+  .patch.membro{ border-color: rgba(255,122,26,.55); box-shadow: 0 0 22px -8px var(--membro-glow), inset 0 0 14px -6px var(--membro-glow); }
+  .patch.superfã{ border-color: rgba(198,79,242,.55); box-shadow: 0 0 22px -8px var(--superfa-glow), inset 0 0 14px -6px var(--superfa-glow); }
+
+  .patch .side-icon{ flex-shrink:0; width:26px; height:26px; display:flex; align-items:center; justify-content:center; }
+  .patch.presenteador .side-icon{ color: var(--presenteador); }
+  .patch.membro .side-icon{ color: var(--membro); }
+  .patch.superfã .side-icon{ color: var(--superfa); }
+  .side-icon svg{ width:18px; height:18px; }
+
+  .patch .info{ flex:1; display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; min-width:0; }
+  .patch .nome{ font-family:'Bungee', sans-serif; font-weight:400; font-size:14px; color: var(--ink); white-space:nowrap; }
+  .patch .texto{ color: var(--ink-dim); font-size: 13.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+  .patch-actions{ display:flex; gap:6px; flex-shrink:0; }
+  .icon-btn{
+    background:#0D0907; border:1px solid var(--line); border-radius:8px;
+    width:28px; height:28px; display:flex; align-items:center; justify-content:center;
+    cursor:pointer; font-size:13px; color: var(--ink-dim);
+  }
+  .icon-btn:hover{ background:#1D1610; color: var(--ink); }
+
+  .empty{
+    text-align:center; color: var(--ink-dim); font-size: 14px; padding: 34px 10px;
+    border: 1.5px dashed var(--line); border-radius: 14px;
+  }
+
+  .group-title{
+    font-family:'Bungee', sans-serif; font-weight:400; font-size: 11.5px;
+    text-transform:uppercase; letter-spacing:.1em; color: var(--ink-dim); margin: 18px 4px 8px;
+  }
+  .group-title:first-child{ margin-top:0; }
+
+  .toast{
+    position: fixed; bottom: 24px; left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: linear-gradient(90deg, #FF7A1A, #FF3D1A); color: #1A0D05;
+    padding: 11px 20px; border-radius: 999px;
+    font-family:'Bungee', sans-serif; font-weight:400; font-size: 12.5px;
+    text-transform:uppercase; letter-spacing:.03em;
+    opacity: 0; pointer-events:none; transition: all .25s ease; z-index:5;
+  }
+  .toast.show{ opacity:1; transform: translateX(-50%) translateY(0); }
+
+  .count-pill{
+    font-family:'Rajdhani',sans-serif; font-size:12px; font-weight:700;
+    color: var(--ink-dim); background: #0D0907; border: 1px solid var(--line);
+    padding: 2px 10px; border-radius: 999px; margin-left:auto;
+  }
+
+  .poster-section{ margin-top: 28px; }
+
+  .poster-wrap{
+    position:relative;
+    width:100%;
+    max-width: 420px;
+    aspect-ratio: 9 / 16;
+    margin: 0 auto;
+    border-radius: var(--poster-radius);
+    border: none;
+    background: #000;
+    display:flex;
+    flex-direction:column;
+    isolation:isolate;
+  }
+
+  .poster-img-area{
+    position:relative; z-index:1;
+    width:100%;
+    flex: 0 0 var(--photo-basis, 56%);
+    overflow:hidden;
+    background-color:#000;
+    background-size: cover;
+    background-position: center top;
+    background-repeat: no-repeat;
+  }
+
+  .poster-vignette{
+    position:absolute; inset:0;
+    background:
+      radial-gradient(120% 90% at 50% 38%, rgba(0,0,0,0) 40%, rgba(0,0,0,.5) 78%, rgba(0,0,0,.92) 100%);
+    z-index:2;
+    pointer-events:none;
+    opacity:0;
+    transition: opacity .25s ease;
+  }
+
+  .poster-img-fade{
+    position:absolute; left:0; right:0; bottom:0;
+    height:42%;
+    background: linear-gradient(to bottom,
+      rgba(0,0,0,0) 0%,
+      rgba(0,0,0,.15) 25%,
+      rgba(0,0,0,.6) 55%,
+      rgba(0,0,0,.92) 80%,
+      rgba(0,0,0,1) 100%);
+    pointer-events:none;
+    z-index:3;
+    opacity:0;
+    transition: opacity .25s ease;
+  }
+
+  .poster-wrap.tem-gente .poster-vignette,
+  .poster-wrap.tem-gente .poster-img-fade{
+    opacity:1;
+  }
+
+  .poster-embers{ position:absolute; inset:0; z-index:4; pointer-events:none; overflow:hidden; }
+  .poster-ember{
+    position:absolute;
+    border-radius:50%;
+    background: radial-gradient(circle, #FFD9A8 0%, #FF7A1A 55%, transparent 100%);
+    filter: blur(.5px);
+    animation: posterFloat ease-in-out infinite;
+  }
+  @keyframes posterFloat{
+    0%, 100%{ transform: translateY(0); }
+    50%{ transform: translateY(-8px); }
+  }
+
+  .poster-rows{
+    position:relative; z-index:5;
+    flex: 1 1 auto;
+    min-height:0;
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+    gap: var(--row-gap, 8px);
+    padding: 10px 14px 16px;
+    margin-top: -34px;
+    background: #000;
+    overflow:hidden;
+  }
+  .poster-rows:empty{ margin-top:0; padding:0; background:none; }
+
+  .poster-row{
+    display:flex; align-items:center; justify-content:space-between;
+    gap: 10px;
+    padding: var(--row-pad-v, 9px) var(--row-pad-h, 14px);
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgba(15,11,8,.92), rgba(23,17,12,.92));
+    border: 1.5px solid var(--line);
+    flex-shrink:0;
+  }
+  .poster-row.presenteador{ border-color: rgba(62,123,250,.65); box-shadow: 0 0 14px -4px var(--presenteador-glow); }
+  .poster-row.membro{ border-color: rgba(255,122,26,.65); box-shadow: 0 0 14px -4px var(--membro-glow); }
+  .poster-row.superfã{ border-color: rgba(198,79,242,.65); box-shadow: 0 0 14px -4px var(--superfa-glow); }
+
+  .poster-row .side-icon{ flex-shrink:0; width: var(--row-icon, 20px); height: var(--row-icon, 20px); display:flex; align-items:center; justify-content:center; }
+  .poster-row .side-icon svg{ width:100%; height:100%; }
+  .poster-row.presenteador .side-icon{ color: var(--presenteador); }
+  .poster-row.membro .side-icon{ color: var(--membro); }
+  .poster-row.superfã .side-icon{ color: var(--superfa); }
+
+  .poster-row .info{ flex:1; display:flex; flex-direction:row; align-items:baseline; gap: 8px; min-width:0; }
+  .poster-row .nome{ font-family:'Bungee', sans-serif; font-weight:400; font-size: var(--row-font-nome, 13px); color:#FBEFE1; white-space:nowrap; flex-shrink:0; }
+  .poster-row .texto{ font-size: var(--row-font-texto, 10.5px); color:#C9B9A6; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; flex:1; }
+
+  .poster-actions{
+    display:flex; gap:10px; justify-content:center; margin-top:16px; flex-wrap:wrap;
+  }
+</style>
+</head>
+<body>
+
+<div class="embers" id="embers"></div>
+
+<header>
+  <div class="eyebrow">gerador de arte</div>
+  <h1>MURAL DA TROPA</h1>
+  <p>Cadastra o pessoal, escolhe o nível e o tipo, e gera a imagem final para compartilhar.</p>
+</header>
+
+<div class="wrap">
+
+  <!-- FORM -->
+  <div class="panel">
+    <h2>➕ ADICIONAR</h2>
+
+    <div class="biblioteca-box" id="bibliotecaBox" style="display:none;">
+      <label>⚡ Usar de novo</label>
+      <div class="chips" id="bibliotecaChips"></div>
+    </div>
+
+    <label for="nome">Nome</label>
+    <input type="text" id="nome" placeholder="Ex: Eliton Silva" />
+
+    <label for="nivel">Nível</label>
+    <input type="number" id="nivel" placeholder="Ex: 22" />
+
+    <label>Tipo</label>
+    <div class="tipo-row" id="tipoRow">
+      <div class="tipo-opt" data-tipo="presenteador">Presenteador</div>
+      <div class="tipo-opt" data-tipo="membro">Membro</div>
+      <div class="tipo-opt" data-tipo="superfã">Superfã</div>
+    </div>
+
+    <button class="btn btn-primary" id="saveBtn">Adicionar à lista</button>
+    <button class="btn btn-ghost" id="cancelEdit">Cancelar edição</button>
+  </div>
+
+  <!-- LIST + POSTER -->
+  <div class="panel">
+    <h2>📋 LISTA <span class="count-pill" id="countPill">0</span></h2>
+    <div class="patches" id="patches"></div>
+
+    <div class="poster-section">
+      <h2>🖼️ IMAGEM FINAL</h2>
+
+      <div class="poster-wrap" id="posterWrap">
+        <div class="poster-img-area" id="posterImgArea">
+          <div class="poster-vignette"></div>
+          <div class="poster-img-fade"></div>
+        </div>
+        <div class="poster-embers" id="posterEmbers"></div>
+        <div class="poster-rows" id="posterRows"></div>
+      </div>
+
+      <div class="poster-actions">
+        <button class="btn btn-primary" id="downloadImgBtn" style="width:auto; margin-top:0;">⬇️ Baixar imagem (PNG)</button>
+        <button class="btn btn-danger" id="clearBtn" style="width:auto; margin-top:0;">🗑️ Limpar Lista</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  // ---------- Ícones (SVG inline, cor herdada via currentColor) ----------
+  const ICONS = {
+    gift: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 12 20 22 4 22 4 12"></polyline><rect x="2" y="7" width="20" height="5"></rect><line x1="12" y1="22" x2="12" y2="7"></line><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"></path><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"></path></svg>',
+    arrow: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><polyline points="16 13 12 9 8 13"></polyline><line x1="12" y1="16" x2="12" y2="9"></line></svg>',
+    star: '<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>',
+    crown: '<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M3 8l4.2 3 4.8-6.2L16.8 11 21 8l-2 10H5L3 8z"></path></svg>',
+  };
+
+  const TIPO_ICONS = {
+    presenteador: { left: 'gift', right: 'gift' },
+    membro: { left: 'arrow', right: 'crown' },
+    superfã: { left: 'star', right: 'crown' },
+  };
+
+  // ---------- Brasas de fundo ----------
+  const embersEl = document.getElementById('embers');
+  for (let i = 0; i < 26; i++){
+    const e = document.createElement('div');
+    e.className = 'ember';
+    const size = 2 + Math.random() * 4;
+    e.style.left = Math.random() * 100 + 'vw';
+    e.style.width = size + 'px';
+    e.style.height = size + 'px';
+    e.style.animationDuration = (7 + Math.random() * 9) + 's';
+    e.style.animationDelay = (Math.random() * 10) + 's';
+    embersEl.appendChild(e);
+  }
+
+  // ---------- Estado: lista atual ----------
+  const STORAGE_KEY = 'mural-da-tropa-pessoas';
+  let pessoas = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+  const socket = io();
+
+function upsertPessoaAuto({ nome, nivel, tipo, avatar }) {
+  const existente = pessoas.find(p =>
+    p.nome.toLowerCase() === nome.toLowerCase() && p.tipo === tipo
+  );
+  if (existente) {
+    if (parseInt(existente.nivel) >= nivel) return;
+    existente.nivel = nivel;
+  } else {
+    pessoas.push({ id: Date.now() + Math.random(), nome, nivel, tipo });
+    upsertBiblioteca(nome);
+  }
+  salvar();
+  render();
+}
+
+socket.on('tropa_init', lista => {
+  lista.forEach(upsertPessoaAuto);
+});
+
+socket.on('tropa_add', item => {
+  upsertPessoaAuto(item);
+  showToast(`🔥 ${item.nome} subiu pra nível ${item.nivel} (${item.tipo})`);
+});
+  // ---------- Estado: biblioteca de nomes salvos (reuso rápido) ----------
+  const BIBLIOTECA_KEY = 'mural-da-tropa-biblioteca';
+  let biblioteca = JSON.parse(localStorage.getItem(BIBLIOTECA_KEY) || '[]');
+
+  let tipoSelecionado = 'presenteador';
+  let editandoId = null;
+
+  const nomeInput = document.getElementById('nome');
+  const nivelInput = document.getElementById('nivel');
+  const tipoRow = document.getElementById('tipoRow');
+  const saveBtn = document.getElementById('saveBtn');
+  const cancelEditBtn = document.getElementById('cancelEdit');
+  const patchesEl = document.getElementById('patches');
+  const countPill = document.getElementById('countPill');
+  const toast = document.getElementById('toast');
+  const bibliotecaBox = document.getElementById('bibliotecaBox');
+  const bibliotecaChips = document.getElementById('bibliotecaChips');
+
+  tipoRow.addEventListener('click', (e) => {
+    const opt = e.target.closest('.tipo-opt');
+    if (!opt) return;
+    tipoSelecionado = opt.dataset.tipo;
+    renderTipoOptions();
+  });
+
+  function renderTipoOptions(){
+    [...tipoRow.children].forEach(el => {
+      el.classList.toggle('active', el.dataset.tipo === tipoSelecionado);
+    });
+  }
+
+  function salvar(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(pessoas)); }
+  function salvarBiblioteca(){ localStorage.setItem(BIBLIOTECA_KEY, JSON.stringify(biblioteca)); }
+
+  function showToast(msg){
+    toast.textContent = msg;
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 1600);
+  }
+
+  // ---------- Biblioteca: salvar / usar / remover ----------
+  function upsertBiblioteca(nome){
+    if (!nome) return;
+    const idx = biblioteca.findIndex(b => b.nome.toLowerCase() === nome.toLowerCase());
+    if (idx === -1){
+      biblioteca.push({ nome });
+      salvarBiblioteca();
+      renderBiblioteca();
+    }
+  }
+
+  function usarDaBiblioteca(nome){
+    nomeInput.value = nome;
+    nivelInput.focus();
+  }
+
+  function removerDaBiblioteca(nome, ev){
+    ev.stopPropagation();
+    biblioteca = biblioteca.filter(b => b.nome !== nome);
+    salvarBiblioteca();
+    renderBiblioteca();
+  }
+
+  function renderBiblioteca(){
+    if (!biblioteca.length){
+      bibliotecaBox.style.display = 'none';
+      return;
+    }
+    bibliotecaBox.style.display = 'block';
+    const ordenada = [...biblioteca].sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+    bibliotecaChips.innerHTML = ordenada.map(b => `
+      <div class="chip" onclick='usarDaBiblioteca(${JSON.stringify(b.nome)})'>
+        <span>${b.nome}</span>
+        <span class="x" onclick='removerDaBiblioteca(${JSON.stringify(b.nome)}, event)' title="Remover da biblioteca">✕</span>
+      </div>
+    `).join('');
+  }
+
+  // ---------- Adicionar / editar pessoa na lista atual ----------
+  saveBtn.addEventListener('click', () => {
+    const nome = nomeInput.value.trim();
+    const nivel = nivelInput.value.trim();
+
+    if (!nome){ nomeInput.focus(); return; }
+
+    if (editandoId){
+      const p = pessoas.find(p => p.id === editandoId);
+      Object.assign(p, { nome, nivel, tipo: tipoSelecionado });
+      editandoId = null;
+      saveBtn.textContent = 'Adicionar à lista';
+      cancelEditBtn.style.display = 'none';
+      showToast('Atualizado ✓');
+    } else {
+      pessoas.push({ id: Date.now(), nome, nivel, tipo: tipoSelecionado });
+      showToast('Adicionado ✓');
+    }
+
+    upsertBiblioteca(nome);
+
+    nomeInput.value = ''; nivelInput.value = '';
+    nomeInput.focus();
+    salvar();
+    render();
+  });
+
+  cancelEditBtn.addEventListener('click', () => {
+    editandoId = null;
+    nomeInput.value = ''; nivelInput.value = '';
+    saveBtn.textContent = 'Adicionar à lista';
+    cancelEditBtn.style.display = 'none';
+  });
+
+  function editar(id){
+    const p = pessoas.find(p => p.id === id);
+    if (!p) return;
+    editandoId = id;
+    nomeInput.value = p.nome;
+    nivelInput.value = p.nivel;
+    tipoSelecionado = p.tipo;
+    renderTipoOptions();
+    saveBtn.textContent = 'Salvar alteração';
+    cancelEditBtn.style.display = 'block';
+    nomeInput.focus();
+  }
+
+  function excluir(id){
+    pessoas = pessoas.filter(p => p.id !== id);
+    salvar();
+    render();
+  }
+
+  document.getElementById('clearBtn').addEventListener('click', () => {
+    if (!pessoas.length) return;
+    if (confirm('Apagar todo mundo da lista? (a biblioteca de nomes não é afetada)')){
+      pessoas = [];
+      salvar();
+      render();
+    }
+  });
+
+  const ORDEM_TIPOS = [
+    { key: 'presenteador', label: 'Presenteadores' },
+    { key: 'membro', label: 'Membros' },
+    { key: 'superfã', label: 'Superfãs' },
+  ];
+
+  function render(){
+    renderTipoOptions();
+    countPill.textContent = pessoas.length;
+
+    if (!pessoas.length){
+      patchesEl.innerHTML = `<div class="empty">Ninguém cadastrado ainda. Adicione alguém ao lado 👈</div>`;
+      renderPoster();
+      return;
+    }
+
+    let html = '';
+    ORDEM_TIPOS.forEach(grupo => {
+      // Aqui filtramos por grupo e ORDENAMOS pelo nível do maior para o menor
+      const doGrupo = pessoas
+        .filter(p => p.tipo === grupo.key)
+        .sort((a, b) => (parseInt(b.nivel) || 0) - (parseInt(a.nivel) || 0));
+
+      if (!doGrupo.length) return;
+      html += `<div class="group-title">${grupo.label} · ${doGrupo.length}</div>`;
+      doGrupo.forEach(p => {
+        const icons = TIPO_ICONS[p.tipo];
+        const nivelTxt = p.nivel ? `atingiu o nível ${p.nivel} de ${p.tipo}` : `é ${p.tipo}`;
+        html += `
+          <div class="patch ${p.tipo}">
+            <span class="side-icon">${ICONS[icons.left]}</span>
+            <div class="info">
+              <span class="nome">${p.nome}</span>
+              <span class="texto">${nivelTxt}</span>
+            </div>
+            <div class="patch-actions">
+              <div class="icon-btn" onclick="editar(${p.id})" title="Editar">✏️</div>
+              <div class="icon-btn" onclick="excluir(${p.id})" title="Excluir">🗑️</div>
+            </div>
+            <span class="side-icon">${ICONS[icons.right]}</span>
+          </div>`;
+      });
+    });
+    patchesEl.innerHTML = html;
+    renderPoster();
+  }
+
+  // ---------- Imagem final (poster) ----------
+  const posterWrap = document.getElementById('posterWrap');
+  const posterImgArea = document.getElementById('posterImgArea');
+  const posterRows = document.getElementById('posterRows');
+  const posterEmbersEl = document.getElementById('posterEmbers');
+  const downloadImgBtn = document.getElementById('downloadImgBtn');
+
+  // ---------- Pré-carrega a foto em resolução PLENA antes de qualquer captura ----------
+  // Problema que isso resolve: o navegador escolhe a resolução de decodificação
+  // de uma background-image com base no tamanho em que ela está sendo EXIBIDA
+  // na tela (o card pequeno, uns 380-420px). Se a gente só usa background-image
+  // direto no CSS, o html2canvas às vezes reaproveita essa versão "amassada"
+  // do cache em vez do arquivo original — e a foto sai borrada no PNG final,
+  // mesmo o arquivo original tendo qualidade boa.
+  // Solução: carregar o arquivo manualmente com new Image(), forçar o decode()
+  // em resolução nativa, e só então aplicar como fundo. Assim o navegador é
+  // obrigado a manter a versão em alta resolução decodificada e disponível
+  // pro html2canvas usar na hora de gerar o PNG.
+  const FOTO_URL = './assets/foto_da_tropa_hd.jpg';
+  let fotoPronta = false;
+
+  function carregarFotoEmAltaResolucao(){
+    const img = new Image();
+    img.src = FOTO_URL;
+    // decode() força o navegador a processar a imagem em resolução nativa
+    // ANTES de resolver a promise — diferente de só esperar o evento "load".
+    const decodePromise = img.decode ? img.decode() : Promise.resolve();
+    decodePromise
+      .catch(() => {}) // se decode() falhar (ex: navegador antigo), segue o fluxo
+      .then(() => {
+        posterImgArea.style.backgroundImage = `url('${FOTO_URL}')`;
+        fotoPronta = true;
+      });
+  }
+  carregarFotoEmAltaResolucao();
+
+  // ---------- Ajuste dinâmico pra sempre caber tudo ----------
+  // Em vez de "adivinhar" o encolhimento pela quantidade de pessoas, aqui a
+  // gente MEDE o espaço de verdade depois de desenhar as linhas:
+  //   1) primeiro tenta em tamanho cheio;
+  //   2) se não coube, encolhe só as linhas (fonte/respiro/ícone) até um
+  //      piso legível;
+  //   3) só se ainda assim não couber, tira um pouco de espaço do ursinho
+  //      (repetindo o passo 2 a cada corte, porque sobrou mais espaço pras
+  //      linhas) — assim a foto só encolhe quando é realmente necessário.
+  const POSTER_BASE = { pad: 8, gap: 7, fontNome: 13, fontTexto: 11, icon: 18 };
+  const ROW_ESCALA_MIN = 0.42;   // linhas nunca ficam menores que 42% do tamanho cheio
+  const FOTO_MAX = 54, FOTO_MIN = 18, FOTO_PASSO = 4;
+
+  function aplicarTamanhoPoster(fotoPct, escala){
+    const root = document.documentElement.style;
+    root.setProperty('--photo-basis', fotoPct + '%');
+    root.setProperty('--row-pad-v', (POSTER_BASE.pad * escala).toFixed(2) + 'px');
+    root.setProperty('--row-gap', (POSTER_BASE.gap * escala).toFixed(2) + 'px');
+    root.setProperty('--row-font-nome', (POSTER_BASE.fontNome * escala).toFixed(2) + 'px');
+    root.setProperty('--row-font-texto', (POSTER_BASE.fontTexto * escala).toFixed(2) + 'px');
+    root.setProperty('--row-icon', (POSTER_BASE.icon * escala).toFixed(2) + 'px');
+  }
+
+  function ajustarPosterParaCaber(qtd){
+    if (qtd === 0){ aplicarTamanhoPoster(FOTO_MAX, 1); return; }
+
+    let foto = FOTO_MAX;
+    let escala = 1;
+    aplicarTamanhoPoster(foto, escala);
+
+    for (let tentativa = 0; tentativa < 24; tentativa++){
+      const disponivel = posterRows.clientHeight;
+      const necessario = posterRows.scrollHeight;
+      if (necessario <= disponivel + 0.5) break; // coube tudo
+
+      const escalaNecessaria = disponivel / necessario;
+      const novaEscala = Math.max(ROW_ESCALA_MIN, escala * escalaNecessaria);
+
+      if (novaEscala < escala - 0.001){
+        escala = novaEscala;
+        aplicarTamanhoPoster(foto, escala);
+        continue;
+      }
+
+      // linhas já no piso — cede um pouco de espaço da foto e tenta de novo
+      if (foto > FOTO_MIN){
+        foto = Math.max(FOTO_MIN, foto - FOTO_PASSO);
+        escala = 1;
+        aplicarTamanhoPoster(foto, escala);
+        continue;
+      }
+
+      break; // já no mínimo de tudo; overflow:hidden evita quebrar o layout
+    }
+  }
+
+  function gerarBrasasDoPoster(qtd = 16){
+    posterEmbersEl.innerHTML = '';
+    for (let i = 0; i < qtd; i++){
+      const d = document.createElement('div');
+      d.className = 'poster-ember';
+      const size = 1.5 + Math.random() * 3;
+      const top = 60 + Math.random() * 40;
+      const left = Math.random() * 100;
+      d.style.top = top + '%';
+      d.style.left = left + '%';
+      d.style.width = size + 'px';
+      d.style.height = size + 'px';
+      d.style.opacity = (0.18 + Math.random() * 0.32).toFixed(2);
+      d.style.animationDuration = (5 + Math.random() * 6).toFixed(1) + 's';
+      d.style.animationDelay = (Math.random() * 5).toFixed(1) + 's';
+      posterEmbersEl.appendChild(d);
+    }
+  }
+
+  function renderPoster(){
+    // Liga/desliga a vinheta e o fade escuro conforme tem ou não gente na lista
+    posterWrap.classList.toggle('tem-gente', pessoas.length > 0);
+
+    const linhas = [];
+    ORDEM_TIPOS.forEach(grupo => {
+      pessoas
+        .filter(p => p.tipo === grupo.key)
+        .sort((a, b) => (parseInt(b.nivel) || 0) - (parseInt(a.nivel) || 0))
+        .forEach(p => linhas.push(p));
+    });
+
+    posterRows.innerHTML = linhas.map(p => {
+      const icons = TIPO_ICONS[p.tipo];
+      const nivelTxt = p.nivel ? `atingiu o nível ${p.nivel} de ${p.tipo}` : `é ${p.tipo}`;
+      return `
+        <div class="poster-row ${p.tipo}">
+          <span class="side-icon">${ICONS[icons.left]}</span>
+          <div class="info">
+            <span class="nome">${p.nome}</span>
+            <span class="texto">${nivelTxt}</span>
+          </div>
+          <span class="side-icon">${ICONS[icons.right]}</span>
+        </div>`;
+    }).join('');
+
+    // Só dá pra medir o espaço depois que as linhas já estão no DOM.
+    ajustarPosterParaCaber(linhas.length);
+  }
+
+  function arredondarCanvas(canvasOriginal, raioPx){
+    const out = document.createElement('canvas');
+    out.width = canvasOriginal.width;
+    out.height = canvasOriginal.height;
+    const ctx = out.getContext('2d');
+
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, out.width, out.height);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(raioPx, 0);
+    ctx.arcTo(out.width, 0, out.width, out.height, raioPx);
+    ctx.arcTo(out.width, out.height, 0, out.height, raioPx);
+    ctx.arcTo(0, out.height, 0, 0, raioPx);
+    ctx.arcTo(0, 0, out.width, 0, raioPx);
+    ctx.closePath();
+    ctx.clip();
+    ctx.drawImage(canvasOriginal, 0, 0);
+    ctx.restore();
+
+    return out;
+  }
+
+  function gerarImagemFinal(){
+    downloadImgBtn.textContent = 'Gerando...';
+    const larguraAlvo = 1080;
+    const escala = larguraAlvo / posterWrap.clientWidth;
+    const raioCss = 18;
+    // imageTimeout: 0 = sem timeout artificial; deixa o html2canvas esperar
+    // o quanto for preciso pra garantir que a imagem de fundo (já decodificada
+    // em alta resolução acima) seja capturada corretamente.
+    html2canvas(posterWrap, {
+      backgroundColor: '#000000',
+      scale: escala,
+      useCORS: true,
+      imageTimeout: 0,
+    }).then(canvas => {
+      const canvasFinal = arredondarCanvas(canvas, raioCss * escala);
+      const link = document.createElement('a');
+      link.download = 'tropa.png';
+      link.href = canvasFinal.toDataURL('image/png');
+      link.click();
+      downloadImgBtn.textContent = '⬇️ Baixar imagem (PNG)';
+      showToast('Imagem gerada ✓');
+    }).catch(() => {
+      downloadImgBtn.textContent = '⬇️ Baixar imagem (PNG)';
+      alert('Não consegui gerar a imagem. Tenta de novo.');
+    });
+  }
+
+  downloadImgBtn.addEventListener('click', () => {
+    if (!pessoas.length){
+      alert('Adicione pelo menos uma pessoa na lista primeiro.');
+      return;
+    }
+    // Garante que a foto em alta resolução já foi decodificada antes de
+    // capturar; se o usuário clicar muito rápido (raro, mas possível),
+    // espera até 1.5s por ela em vez de arriscar capturar uma versão pior.
+    if (fotoPronta){
+      gerarImagemFinal();
+    } else {
+      let tentativas = 0;
+      const espera = setInterval(() => {
+        tentativas++;
+        if (fotoPronta || tentativas > 15){
+          clearInterval(espera);
+          gerarImagemFinal();
+        }
+      }, 100);
+    }
+  });
+
+  renderTipoOptions();
+  renderBiblioteca();
+  gerarBrasasDoPoster();
+  render();
+
+  const socket = io();
+socket.on('tropa_add', ({ nome, nivel, tipo, avatar }) => {
+  // evita duplicar se a pessoa já está na lista com nível igual ou maior
+  const existente = pessoas.find(p => p.nome.toLowerCase() === nome.toLowerCase() && p.tipo === tipo);
+  if (existente && parseInt(existente.nivel) >= nivel) return;
+
+  if (existente) {
+    existente.nivel = nivel;
+  } else {
+    pessoas.push({ id: Date.now(), nome, nivel, tipo, avatar });
+  }
+  salvar();
+  render();
+  showToast(`🔥 ${nome} subiu pra nível ${nivel} (${tipo})`);
+});
+</script>
+</body>
+</html>

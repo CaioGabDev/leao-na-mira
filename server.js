@@ -42,6 +42,17 @@ function broadcastGlobalStats() {
   io.emit('global_stats', db.getGlobalStats());
 }
 
+function processarBadges(data) {
+  const uniqueId = data.user?.uniqueId || data.uniqueId;
+  const nickname = data.user?.nickname || data.nickname;
+  const avatar = getAvatar(data);
+  const badges = data.user?.userBadges;
+  if (!badges) return;
+
+  const subidas = db.checkLevelUp(uniqueId, nickname, avatar, badges);
+  subidas.forEach(item => io.emit('tropa_add', item));
+}
+
 function forceReconnect(motivo) {
   if (reconnecting) return;
   reconnecting = true;
@@ -128,6 +139,7 @@ connection.on('like', data => {
 });
 
 connection.on('chat', data => {
+  processarBadges(data);
   if (myId !== activeConnectionId) return;
   const uniqueId = data.user?.displayId || data.user?.uniqueId || data.uniqueId;
   const nickname = data.user?.nickname || data.nickname;
@@ -159,6 +171,7 @@ connection.on('social', data => {
 });
 
 connection.on('member', data => {
+  processarBadges(data);
   if (myId !== activeConnectionId) return;
   const uniqueId = data.user?.displayId || data.user?.uniqueId || data.uniqueId;
   const nickname = data.user?.nickname || data.nickname;
@@ -175,6 +188,7 @@ connection.on('roomUser', data => {
 });
 
 connection.on('gift', async data => {
+  processarBadges(data);
   if (myId !== activeConnectionId) return;
   if (data.gift?.type === 1 && !data.repeatEnd) return;
   lastEventAt = Date.now();
@@ -242,6 +256,7 @@ io.on('connection', socket => {
   socket.emit('live_status', { online: liveOnline });
   socket.emit('live_feed_init', liveFeed);
   socket.emit('global_stats', db.getGlobalStats());
+  socket.emit('tropa_init', db.getTropa());
 });
 
 

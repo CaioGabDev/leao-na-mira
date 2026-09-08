@@ -15,6 +15,7 @@ if (fs.existsSync(FILE)) {
     console.error('Erro ao ler live.json, começando do zero:', e.message);
   }
 }
+state.tropa = state.tropa || [];
 
 state.global = state.global || {
   totalDiamonds: 0,
@@ -45,7 +46,9 @@ function ensureUser(uniqueId, nickname, avatar) {
       uniqueId, nickname, avatar: avatar || null,
       likes: 0, gifts_count: 0, gifts_value: 0, powerups: {},
       comments: 0, followed: false, shared: false,
+      gifterLevel: 0, memberLevel: 0,
       firstSeenAt: Date.now()
+      
     };
     state.global.uniqueViewers += 1;
   } else {
@@ -66,6 +69,54 @@ function addLikes(uniqueId, nickname, count, avatar) {
   if (!pendingLikes[uniqueId]) pendingLikes[uniqueId] = { nickname, count: 0 };
   pendingLikes[uniqueId].nickname = nickname;
   pendingLikes[uniqueId].count += count;
+}
+
+function addToTropa(nome, nivel, tipo, avatar) {
+  const existente = state.tropa.find(p =>
+    p.nome.toLowerCase() === nome.toLowerCase() && p.tipo === tipo
+  );
+  if (existente) {
+    if (nivel <= existente.nivel) return null; // nada novo, ignora
+    existente.nivel = nivel;
+    existente.avatar = avatar || existente.avatar;
+    dirty = true;
+    return existente;
+  }
+  const novo = { id: Date.now() + Math.random(), nome, nivel, tipo, avatar: avatar || null };
+  state.tropa.push(novo);
+  dirty = true;
+  return novo;
+}
+
+function checkLevelUp(uniqueId, nickname, avatar, badges) {
+  ensureUser(uniqueId, nickname, avatar);
+  const u = state.users[uniqueId];
+  const resultados = [];
+
+  const presenteador = badges?.find(b => b.badgeSceneType === 8)?.level;
+  const membro = badges?.find(b => b.badgeSceneType === 10)?.level;
+
+  if (presenteador && presenteador > u.gifterLevel) {
+    u.gifterLevel = presenteador;
+    if (presenteador >= 10) {
+      const item = addToTropa(nickname, presenteador, 'presenteador', avatar);
+      if (item) resultados.push(item);
+    }
+  }
+  if (membro && membro > u.memberLevel) {
+    u.memberLevel = membro;
+    if (membro >= 10) {
+      const item = addToTropa(nickname, membro, 'membro', avatar);
+      if (item) resultados.push(item);
+    }
+  }
+
+  dirty = true;
+  return resultados;
+}
+
+function getTropa() {
+  return state.tropa;
 }
 
 function flushLikeBuffer() {
@@ -169,6 +220,7 @@ function getUserProfile(uniqueId) {
 function resetAll() {
   state.users = {};
   state.actions = [];
+  state.tropa = [];
   state.global = {
     totalDiamonds: 0, totalLikes: 0, totalComments: 0, totalFollows: 0, totalShares: 0,
     peakViewers: 0, currentViewers: 0, uniqueViewers: 0, startedAt: Date.now()
@@ -232,4 +284,4 @@ function getGlobalStats() {
   };
 }
 
-module.exports = { addLikes, addGift, addPowerUp, getRanking, getUserProfile, resetAll, getGlobalStats, updateViewerCount, addComment, addFollow, addShare, markLiveOnline, markLiveOffline };
+module.exports = { addLikes, addGift, addPowerUp, getRanking, getUserProfile, resetAll, getGlobalStats, updateViewerCount, addComment, addFollow, addShare, markLiveOnline, markLiveOffline, checkLevelUp };
