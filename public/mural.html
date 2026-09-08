@@ -868,8 +868,7 @@ socket.on('tropa_add', item => {
   renderBiblioteca();
   gerarBrasasDoPoster();
   render();
-
-  const socket = io();
+  
 socket.on('tropa_add', ({ nome, nivel, tipo, avatar }) => {
   // evita duplicar se a pessoa já está na lista com nível igual ou maior
   const existente = pessoas.find(p => p.nome.toLowerCase() === nome.toLowerCase() && p.tipo === tipo);
