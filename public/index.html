@@ -214,6 +214,55 @@
   }
   .load-more-btn:hover { border-color: var(--gold); color: var(--ink); }
 
+  /* Batalhas (PK) */
+  .battle-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px; }
+  .battle-card {
+    background: var(--card-2); border: 1px solid var(--line); border-radius: 12px;
+    padding: 10px 6px; text-align: center;
+  }
+  .battle-card .num { font-family: 'Bungee', sans-serif; font-size: 19px; color: var(--gold); }
+  .battle-card .lbl { font-size: 10px; color: var(--ink-dim); margin-top: 3px; }
+  .battle-card.win .num { color: #6ee787; }
+  .battle-card.loss .num { color: #ff6b6b; }
+
+  .battle-live {
+    display: none; align-items: center; gap: 10px; margin-bottom: 14px;
+    background: linear-gradient(90deg, rgba(255,45,45,.16), rgba(255,122,26,.10));
+    border: 1px solid rgba(255,122,26,.55); border-radius: 12px; padding: 10px 14px;
+  }
+  .battle-live.show { display: flex; }
+  .battle-live .vs { font-family: 'Bungee', sans-serif; font-size: 15px; }
+  .battle-live .placar { margin-left: auto; font-family: 'Bungee', sans-serif; font-size: 16px; color: var(--gold); }
+
+  .battle-highlights { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+  .battle-tag {
+    background: rgba(255,122,26,0.10); border: 1px solid var(--line); border-radius: 999px;
+    padding: 6px 12px; font-size: 12.5px; color: var(--ink-dim);
+  }
+  .battle-tag b { color: var(--ink); }
+
+  .rival-row {
+    display: grid; grid-template-columns: 32px 1fr auto; align-items: center; gap: 10px;
+    background: linear-gradient(180deg, rgba(40,18,10,0.55), rgba(15,7,5,0.55));
+    border: 1px solid var(--line); border-radius: 999px; padding: 8px 16px;
+  }
+  .rival-row .placar-mini { font-size: 13px; font-weight: 700; white-space: nowrap; }
+  .rival-row .v { color: #6ee787; }
+  .rival-row .d { color: #ff6b6b; }
+  .rival-row .e { color: var(--ink-dim); }
+  .rival-row .diamantes { display: block; font-size: 11px; color: var(--ink-dim); font-weight: 600; text-align: right; }
+
+  .battle-item {
+    background: var(--card-2); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .battle-item.vitoria { border-left: 3px solid #6ee787; }
+  .battle-item.derrota { border-left: 3px solid #ff6b6b; }
+  .battle-item.empate { border-left: 3px solid var(--ink-faint); }
+  .battle-item .quem { font-size: 13.5px; font-weight: 700; }
+  .battle-item .quando { font-size: 11.5px; color: var(--ink-dim); }
+  .battle-item .score { margin-left: auto; font-size: 13px; font-weight: 700; }
+
   /* History */
   .history-toggle {
     display: flex; align-items: center; justify-content: space-between; gap: 10px;
@@ -326,6 +375,23 @@
       </div>
 
       <button class="load-more-btn" id="loadMoreBtn" style="display:none;">Carregar mais</button>
+    </section>
+
+    <section class="panel" id="battleSection" style="display:none;">
+      <div class="panel-title">⚔️ Batalhas</div>
+
+      <div class="battle-live" id="battleLive"></div>
+      <div class="battle-summary" id="battleSummary"></div>
+      <div class="battle-highlights" id="battleHighlights"></div>
+
+      <div class="panel-title" style="margin-top:4px;">Adversários</div>
+      <div class="list" id="rivalList"></div>
+
+      <div class="history-toggle" id="battleHistToggle" style="margin-top:16px;">
+        <div class="panel-title" style="margin:0;">Últimas batalhas</div>
+        <span class="caret">▾</span>
+      </div>
+      <div class="history-list" id="battleHistory"></div>
     </section>
 
     <section class="panel" id="historySection" style="display:none;">
@@ -626,6 +692,93 @@
 
     loadMoreBtn.style.display = list.length > visibleCount ? 'block' : 'none';
   }
+
+  // ---------- BATALHAS (PK) ----------
+  const battleSection = document.getElementById('battleSection');
+  const battleLiveEl = document.getElementById('battleLive');
+  const battleSummaryEl = document.getElementById('battleSummary');
+  const battleHighlightsEl = document.getElementById('battleHighlights');
+  const rivalListEl = document.getElementById('rivalList');
+  const battleHistoryEl = document.getElementById('battleHistory');
+  const battleHistToggle = document.getElementById('battleHistToggle');
+
+  battleHistToggle.addEventListener('click', () => {
+    const abrir = !battleHistoryEl.classList.contains('show');
+    battleHistoryEl.classList.toggle('show', abrir);
+    battleHistToggle.classList.toggle('open', abrir);
+  });
+
+  function placarDaBatalha(b) {
+    return `${(b.meuScore || 0).toLocaleString('pt-BR')} × ${(b.scoreOponente || 0).toLocaleString('pt-BR')}`;
+  }
+
+  function renderBattleLive(b) {
+    if (!b) { battleLiveEl.classList.remove('show'); return; }
+    const nome = esc(b.oponente?.nickname || b.oponente?.uniqueId || 'adversário');
+    battleLiveEl.classList.add('show');
+    battleLiveEl.innerHTML = `
+      <img class="row-avatar" src="${b.oponente?.avatar || FALLBACK_AVATAR}"
+           onerror="this.src='${FALLBACK_AVATAR}'">
+      <span class="vs">AO VIVO vs ${nome}</span>
+      <span class="placar">${placarDaBatalha(b)}</span>
+    `;
+  }
+
+  function renderBattles(s) {
+    // painel só aparece quando existe batalha pra mostrar
+    if (!s.total && !s.emAndamento) { battleSection.style.display = 'none'; return; }
+    battleSection.style.display = 'block';
+
+    renderBattleLive(s.emAndamento);
+
+    battleSummaryEl.innerHTML = `
+      <div class="battle-card"><div class="num">${s.total}</div><div class="lbl">Batalhas</div></div>
+      <div class="battle-card win"><div class="num">${s.vitorias}</div><div class="lbl">Vitórias</div></div>
+      <div class="battle-card loss"><div class="num">${s.derrotas}</div><div class="lbl">Derrotas</div></div>
+      <div class="battle-card"><div class="num">${s.aproveitamento}%</div><div class="lbl">Aproveit.</div></div>
+    `;
+
+    const tags = [];
+    if (s.maisEnfrentado) tags.push(`🔁 Mais enfrentado: <b>${esc(s.maisEnfrentado.nickname)}</b> (${s.maisEnfrentado.batalhas}x)`);
+    if (s.maisVencido?.vitorias) tags.push(`🏆 Mais venceu: <b>${esc(s.maisVencido.nickname)}</b> (${s.maisVencido.vitorias})`);
+    if (s.carrasco?.derrotas) tags.push(`💀 Quem mais te ganhou: <b>${esc(s.carrasco.nickname)}</b> (${s.carrasco.derrotas})`);
+    if (s.empates) tags.push(`🤝 Empates: <b>${s.empates}</b>`);
+    battleHighlightsEl.innerHTML = tags.map(t => `<div class="battle-tag">${t}</div>`).join('');
+
+    rivalListEl.innerHTML = s.rivais.length
+      ? s.rivais.map(r => `
+          <div class="rival-row">
+            <img class="row-avatar" src="${r.avatar || FALLBACK_AVATAR}" onerror="this.src='${FALLBACK_AVATAR}'">
+            <div class="name">${esc(r.nickname)}
+              <span class="badge-tag">${r.batalhas}x</span>
+            </div>
+            <div>
+              <div class="placar-mini">
+                <span class="v">${r.vitorias}V</span> ·
+                <span class="d">${r.derrotas}D</span> ·
+                <span class="e">${r.empates}E</span>
+              </div>
+              <span class="diamantes">💎 ${r.diamantesFeitos.toLocaleString('pt-BR')} × ${r.diamantesTomados.toLocaleString('pt-BR')}</span>
+            </div>
+          </div>
+        `).join('')
+      : `<div class="modal-empty">Nenhuma batalha registrada ainda.</div>`;
+
+    const ICONE = { vitoria: '🏆', derrota: '💀', empate: '🤝' };
+    battleHistoryEl.innerHTML = s.ultimas.map(b => `
+      <div class="battle-item ${b.resultado}">
+        <span>${ICONE[b.resultado] || '⚔️'}</span>
+        <div>
+          <div class="quem">${esc(b.oponente?.nickname || '?')}</div>
+          <div class="quando">${new Date(b.endedAt).toLocaleString('pt-BR')} · ${formatUptime(b.duracaoSegundos)}</div>
+        </div>
+        <span class="score">${placarDaBatalha(b)}</span>
+      </div>
+    `).join('');
+  }
+
+  socket.on('battle_stats', renderBattles);
+  socket.on('battle_live', renderBattleLive);
 
   // ---------- HISTÓRICO DE LIVES ----------
   const historySection = document.getElementById('historySection');

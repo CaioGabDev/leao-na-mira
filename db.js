@@ -17,6 +17,8 @@ if (fs.existsSync(FILE)) {
 }
 state.tropa = state.tropa || [];
 state.sessions = state.sessions || []; // histórico de lives já finalizadas
+state.battles = state.battles || [];   // batalhas (PK) já encerradas
+state.currentBattle = state.currentBattle || null; // batalha rolando agora
 
 state.global = state.global || {
   totalDiamonds: 0,
@@ -281,6 +283,8 @@ function resetAll() {
   state.actions = [];
   state.tropa = [];
   state.sessions = [];
+  state.battles = [];
+  state.currentBattle = null;
   state.currentSessionSnapshot = null;
   state.global = {
     totalDiamonds: 0, totalLikes: 0, totalComments: 0, totalFollows: 0, totalShares: 0,
@@ -459,6 +463,133 @@ function markLiveOffline() {
   dirty = true;
 }
 
+// ---------- BATALHAS (PK / link mic) ----------
+const MAX_BATALHAS = 500;
+
+function iniciarBatalha(battleId, oponente) {
+  // o TikTok repete o evento de abertura; não recomeça a mesma batalha
+  if (state.currentBattle && state.currentBattle.battleId === battleId) {
+    return state.currentBattle;
+  }
+  state.currentBattle = {
+    battleId,
+    startedAt: Date.now(),
+    oponente, // { uniqueId, nickname, avatar }
+    meuScore: 0,
+    scoreOponente: 0
+  };
+  dirty = true;
+  return state.currentBattle;
+}
+
+function atualizarPlacarBatalha(battleId, meuScore, scoreOponente) {
+  const b = state.currentBattle;
+  if (!b) return null;
+  if (battleId && b.battleId !== battleId) return null;
+  b.meuScore = meuScore;
+  b.scoreOponente = scoreOponente;
+  dirty = true;
+  return b;
+}
+
+function finalizarBatalha(battleId, dados = {}) {
+  const b = state.currentBattle;
+  if (!b) return null;
+  if (battleId && b.battleId !== battleId) return null;
+
+  // o evento de fim costuma chegar mais de uma vez
+  if (state.battles.some(x => x.battleId === b.battleId)) {
+    state.currentBattle = null;
+    dirty = true;
+    return null;
+  }
+
+  const meuScore = dados.meuScore ?? b.meuScore;
+  const scoreOponente = dados.scoreOponente ?? b.scoreOponente;
+  const resultado = dados.resultado
+    || (meuScore > scoreOponente ? 'vitoria'
+      : meuScore < scoreOponente ? 'derrota' : 'empate');
+
+  const registro = {
+    battleId: b.battleId,
+    startedAt: b.startedAt,
+    endedAt: Date.now(),
+    duracaoSegundos: Math.max(0, Math.round((Date.now() - b.startedAt) / 1000)),
+    oponente: b.oponente,
+    meuScore,
+    scoreOponente,
+    resultado
+  };
+
+  state.battles.push(registro);
+  if (state.battles.length > MAX_BATALHAS) state.battles.shift();
+  state.currentBattle = null;
+  dirty = true;
+  saveToDisk();
+  return registro;
+}
+
+// Se a live cair no meio da batalha, não deixa uma batalha fantasma pendurada.
+function cancelarBatalhaEmAndamento() {
+  if (!state.currentBattle) return;
+  state.currentBattle = null;
+  dirty = true;
+}
+
+function getBattleStats() {
+  const batalhas = state.battles;
+  const conta = r => batalhas.filter(b => b.resultado === r).length;
+  const vitorias = conta('vitoria');
+  const derrotas = conta('derrota');
+  const empates = conta('empate');
+
+  // agrupa por adversário
+  const porRival = {};
+  batalhas.forEach(b => {
+    const id = b.oponente?.uniqueId || b.oponente?.nickname || '?';
+    if (!porRival[id]) {
+      porRival[id] = {
+        uniqueId: id,
+        nickname: b.oponente?.nickname || id,
+        avatar: b.oponente?.avatar || null,
+        batalhas: 0, vitorias: 0, derrotas: 0, empates: 0,
+        diamantesFeitos: 0, diamantesTomados: 0,
+        ultimaEm: 0
+      };
+    }
+    const r = porRival[id];
+    r.batalhas += 1;
+    if (b.resultado === 'vitoria') r.vitorias += 1;
+    else if (b.resultado === 'derrota') r.derrotas += 1;
+    else r.empates += 1;
+    r.diamantesFeitos += b.meuScore || 0;
+    r.diamantesTomados += b.scoreOponente || 0;
+    if (b.endedAt > r.ultimaEm) r.ultimaEm = b.endedAt;
+    if (b.oponente?.avatar) r.avatar = b.oponente.avatar;
+    if (b.oponente?.nickname) r.nickname = b.oponente.nickname;
+  });
+
+  const rivais = Object.values(porRival)
+    .sort((a, b) => b.batalhas - a.batalhas || b.vitorias - a.vitorias);
+
+  return {
+    total: batalhas.length,
+    vitorias,
+    derrotas,
+    empates,
+    // % só faz sentido sobre batalhas decididas
+    aproveitamento: (vitorias + derrotas)
+      ? Math.round((vitorias / (vitorias + derrotas)) * 100)
+      : 0,
+    rivais,
+    maisEnfrentado: rivais[0] || null,
+    maisVencido: [...rivais].sort((a, b) => b.vitorias - a.vitorias)[0] || null,
+    carrasco: [...rivais].sort((a, b) => b.derrotas - a.derrotas)[0] || null,
+    ultimas: [...batalhas].sort((a, b) => b.endedAt - a.endedAt).slice(0, 30),
+    emAndamento: state.currentBattle
+  };
+}
+
 function getGlobalStats() {
   const uptimeSeconds = state.global.liveActive
     ? Math.floor((Date.now() - state.global.startedAt) / 1000)
@@ -475,5 +606,7 @@ module.exports = {
   addLikes, addGift, addPowerUp, getRanking, getUserProfile, resetAll,
   getGlobalStats, updateViewerCount, addComment, addFollow, addShare,
   markLiveOnline, markLiveOffline, checkLevelUp, getTropa, limparTropa, getSessions,
-  heartbeat
+  heartbeat,
+  iniciarBatalha, atualizarPlacarBatalha, finalizarBatalha,
+  cancelarBatalhaEmAndamento, getBattleStats
 };

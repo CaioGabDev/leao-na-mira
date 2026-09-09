@@ -114,6 +114,43 @@ function broadcastGlobalStats() {
   io.emit('global_stats', db.getGlobalStats());
 }
 
+// ---------- BATALHAS (PK / link mic) ----------
+// Ações do evento linkMicBattle (enum LinkMicBattleBattleAction da lib)
+const BATALHA_ABRIU = 4;      // OPEN
+const BATALHA_TERMINOU = 5;   // FINISH
+const BATALHA_CORTADA = 6;    // CUT_SHORT
+// Resultado por anfitrião (enum BattleResultResult)
+const RESULTADO = { 0: 'vitoria', 1: 'derrota', 2: 'empate' };
+
+// Guardamos o id numérico do dono da live assim que ele aparece numa batalha,
+// pra reconhecer quem é quem no placar (o linkMicArmies só manda userId).
+let meuUserId = null;
+
+function broadcastBattles() {
+  io.emit('battle_stats', db.getBattleStats());
+}
+
+// anchorsInfo vem como [{ key: userId, value: { user: {...} } }]
+function anfitrioesDaBatalha(data) {
+  return (data.anchorsInfo || [])
+    .map(w => {
+      const u = w.value?.user || {};
+      return {
+        userId: String(w.key || u.userId || ''),
+        nickname: u.nickName || u.nickname || null,
+        displayId: u.displayId || null,
+        avatar: u.avatarThumb?.urlList?.[0] || null
+      };
+    })
+    .filter(a => a.userId);
+}
+
+function souEu(anfitriao) {
+  if (!anfitriao) return false;
+  if (meuUserId && anfitriao.userId === meuUserId) return true;
+  return (anfitriao.displayId || '').toLowerCase() === TIKTOK_USERNAME.toLowerCase();
+}
+
 function processarBadges(data) {
   // displayId é o @ do usuário; uniqueId aqui era o id numérico e criava um
   // registro paralelo ao do ranking pra mesma pessoa.
@@ -142,7 +179,10 @@ function markSessionEndedIfNeeded(motivo) {
   console.log(`Encerrando sessão (motivo: ${motivo})`);
   liveOnline = false;
   db.markLiveOffline();
+  // batalha interrompida pela queda não vira registro no histórico
+  db.cancelarBatalhaEmAndamento();
   broadcastLiveStatus();
+  broadcastBattles();
 }
 
 function forceReconnect(motivo) {
@@ -296,6 +336,73 @@ function startTikTokConnection() {
     else if (rotulo.includes('share')) registrarSocial(data, 'share');
   });
 
+  // Abertura da batalha: descobre quem é o adversário.
+  connection.on('linkMicBattle', data => {
+    if (myId !== activeConnectionId) return;
+    lastEventAt = Date.now();
+
+    const acao = Number(data.action ?? 0);
+    const battleId = String(data.battleId || '');
+    const anfitrioes = anfitrioesDaBatalha(data);
+
+    const eu = anfitrioes.find(souEu);
+    if (eu) meuUserId = eu.userId;
+
+    if (acao === BATALHA_ABRIU) {
+      // 2v2 pode trazer mais gente; o adversário aqui é o primeiro que não é ele
+      const adversario = anfitrioes.find(a => !souEu(a));
+      if (!adversario) return;
+
+      db.iniciarBatalha(battleId, {
+        uniqueId: adversario.displayId || adversario.userId,
+        nickname: adversario.nickname || adversario.displayId || adversario.userId,
+        avatar: adversario.avatar
+      });
+      console.log(`Batalha começou contra ${adversario.nickname || adversario.displayId}`);
+      broadcastBattles();
+      return;
+    }
+
+    if (acao === BATALHA_TERMINOU || acao === BATALHA_CORTADA) {
+      // battleResult é um mapa userId -> { result, score }
+      const resultados = data.battleResult || {};
+      const meu = meuUserId ? resultados[meuUserId] : null;
+      const doOutro = Object.entries(resultados)
+        .find(([uid]) => uid !== meuUserId)?.[1];
+
+      const registro = db.finalizarBatalha(battleId, {
+        // se o TikTok mandou o veredito, ele manda; senão o placar decide
+        resultado: meu ? RESULTADO[Number(meu.result)] : undefined,
+        meuScore: meu ? Number(meu.score) || 0 : undefined,
+        scoreOponente: doOutro ? Number(doOutro.score) || 0 : undefined
+      });
+
+      if (registro) {
+        console.log(`Batalha encerrada: ${registro.resultado} contra ${registro.oponente?.nickname} (${registro.meuScore} x ${registro.scoreOponente})`);
+      }
+      broadcastBattles();
+    }
+  });
+
+  // Placar ao vivo durante a batalha.
+  connection.on('linkMicArmies', data => {
+    if (myId !== activeConnectionId) return;
+    lastEventAt = Date.now();
+
+    const armies = data.armies || {};
+    const entradas = Object.entries(armies);
+    if (!entradas.length) return;
+
+    const pontos = uid => Number(armies[uid]?.hostscore) || 0;
+    const outroId = entradas.map(([uid]) => uid).find(uid => uid !== meuUserId);
+
+    if (!meuUserId || !outroId) return;
+    const atual = db.atualizarPlacarBatalha(
+      String(data.battleId || ''), pontos(meuUserId), pontos(outroId)
+    );
+    if (atual) io.emit('battle_live', atual);
+  });
+
   connection.on('member', data => {
     processarBadges(data);
     if (myId !== activeConnectionId) return;
@@ -394,6 +501,10 @@ app.post('/api/tropa/limpar', (req, res) => {
   res.json({ ok: true });
 });
 
+app.get('/api/batalhas', (req, res) => {
+  res.json(db.getBattleStats());
+});
+
 app.get('/api/ranking', (req, res) => {
   res.json(db.getRanking());
 });
@@ -414,6 +525,7 @@ io.on('connection', socket => {
   socket.emit('live_feed_init', liveFeed);
   socket.emit('global_stats', db.getGlobalStats());
   socket.emit('tropa_init', db.getTropa());
+  socket.emit('battle_stats', db.getBattleStats());
 });
 
 
