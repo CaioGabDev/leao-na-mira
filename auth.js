@@ -15,7 +15,8 @@ function loadUsers() {
 }
 
 function saveUsers(users) {
-  fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+  // 0600: só o dono do processo lê o arquivo com os hashes
+  fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2), { mode: 0o600 });
 }
 
 function hashPassword(password, salt) {
@@ -47,4 +48,18 @@ function verifyCredentials(username, password) {
   return crypto.timingSafeEqual(a, b);
 }
 
-module.exports = { USERS_FILE, loadUsers, saveUsers, hashPassword, upsertUser, verifyCredentials };
+// No Railway não dá pra rodar o create-user.js à mão, e o users.json não vai
+// no git. Então o primeiro usuário vem das env vars ADMIN_USER/ADMIN_PASSWORD.
+// Só cria se ainda não existir: trocar a senha depois não é desfeito no restart.
+function seedFromEnv() {
+  const username = process.env.ADMIN_USER;
+  const password = process.env.ADMIN_PASSWORD;
+  if (!username || !password) return;
+
+  if (loadUsers().some(u => u.username === username)) return;
+
+  upsertUser(username, password);
+  console.log(`Usuário "${username}" criado a partir de ADMIN_USER/ADMIN_PASSWORD.`);
+}
+
+module.exports = { USERS_FILE, loadUsers, saveUsers, hashPassword, upsertUser, verifyCredentials, seedFromEnv };

@@ -6,6 +6,7 @@ const { TikTokLiveConnection } = require('tiktok-live-connector');
 const ConnectionClass = TikTokLiveConnection;
 const db = require('./db');
 const auth = require('./auth');
+const { FileSessionStore } = require('./session-store');
 
 const TIKTOK_USERNAME = process.env.TIKTOK_USERNAME || 'vitorb0rba';
 
@@ -18,6 +19,8 @@ const io = new Server(server);
 // (gera/atualiza o users.json). Veja o README.
 if (process.env.NODE_ENV === 'production') app.set('trust proxy', 1);
 
+auth.seedFromEnv();
+
 const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-only-secret-troque-em-producao';
 if (!process.env.SESSION_SECRET) {
   console.warn('AVISO: SESSION_SECRET não definido. Configure essa env var em produção (Railway).');
@@ -27,11 +30,15 @@ const sessionMiddleware = session({
   secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
+  // em arquivo, senão todo restart do servidor desloga todo mundo
+  store: new FileSessionStore(),
+  // cada visita renova o prazo: quem usa o site com frequência não reloga
+  rolling: true,
   cookie: {
     httpOnly: true,
     sameSite: 'lax',
     secure: process.env.NODE_ENV === 'production',
-    maxAge: 1000 * 60 * 60 * 12 // 12h
+    maxAge: 1000 * 60 * 60 * 24 * 30 // 30 dias sem acessar
   }
 });
 app.use(sessionMiddleware);
@@ -46,11 +53,18 @@ io.use((socket, next) => {
 
 app.post('/api/login', (req, res) => {
   const { username, password } = req.body || {};
-  if (auth.verifyCredentials(username, password)) {
-    req.session.user = username;
-    return res.json({ ok: true });
+  if (!auth.verifyCredentials(username, password)) {
+    return res.status(401).json({ error: 'Usuário ou senha inválidos.' });
   }
-  res.status(401).json({ error: 'Usuário ou senha inválidos.' });
+  // troca o id da sessão ao logar, pra um id capturado antes do login não valer nada
+  req.session.regenerate(err => {
+    if (err) return res.status(500).json({ error: 'Erro ao iniciar a sessão.' });
+    req.session.user = username;
+    req.session.save(err2 => {
+      if (err2) return res.status(500).json({ error: 'Erro ao iniciar a sessão.' });
+      res.json({ ok: true });
+    });
+  });
 });
 
 app.post('/api/logout', (req, res) => {

@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd \"C:/Users/dsadm/Desktop/rankings/Ranking-Taps\" && rm -f cookies.txt && git status --short && echo \"--- users.json \\(nao versionado\\) ---\" && ls -l users.json)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\dsadm\\Desktop\\rankings\\Ranking-Taps"
+    ]
+  }
+}
