@@ -413,24 +413,34 @@ function startTikTokConnection() {
     if (atual) io.emit('battle_live', atual);
   });
 
-  // Virou superfã. A lib separa superFanJoin (entrou no clube agora) de
-  // superFan (avisos de quem já é) — só o primeiro vira registro no mural.
-  connection.on('superFanJoin', data => {
+  // SUPERFÃ — ainda não ligado no automático, de propósito.
+  //
+  // O evento `superFanJoin` da lib parecia ser "entrou no clube", mas o nome da
+  // chave do TikTok (ttlive_superfan_commentnotif_superfanjoined) é o superfã
+  // ENTRANDO NA LIVE. Quem já era superfã há meses era anotado como se tivesse
+  // acabado de virar.
+  //
+  // Não achei, no protocolo, nenhum campo que diga "essa pessoa é superfã" nem
+  // uma chave conhecida pra "virou superfã". Então, em vez de chutar de novo,
+  // aqui a gente só ESCUTA e anota no log a primeira vez que cada tipo de aviso
+  // aparece — com o texto que o TikTok manda junto. Numa live em que alguém
+  // virar superfã de verdade, a linha certa aparece no log e daí dá pra ligar
+  // isso no automático com precisão.
+  const avisosVistos = new Set();
+  function espiarBarrage(data, origem) {
     if (myId !== activeConnectionId) return;
-    lastEventAt = Date.now();
-    const uniqueId = data.user?.displayId || data.user?.uniqueId
-      || data.user?.id || data.uniqueId;
-    const nickname = data.user?.nickname || data.user?.nickName;
-    const avatar = getAvatar(data);
+    const chave = data.content?.key || data.commonBarrageContent?.key || '(sem chave)';
+    if (avisosVistos.has(chave)) return; // só a primeira vez de cada tipo
+    avisosVistos.add(chave);
+    const texto = data.content?.defaultPattern
+      || data.commonBarrageContent?.defaultPattern || '(sem texto)';
+    const quem = data.user?.nickname || data.user?.nickName || '(sem nome)';
+    console.log(`[aviso:${origem}] chave="${chave}" texto="${texto}" quem="${quem}"`);
+  }
 
-    const item = db.registrarSuperfa(uniqueId, nickname, avatar);
-    console.log(
-      `[superfã] ${nickname || '(sem nome)'} id=${uniqueId || 'NENHUM'} ` +
-      (item ? 'ENTROU no mural' : 'não entrou (já registrado ou sem id)')
-    );
-    if (item) io.emit('tropa_add', item);
-    pushFeed({ type: 'superfa', uniqueId, nickname, avatar });
-  });
+  connection.on('superFanJoin', data => espiarBarrage(data, 'superFanJoin'));
+  connection.on('superFan', data => espiarBarrage(data, 'superFan'));
+  connection.on('barrage', data => espiarBarrage(data, 'barrage'));
 
   connection.on('member', data => {
     processarBadges(data);
@@ -530,6 +540,14 @@ app.post('/api/tropa/limpar', (req, res) => {
   db.limparTropa();
   io.emit('tropa_limpa');
   res.json({ ok: true });
+});
+
+app.post('/api/tropa/remover', (req, res) => {
+  const { nome, tipo } = req.body || {};
+  if (!nome || !tipo) return res.status(400).json({ error: 'nome e tipo são obrigatórios' });
+  const removeu = db.removerDaTropa(nome, tipo);
+  if (removeu) io.emit('tropa_removida', { nome, tipo });
+  res.json({ ok: true, removeu });
 });
 
 app.get('/api/batalhas', (req, res) => {

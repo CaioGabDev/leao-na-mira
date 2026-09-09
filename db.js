@@ -38,6 +38,17 @@ state.currentSessionSnapshot = state.currentSessionSnapshot || null;
 
 let dirty = false;
 
+// A marca de superfã foi gravada por um evento que, na verdade, avisa quando um
+// superfã ENTRA na live — não quando alguém vira superfã. Como isso marcou
+// gente que já era superfã há tempo, a marca é apagada pra não bloquear o
+// registro certo quando ele existir.
+if (!state.global.superfaRemarcado) {
+  Object.values(state.users).forEach(u => { delete u.superFaEm; });
+  state.tropa = state.tropa.filter(p => p.tipo !== 'superfã' || p.manual);
+  state.global.superfaRemarcado = true;
+  dirty = true;
+}
+
 // Enquanto o id vinha vazio, todos esses eventos caíam num mesmo registro de
 // chave "undefined" — que além de sujar o ranking, marcava followed/shared e
 // fazia todo mundo depois dele ser ignorado na contagem. Tira ele do caminho.
@@ -229,6 +240,18 @@ function registrarSuperfa(uniqueId, nickname, avatar) {
   u.superFaEm = Date.now();
   dirty = true;
   return addToTropa(nickname, 1, 'superfã', avatar);
+}
+
+// Apagar alguém do mural tem que sair do servidor também, senão o tropa_init
+// do próximo carregamento traz a pessoa de volta.
+function removerDaTropa(nome, tipo) {
+  const antes = state.tropa.length;
+  state.tropa = state.tropa.filter(p =>
+    !(String(p.nome || '').toLowerCase() === String(nome || '').toLowerCase() && p.tipo === tipo)
+  );
+  const removeu = state.tropa.length < antes;
+  if (removeu) { dirty = true; saveToDisk(); }
+  return removeu;
 }
 
 function getTropa() {
@@ -676,7 +699,7 @@ module.exports = {
   getGlobalStats, updateViewerCount, addComment, addFollow, addShare,
   markLiveOnline, markLiveOffline, checkLevelUp, getTropa, limparTropa, getSessions,
   heartbeat,
-  registrarSuperfa,
+  registrarSuperfa, removerDaTropa,
   iniciarBatalha, atualizarPlacarBatalha, finalizarBatalha,
   cancelarBatalhaEmAndamento, getBattleStats
 };

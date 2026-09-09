@@ -623,11 +623,35 @@ socket.on('tropa_add', item => {
     nomeInput.focus();
   }
 
-  function excluir(id){
+  async function excluir(id){
+    const alvo = pessoas.find(p => p.id === id);
     pessoas = pessoas.filter(p => p.id !== id);
     salvar();
     render();
+    if (!alvo) return;
+
+    // Apagar só aqui não bastava: o servidor guarda a própria lista e devolvia
+    // a pessoa no tropa_init do próximo F5.
+    try {
+      const res = await fetch('/api/tropa/remover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nome: alvo.nome, tipo: alvo.tipo })
+      });
+      if (!res.ok) throw new Error('falhou');
+    } catch (e) {
+      showToast('⚠️ Apaguei só nesta tela — o servidor não respondeu');
+    }
   }
+
+  // Outra aba apagou alguém: acompanha, pra não ressuscitar a pessoa daqui.
+  socket.on('tropa_removida', ({ nome, tipo }) => {
+    const antes = pessoas.length;
+    pessoas = pessoas.filter(p =>
+      !(String(p.nome).toLowerCase() === String(nome).toLowerCase() && p.tipo === tipo)
+    );
+    if (pessoas.length !== antes) { salvar(); render(); }
+  });
 
   document.getElementById('clearBtn').addEventListener('click', async () => {
     if (!pessoas.length) return;
