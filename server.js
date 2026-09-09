@@ -247,10 +247,12 @@ function startTikTokConnection() {
     const uniqueId = data.user?.displayId || data.user?.uniqueId || data.uniqueId;
     const nickname = data.user?.nickname || data.nickname;
     const avatar = getAvatar(data);
-    // Alguns comentários chegam vazios (ex: reações/figurinhas sem texto).
+    // O texto do comentário vem em `content` na v2 da lib (o campo `comment`
+    // só existia na v1) — por isso o feed aparecia vazio.
+    // Alguns comentários chegam sem texto mesmo (ex: reações/figurinhas).
     // Guardamos como veio — quem decide o texto de exibição é o front-end.
-    const comment = (data.comment || '').trim();
-    db.addComment(uniqueId, nickname, avatar);
+    const comment = (data.content || data.comment || '').trim();
+    db.addComment(uniqueId, nickname, avatar, comment);
     broadcastGlobalStats();
     pushFeed({ type: 'chat', uniqueId, nickname, avatar, text: comment });
   });

@@ -224,10 +224,12 @@ function getRanking() {
 
 function getUserProfile(uniqueId) {
   const user = state.users[uniqueId];
+  // 200 em vez de 100 porque agora comentários entram um por linha e não
+  // podem empurrar os presentes/likes pra fora do histórico.
   const history = state.actions
     .filter(a => a.uniqueId === uniqueId)
-    .sort((a, b) => b.timestamp - a.timestamp)
-    .slice(0, 100);
+    .sort((a, b) => (b.timestamp - a.timestamp) || ((b.seq || 0) - (a.seq || 0)))
+    .slice(0, 200);
   return { user, history };
 }
 
@@ -246,15 +248,66 @@ function resetAll() {
   Object.keys(likeActionRef).forEach(k => delete likeActionRef[k]);
   Object.keys(giftActionRef).forEach(k => delete giftActionRef[k]);
   Object.keys(powerUpActionRef).forEach(k => delete powerUpActionRef[k]);
+  Object.keys(commentActionRefs).forEach(k => delete commentActionRefs[k]);
   dirty = true;
   saveToDisk();
 }
 
-function addComment(uniqueId, nickname, avatar) {
+// Comentários: além de contar, guardamos o texto pra poder mostrar no perfil.
+// Diferente de like/presente, cada comentário é uma linha própria (o texto muda
+// toda vez), então limitamos quantos ficam guardados por pessoa.
+const MAX_COMMENTS_PER_USER = 50;
+
+function addComment(uniqueId, nickname, avatar, text) {
   ensureUser(uniqueId, nickname, avatar);
   state.users[uniqueId].comments += 1;
   state.global.totalComments += 1;
+  logCommentAction(uniqueId, nickname, text);
   dirty = true;
+}
+
+// Fila dos comentários guardados de cada pessoa (mais antigo primeiro), pra não
+// precisar varrer state.actions inteiro a cada comentário que chega.
+const commentActionRefs = {}; // uniqueId -> [action, ...]
+
+// Vários comentários caem no mesmo milissegundo numa live movimentada, então
+// timestamp sozinho não ordena. seq é o desempate (sempre crescente).
+let nextSeq = state.actions.reduce((max, a) => Math.max(max, a.seq || 0), 0) + 1;
+
+function commentQueue(uniqueId) {
+  if (!commentActionRefs[uniqueId]) {
+    // primeira vez no processo: remonta a fila do que veio do live.json
+    commentActionRefs[uniqueId] = state.actions.filter(
+      a => a.type === 'comment' && a.uniqueId === uniqueId
+    );
+  }
+  return commentActionRefs[uniqueId];
+}
+
+function logCommentAction(uniqueId, nickname, text) {
+  const detail = (text || '').trim();
+  if (!detail) return; // reação/figurinha sem texto: só entra na contagem
+
+  // A fila tem que ser montada ANTES do push: depois do reinício ela é
+  // remontada a partir de state.actions, e o comentário novo entraria
+  // duas vezes (derrubando um antigo a mais do que devia).
+  const fila = commentQueue(uniqueId);
+
+  const action = {
+    uniqueId, nickname, type: 'comment', detail,
+    value: 0, count: 1, timestamp: Date.now(), seq: nextSeq++
+  };
+  state.actions.push(action);
+
+  // Janela deslizante: entra o novo, sai o mais antigo. A contagem em
+  // users[].comments e o total global NÃO são tocados — só o texto guardado
+  // é descartado, pra não encher o live.json de linha.
+  fila.push(action);
+  while (fila.length > MAX_COMMENTS_PER_USER) {
+    const antigo = fila.shift();
+    const i = state.actions.indexOf(antigo);
+    if (i !== -1) state.actions.splice(i, 1);
+  }
 }
 
 function addFollow(uniqueId, nickname, avatar) {

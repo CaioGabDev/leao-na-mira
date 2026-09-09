@@ -162,8 +162,8 @@
   .feed-item { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 6px 0; border-bottom: 1px solid var(--line); }
   .feed-item:last-child { border-bottom: none; }
   .feed-avatar { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; background: #2a1810; flex-shrink: 0; }
-  .feed-text { color: var(--ink-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .feed-text b { color: var(--ink); }
+  .feed-text { flex: 1; min-width: 0; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .feed-text b { color: var(--gold); }
   .feed-empty { text-align: center; color: var(--ink-faint); font-size: 13px; padding: 14px 0; }
 
   /* Controls row above the ranking list */
@@ -243,6 +243,15 @@
   .modal-gift-list { display: flex; flex-direction: column; gap: 8px; }
   .modal-gift-row { display: flex; justify-content: space-between; align-items: center; background: rgba(255,122,26,0.08); border-radius: 10px; padding: 8px 12px; font-size: 14px; }
   .modal-empty { text-align: center; color: var(--ink-dim); padding: 20px 0; font-size: 14px; }
+  .modal-section-title {
+    font-family: 'Bungee', cursive; font-size: 11px; letter-spacing: .06em;
+    color: var(--ink-dim); margin: 0 0 10px;
+  }
+  .modal-comment-row {
+    background: rgba(255,122,26,0.08); border-radius: 10px; padding: 8px 12px;
+    font-size: 14px; color: var(--ink); word-break: break-word;
+  }
+  .modal-comment-row .when { display: block; font-size: 11px; color: var(--ink-dim); margin-top: 3px; }
 
   @keyframes flashUp { 0% { border-color: #4ade80; } 100% { border-color: var(--line); } }
 </style>
@@ -343,8 +352,10 @@
     <div class="modal-summary">
       <div>❤️ <span class="val" id="modalLikes">0</span></div>
       <div>🎁 <span class="val" id="modalGiftsValue">0</span></div>
+      <div>💬 <span class="val" id="modalComments">0</span></div>
     </div>
     <div class="modal-gift-list" id="modalGiftList"></div>
+    <div class="modal-gift-list" id="modalCommentList"></div>
   </div>
 </div>
 
@@ -429,12 +440,23 @@
     }
   }, 1000);
 
+  // Comentário é texto de usuário: sem escapar, um "<" já sumia com a linha
+  // inteira no innerHTML (era isso que fazia o comentário "não aparecer").
+  function esc(txt) {
+    return String(txt ?? '').replace(/[&<>"']/g, c => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+  }
+
   const FEED_ICONS = { chat: '💬', follow: '➕', share: '🔁', join: '👋', gift: '🎁' };
   function feedLine(event) {
     const icon = FEED_ICONS[event.type] || '•';
-    const nome = event.nickname || event.uniqueId;
+    const nome = esc(event.nickname || event.uniqueId);
     let texto = '';
-    if (event.type === 'chat') texto = `<b>${nome}</b>: ${event.text}`;
+    if (event.type === 'chat') {
+      const msg = (event.text || '').trim();
+      texto = `<b>${nome}</b>: ${msg ? esc(msg) : '<i>(sem texto)</i>'}`;
+    }
     else if (event.type === 'follow') texto = `<b>${nome}</b> começou a seguir`;
     else if (event.type === 'share') texto = `<b>${nome}</b> compartilhou a live`;
     else if (event.type === 'join') texto = `<b>${nome}</b> entrou na live`;
@@ -662,20 +684,52 @@
       document.getElementById('modalName').textContent = user.nickname || user.uniqueId;
       document.getElementById('modalLikes').textContent = user.likes;
       document.getElementById('modalGiftsValue').textContent = user.gifts_value;
+      document.getElementById('modalComments').textContent = user.comments || 0;
 
-      const gifts = history.filter(h => h.type === 'gift' || h.type === 'powerup');
-      const listEl = document.getElementById('modalGiftList');
-      if (!gifts.length) {
-        listEl.innerHTML = `<div class="modal-empty">Nenhum presente enviado ainda.</div>`;
+      const giftListEl = document.getElementById('modalGiftList');
+      const commentListEl = document.getElementById('modalCommentList');
+
+      // Na aba de comentários o perfil mostra o que a pessoa escreveu;
+      // nas outras abas continua mostrando os presentes.
+      const mostrarComentarios = currentSort === 'comments';
+      giftListEl.style.display = mostrarComentarios ? 'none' : 'flex';
+      commentListEl.style.display = mostrarComentarios ? 'flex' : 'none';
+
+      if (mostrarComentarios) {
+        const comments = history
+          .filter(h => h.type === 'comment')
+          .sort((a, b) => b.timestamp - a.timestamp);
+
+        if (!comments.length) {
+          commentListEl.innerHTML = `<div class="modal-empty">${
+            (user.comments || 0) > 0
+              ? 'Os comentários dessa pessoa não têm texto (reações/figurinhas).'
+              : 'Nenhum comentário ainda.'
+          }</div>`;
+        } else {
+          commentListEl.innerHTML =
+            `<div class="modal-section-title">💬 Últimos comentários</div>` +
+            comments.map(c => `
+              <div class="modal-comment-row">
+                ${esc(c.detail)}
+                <span class="when">${new Date(c.timestamp).toLocaleTimeString('pt-BR')}</span>
+              </div>
+            `).join('');
+        }
       } else {
-        listEl.innerHTML = gifts
-          .sort((a, b) => (b.value || 0) - (a.value || 0))
-          .map(g => `
-            <div class="modal-gift-row">
-              <span>🎁 ${g.detail || 'Presente'}</span>
-              <span>x${g.count || 1} — ${g.value || 0}💎</span>
-            </div>
-          `).join('');
+        const gifts = history.filter(h => h.type === 'gift' || h.type === 'powerup');
+        if (!gifts.length) {
+          giftListEl.innerHTML = `<div class="modal-empty">Nenhum presente enviado ainda.</div>`;
+        } else {
+          giftListEl.innerHTML = gifts
+            .sort((a, b) => (b.value || 0) - (a.value || 0))
+            .map(g => `
+              <div class="modal-gift-row">
+                <span>🎁 ${esc(g.detail || 'Presente')}</span>
+                <span>x${g.count || 1} — ${g.value || 0}💎</span>
+              </div>
+            `).join('');
+        }
       }
 
       modalOverlay.classList.add('show');
