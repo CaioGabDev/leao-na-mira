@@ -312,12 +312,22 @@ function startTikTokConnection() {
   function registrarSocial(data, tipo) {
     if (myId !== activeConnectionId) return;
     lastEventAt = Date.now();
-    const uniqueId = data.user?.displayId || data.user?.uniqueId || data.uniqueId;
-    const nickname = data.user?.nickname || data.nickname;
+    // `id` entra na fila porque nem todo evento social traz o @ (displayId);
+    // sem nenhum id a pessoa não tem como ser separada das outras.
+    const uniqueId = data.user?.displayId || data.user?.uniqueId
+      || data.uniqueId || data.user?.id || data.userId;
+    const nickname = data.user?.nickname || data.user?.nickName || data.nickname;
     const avatar = getAvatar(data);
 
-    if (tipo === 'follow') db.addFollow(uniqueId, nickname, avatar);
-    else db.addShare(uniqueId, nickname, avatar);
+    const contou = tipo === 'follow'
+      ? db.addFollow(uniqueId, nickname, avatar)
+      : db.addShare(uniqueId, nickname, avatar);
+
+    console.log(
+      `[${tipo}] ${nickname || '(sem nome)'} id=${uniqueId || 'NENHUM'} ` +
+      `${contou ? 'contou' : 'não contou (já tinha ou sem id)'} ` +
+      `— total agora: ${tipo === 'follow' ? db.getGlobalStats().totalFollows : db.getGlobalStats().totalShares}`
+    );
 
     broadcastRanking();
     broadcastGlobalStats();
@@ -418,9 +428,11 @@ function startTikTokConnection() {
   connection.on('roomUser', data => {
     if (myId !== activeConnectionId) return;
     lastEventAt = Date.now();
-    // Na v2 o número vem em totalUser/total (string); viewerCount era da v1,
-    // por isso "assistindo" e "pico" ficavam sempre em 0.
-    const count = Number(data.totalUser ?? data.total ?? data.viewerCount ?? 0) || 0;
+    // `total` (campo 3) = quem está assistindo AGORA.
+    // `totalUser` (campo 7) = acumulado de quem já entrou na live — era esse
+    // que eu estava lendo, por isso o número só subia e o pico ficava inflado.
+    // viewerCount é o nome antigo da v1, fica só como último recurso.
+    const count = Number(data.total ?? data.viewerCount ?? 0) || 0;
     roomUserEventCount++;
     console.log(`[roomUser #${roomUserEventCount}] espectadores: ${count}`);
     db.updateViewerCount(count);

@@ -214,6 +214,14 @@
   }
   .load-more-btn:hover { border-color: var(--gold); color: var(--ink); }
 
+  /* Ocultar valores em diamante (pra mostrar a tela sem expor o faturamento) */
+  .dinheiro { transition: filter .15s ease; }
+  body.ocultar-dinheiro .dinheiro {
+    filter: blur(8px);
+    user-select: none; pointer-events: none;
+  }
+  body.ocultar-dinheiro .dinheiro * { color: inherit; }
+
   /* Batalhas (PK) */
   .battle-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px; }
   .battle-card {
@@ -335,6 +343,7 @@
       <button class="ghost-btn" id="toggleHistoryBtn">
         <span>📜 Histórico de lives</span>
       </button>
+      <button class="ghost-btn" id="toggleDinheiroBtn">👁️ Ocultar diamantes</button>
       <button class="ghost-btn danger-btn" id="resetBtn">🗑️ Resetar dados</button>
       <button class="ghost-btn" id="logoutBtn">🚪 Sair</button>
     </div>
@@ -417,7 +426,7 @@
     </div>
     <div class="modal-summary">
       <div>❤️ <span class="val" id="modalLikes">0</span></div>
-      <div>🎁 <span class="val" id="modalGiftsValue">0</span></div>
+      <div>🎁 <span class="val dinheiro" id="modalGiftsValue">0</span></div>
       <div>💬 <span class="val" id="modalComments">0</span></div>
     </div>
     <div class="modal-gift-list" id="modalGiftList"></div>
@@ -490,7 +499,7 @@
       <div class="stats-card"><div class="num">${stats.currentViewers.toLocaleString('pt-BR')}</div><div class="lbl">Assistindo</div></div>
       <div class="stats-card"><div class="num">${stats.peakViewers.toLocaleString('pt-BR')}</div><div class="lbl">Pico</div></div>
       <div class="stats-card"><div class="num">${stats.uniqueViewers.toLocaleString('pt-BR')}</div><div class="lbl">Únicos</div></div>
-      <div class="stats-card"><div class="num">${stats.totalDiamonds.toLocaleString('pt-BR')}</div><div class="lbl">💎 Total</div></div>
+      <div class="stats-card"><div class="num dinheiro">${stats.totalDiamonds.toLocaleString('pt-BR')}</div><div class="lbl">💎 Total</div></div>
       <div class="stats-card"><div class="num">${stats.totalComments.toLocaleString('pt-BR')}</div><div class="lbl">💬 Coment.</div></div>
       <div class="stats-card"><div class="num">${stats.totalFollows.toLocaleString('pt-BR')}</div><div class="lbl">➕ Seguiram</div></div>
       <div class="stats-card" style="grid-column: span 2;"><div class="num" id="uptimeVal">${formatUptime(stats.uptimeSeconds)}</div><div class="lbl">⏱ Duração da live</div></div>
@@ -588,6 +597,27 @@
     location.href = '/login.html';
   });
 
+  // ---------- OCULTAR DIAMANTES ----------
+  // Só esconde na tela (blur no CSS): serve pra mostrar o site sem expor o
+  // faturamento, não é segurança.
+  const OCULTAR_KEY = 'ocultar-diamantes';
+  const toggleDinheiroBtn = document.getElementById('toggleDinheiroBtn');
+
+  function aplicarOcultarDinheiro(ocultar) {
+    document.body.classList.toggle('ocultar-dinheiro', ocultar);
+    toggleDinheiroBtn.textContent = ocultar ? '🙈 Mostrar diamantes' : '👁️ Ocultar diamantes';
+    try { localStorage.setItem(OCULTAR_KEY, ocultar ? '1' : '0'); } catch (e) {}
+  }
+
+  let dinheiroOculto = false;
+  try { dinheiroOculto = localStorage.getItem(OCULTAR_KEY) === '1'; } catch (e) {}
+  aplicarOcultarDinheiro(dinheiroOculto);
+
+  toggleDinheiroBtn.addEventListener('click', () => {
+    dinheiroOculto = !dinheiroOculto;
+    aplicarOcultarDinheiro(dinheiroOculto);
+  });
+
   function avatarOf(u) {
     return u.avatar || FALLBACK_AVATAR;
   }
@@ -611,7 +641,7 @@
             <div class="podium-name">${u.nickname || u.uniqueId}</div>
             <div class="podium-stat">
   ${currentSort === 'comments' ? `💬 ${u.comments || 0}`
-    : currentSort === 'gifts_value' ? `🎁 ${u.gifts_value}`
+    : currentSort === 'gifts_value' ? `🎁 <span class="dinheiro">${u.gifts_value}</span>`
     : `❤️ ${u.likes}`}
 </div>
             <div class="podium-bar"></div>
@@ -671,7 +701,7 @@
   ${currentSort === 'comments'
     ? `<div class="stat">💬 <span class="val">${u.comments || 0}</span></div>`
     : `<div class="stat">❤️ <span class="val">${u.likes}</span></div>
-       <div class="stat">🎁 <span class="val">${u.gifts_value}</span></div>`
+       <div class="stat">🎁 <span class="val dinheiro">${u.gifts_value}</span></div>`
   }
 </div>
         </div>
@@ -720,7 +750,7 @@
       <img class="row-avatar" src="${b.oponente?.avatar || FALLBACK_AVATAR}"
            onerror="this.src='${FALLBACK_AVATAR}'">
       <span class="vs">AO VIVO vs ${nome}</span>
-      <span class="placar">${placarDaBatalha(b)}</span>
+      <span class="placar dinheiro">${placarDaBatalha(b)}</span>
     `;
   }
 
@@ -758,7 +788,7 @@
                 <span class="d">${r.derrotas}D</span> ·
                 <span class="e">${r.empates}E</span>
               </div>
-              <span class="diamantes">💎 ${r.diamantesFeitos.toLocaleString('pt-BR')} × ${r.diamantesTomados.toLocaleString('pt-BR')}</span>
+              <span class="diamantes">💎 <span class="dinheiro">${r.diamantesFeitos.toLocaleString('pt-BR')} × ${r.diamantesTomados.toLocaleString('pt-BR')}</span></span>
             </div>
           </div>
         `).join('')
@@ -772,7 +802,7 @@
           <div class="quem">${esc(b.oponente?.nickname || '?')}</div>
           <div class="quando">${new Date(b.endedAt).toLocaleString('pt-BR')} · ${formatUptime(b.duracaoSegundos)}</div>
         </div>
-        <span class="score">${placarDaBatalha(b)}</span>
+        <span class="score dinheiro">${placarDaBatalha(b)}</span>
       </div>
     `).join('');
   }
@@ -817,7 +847,7 @@
         return `
           <div class="history-item">
             <div class="when">${data} · ⏱ ${formatUptime(s.durationSeconds)}</div>
-            <div class="nums">💎 ${s.totalDiamonds.toLocaleString('pt-BR')} · ❤️ ${s.totalLikes.toLocaleString('pt-BR')} · 💬 ${s.totalComments.toLocaleString('pt-BR')} · ➕ ${s.totalFollows.toLocaleString('pt-BR')} · 👀 pico ${s.peakViewers.toLocaleString('pt-BR')}</div>
+            <div class="nums">💎 <span class="dinheiro">${s.totalDiamonds.toLocaleString('pt-BR')}</span> · ❤️ ${s.totalLikes.toLocaleString('pt-BR')} · 💬 ${s.totalComments.toLocaleString('pt-BR')} · ➕ ${s.totalFollows.toLocaleString('pt-BR')} · 👀 pico ${s.peakViewers.toLocaleString('pt-BR')}</div>
           </div>
         `;
       }).join('');
@@ -879,7 +909,7 @@
             .map(g => `
               <div class="modal-gift-row">
                 <span>🎁 ${esc(g.detail || 'Presente')}</span>
-                <span>x${g.count || 1} — ${g.value || 0}💎</span>
+                <span>x${g.count || 1} — <span class="dinheiro">${g.value || 0}</span>💎</span>
               </div>
             `).join('');
         }

@@ -38,6 +38,30 @@ state.currentSessionSnapshot = state.currentSessionSnapshot || null;
 
 let dirty = false;
 
+// Enquanto o id vinha vazio, todos esses eventos caíam num mesmo registro de
+// chave "undefined" — que além de sujar o ranking, marcava followed/shared e
+// fazia todo mundo depois dele ser ignorado na contagem. Tira ele do caminho.
+['undefined', 'null', ''].forEach(chave => {
+  if (!state.users[chave]) return;
+  const fantasma = state.users[chave];
+  delete state.users[chave];
+  if (fantasma.followed) state.global.totalFollows = Math.max(0, state.global.totalFollows - 1);
+  if (fantasma.shared) state.global.totalShares = Math.max(0, state.global.totalShares - 1);
+  state.global.uniqueViewers = Math.max(0, state.global.uniqueViewers - 1);
+  state.actions = state.actions.filter(a => String(a.uniqueId) !== chave);
+  dirty = true;
+});
+
+// O pico ficou gravado com o acumulado de quem entrou (campo errado do
+// TikTok), e pico só cresce — então esse número errado nunca sairia sozinho.
+// Zera uma única vez pra ele voltar a ser medido pelo valor certo.
+if (!state.global.picoCorrigido) {
+  state.global.peakViewers = 0;
+  state.global.sessionPeakViewers = 0;
+  state.global.picoCorrigido = true;
+  dirty = true;
+}
+
 function saveToDisk() {
   if (!dirty) return;
   fs.writeFileSync(FILE, JSON.stringify(state, null, 2));
@@ -48,6 +72,10 @@ process.on('SIGINT', () => { saveToDisk(); process.exit(); });
 process.on('exit', saveToDisk);
 
 function ensureUser(uniqueId, nickname, avatar) {
+  // Sem id não dá pra separar uma pessoa da outra: tudo cairia na mesma chave
+  // "undefined" e viraria um usuário só (e o `followed` desse fantasma faria
+  // todo mundo depois dele ser ignorado).
+  if (!uniqueId) return false;
   if (!state.users[uniqueId]) {
     state.users[uniqueId] = {
       uniqueId, nickname, avatar: avatar || null,
@@ -62,6 +90,7 @@ function ensureUser(uniqueId, nickname, avatar) {
     state.users[uniqueId].nickname = nickname;
     if (avatar) state.users[uniqueId].avatar = avatar;
   }
+  return true;
 }
 
 // Likes: mantém UM único registro por usuário durante toda a live, apenas somando nele
@@ -358,21 +387,21 @@ function logCommentAction(uniqueId, nickname, text) {
 }
 
 function addFollow(uniqueId, nickname, avatar) {
-  ensureUser(uniqueId, nickname, avatar);
-  if (!state.users[uniqueId].followed) {
-    state.users[uniqueId].followed = true;
-    state.global.totalFollows += 1;
-    dirty = true;
-  }
+  if (!ensureUser(uniqueId, nickname, avatar)) return false;
+  if (state.users[uniqueId].followed) return false; // já tinha seguido antes
+  state.users[uniqueId].followed = true;
+  state.global.totalFollows += 1;
+  dirty = true;
+  return true;
 }
 
 function addShare(uniqueId, nickname, avatar) {
-  ensureUser(uniqueId, nickname, avatar);
-  if (!state.users[uniqueId].shared) {
-    state.users[uniqueId].shared = true;
-    state.global.totalShares += 1;
-    dirty = true;
-  }
+  if (!ensureUser(uniqueId, nickname, avatar)) return false;
+  if (state.users[uniqueId].shared) return false;
+  state.users[uniqueId].shared = true;
+  state.global.totalShares += 1;
+  dirty = true;
+  return true;
 }
 
 function updateViewerCount(count) {
