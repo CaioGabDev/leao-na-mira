@@ -362,6 +362,15 @@ app.post('/api/reset', (req, res) => {
   res.json({ ok: true });
 });
 
+// Limpa só o mural da tropa (o print da semana recomeça do zero). Ranking,
+// likes, presentes e os níveis já conhecidos ficam de pé — diferente do
+// /api/reset, que apaga tudo.
+app.post('/api/tropa/limpar', (req, res) => {
+  db.limparTropa();
+  io.emit('tropa_limpa');
+  res.json({ ok: true });
+});
+
 app.get('/api/ranking', (req, res) => {
   res.json(db.getRanking());
 });

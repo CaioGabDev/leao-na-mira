@@ -136,26 +136,43 @@ function checkLevelUp(uniqueId, nickname, avatar, badges, user) {
   const presenteador = Math.max(getBadgeLevel(badges, 8) || 0, gradeDireto) || null;
   const membro = Math.max(getBadgeLevel(badges, 10) || 0, fansDireto) || null;
 
-  if (presenteador && presenteador > u.gifterLevel) {
-    u.gifterLevel = presenteador;
-    if (presenteador >= 10) {
-      const item = addToTropa(nickname, presenteador, 'presenteador', avatar);
-      if (item) resultados.push(item);
-    }
-  }
-  if (membro && membro > u.memberLevel) {
-    u.memberLevel = membro;
-    if (membro >= 10) {
-      const item = addToTropa(nickname, membro, 'membro', avatar);
-      if (item) resultados.push(item);
-    }
-  }
+  // Primeira vez que conseguimos ler um nível dessa pessoa: só anotamos o ponto
+  // de partida, sem anunciar. Sem isso, quem já era nível 17 há meses entraria
+  // no mural como se tivesse acabado de subir — e sairia de novo num print em
+  // que já apareceu. Da segunda leitura em diante, subida é subida.
+  //
+  // A marca é POR CATEGORIA: muita gente aparece primeiro só com o selo de
+  // presenteador, e a primeira leitura do selo de membro (que pode vir lives
+  // depois) também não pode contar como subida.
+  const anotar = (nivel, tipo, campoNivel, campoLido) => {
+    if (!nivel) return; // esse selo não veio nesse evento: não aprendemos nada
+    const primeiraLeitura = !u[campoLido];
+    u[campoLido] = true;
+    if (nivel <= u[campoNivel]) return;
+    u[campoNivel] = nivel;
+    if (nivel < 10 || primeiraLeitura) return;
+    const item = addToTropa(nickname, nivel, tipo, avatar);
+    if (item) resultados.push(item);
+  };
+
+  anotar(presenteador, 'presenteador', 'gifterLevel', 'gifterLido');
+  anotar(membro, 'membro', 'memberLevel', 'memberLido');
 
   dirty = true;
   return resultados;
 }
 
 function getTropa() {
+  return state.tropa;
+}
+
+// Zera só o mural (pro print da semana começar limpo). Ranking, likes,
+// presentes e os níveis já aprendidos continuam intactos — o que importa é
+// não repetir no print quem já saiu.
+function limparTropa() {
+  state.tropa = [];
+  dirty = true;
+  saveToDisk();
   return state.tropa;
 }
 
@@ -429,5 +446,5 @@ function getSessions() {
 module.exports = {
   addLikes, addGift, addPowerUp, getRanking, getUserProfile, resetAll,
   getGlobalStats, updateViewerCount, addComment, addFollow, addShare,
-  markLiveOnline, markLiveOffline, checkLevelUp, getTropa, getSessions
+  markLiveOnline, markLiveOffline, checkLevelUp, getTropa, limparTropa, getSessions
 };

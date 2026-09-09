@@ -626,13 +626,33 @@ socket.on('tropa_add', item => {
     render();
   }
 
-  document.getElementById('clearBtn').addEventListener('click', () => {
+  document.getElementById('clearBtn').addEventListener('click', async () => {
     if (!pessoas.length) return;
-    if (confirm('Apagar todo mundo da lista? (a biblioteca de nomes não é afetada)')){
-      pessoas = [];
-      salvar();
-      render();
+    if (!confirm('Apagar todo mundo da lista? (a biblioteca de nomes não é afetada)')) return;
+
+    pessoas = [];
+    salvar();
+    render();
+
+    // Limpar só aqui não bastava: o servidor guarda a própria lista e mandava
+    // todo mundo de volta no tropa_init do próximo carregamento — aí gente que
+    // já tinha saído no print da semana passada reaparecia.
+    try {
+      const res = await fetch('/api/tropa/limpar', { method: 'POST' });
+      if (!res.ok) throw new Error('falhou');
+      showToast('Lista limpa ✓');
+    } catch (e) {
+      showToast('⚠️ Limpei só nesta tela — o servidor não respondeu');
     }
+  });
+
+  // Outra aba/navegador limpou: acompanha, pra não ressuscitar a lista daqui.
+  socket.on('tropa_limpa', () => {
+    if (!pessoas.length) return;
+    pessoas = [];
+    salvar();
+    render();
+    showToast('Lista limpa em outro dispositivo');
   });
 
   const ORDEM_TIPOS = [
