@@ -115,13 +115,17 @@ function broadcastGlobalStats() {
 }
 
 function processarBadges(data) {
-  const uniqueId = data.user?.uniqueId || data.uniqueId;
+  // displayId é o @ do usuário; uniqueId aqui era o id numérico e criava um
+  // registro paralelo ao do ranking pra mesma pessoa.
+  const uniqueId = data.user?.displayId || data.user?.uniqueId || data.uniqueId;
   const nickname = data.user?.nickname || data.nickname;
   const avatar = getAvatar(data);
-  const badges = data.user?.userBadges;
-  if (!badges) return;
+  // badgeList é o nome na v2 da lib (userBadges era v1) — sem isso nenhum
+  // nível era lido e a tropa nunca enchia sozinha.
+  const badges = data.user?.badgeList || data.user?.userBadges;
+  if (!badges && !data.user) return;
 
-  const subidas = db.checkLevelUp(uniqueId, nickname, avatar, badges);
+  const subidas = db.checkLevelUp(uniqueId, nickname, avatar, badges, data.user);
   subidas.forEach(item => io.emit('tropa_add', item));
 }
 

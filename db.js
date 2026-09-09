@@ -93,22 +93,48 @@ function addToTropa(nome, nivel, tipo, avatar) {
   return novo;
 }
 
-// A lib do TikTok pode devolver, pro mesmo badgeSceneType, mais de um objeto:
-// um só com a imagem do selo (sem "level") e outro com o level de verdade
-// (vindo de privilegeLogExtra). Um .find() simples podia cair no objeto sem
-// "level" e achar que a pessoa não tinha nível nenhum, mesmo tendo — por isso
-// aqui procuramos especificamente pelo badge que TEM level definido.
-function getBadgeLevel(badges, sceneType) {
-  return badges?.find(b => b.badgeSceneType === sceneType && b.level != null)?.level;
+// A lib do TikTok pode devolver, pro mesmo tipo de badge, mais de um objeto:
+// um só com a imagem do selo (sem level) e outro com o level de verdade. Um
+// .find() simples podia cair no objeto sem level e achar que a pessoa não tinha
+// nível nenhum — por isso aqui só vale badge que TEM level.
+//
+// Os nomes dos campos mudaram da v1 pra v2 da lib (badgeSceneType -> sceneType,
+// e o level saiu pra dentro de privilegeLogExtra, como string). Lemos os dois
+// formatos pra não depender da versão.
+function badgeSceneOf(b) {
+  return b.sceneType ?? b.badgeSceneType;
 }
 
-function checkLevelUp(uniqueId, nickname, avatar, badges) {
+function badgeLevelOf(b) {
+  const bruto = b.level ?? b.privilegeLogExtra?.level;
+  const nivel = Number(bruto);
+  return Number.isFinite(nivel) && nivel > 0 ? nivel : null;
+}
+
+function getBadgeLevel(badges, sceneType) {
+  if (!Array.isArray(badges)) return null;
+  // pega o MAIOR level encontrado pra aquela cena (badges repetidos acontecem)
+  return badges.reduce((maior, b) => {
+    if (badgeSceneOf(b) !== sceneType) return maior;
+    const nivel = badgeLevelOf(b);
+    return nivel != null && nivel > (maior || 0) ? nivel : maior;
+  }, null);
+}
+
+function checkLevelUp(uniqueId, nickname, avatar, badges, user) {
   ensureUser(uniqueId, nickname, avatar);
   const u = state.users[uniqueId];
   const resultados = [];
 
-  const presenteador = getBadgeLevel(badges, 8);
-  const membro = getBadgeLevel(badges, 10);
+  // payGrade/fansClub são o mesmo nível vindo por outro caminho: em muitos
+  // eventos o badge não vem, mas esses campos vêm. Ficamos com o maior.
+  const gradeDireto = Number(user?.payGrade?.level) || 0;
+  const fansDireto = Number(
+    user?.fansClub?.data?.level ?? user?.fansClubInfo?.fansLevel
+  ) || 0;
+
+  const presenteador = Math.max(getBadgeLevel(badges, 8) || 0, gradeDireto) || null;
+  const membro = Math.max(getBadgeLevel(badges, 10) || 0, fansDireto) || null;
 
   if (presenteador && presenteador > u.gifterLevel) {
     u.gifterLevel = presenteador;

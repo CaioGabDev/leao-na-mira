@@ -234,6 +234,11 @@
     width:100%;
     max-width: 420px;
     aspect-ratio: 9 / 16;
+    /* Sem min-height:0 o aspect-ratio é só uma preferência: passando de ~8
+       pessoas as linhas empurravam o poster pra baixo e ele saía mais alto que
+       9:16 (com 20 pessoas virava 420x1248). Aí o Stories cortava o PNG. */
+    min-height: 0;
+    overflow: hidden;
     margin: 0 auto;
     border-radius: var(--poster-radius);
     border: none;
@@ -311,6 +316,13 @@
     overflow:hidden;
   }
   .poster-rows:empty{ margin-top:0; padding:0; background:none; }
+
+  .poster-aviso{
+    max-width: 420px; margin: 10px auto 0;
+    padding: 8px 12px; border-radius: 10px;
+    background: rgba(255,122,26,.12); border: 1px solid rgba(255,122,26,.45);
+    color: #FFC98A; font-size: 12.5px; font-weight: 600; text-align:center;
+  }
 
   .poster-row{
     display:flex; align-items:center; justify-content:space-between;
@@ -406,6 +418,8 @@
         <div class="poster-embers" id="posterEmbers"></div>
         <div class="poster-rows" id="posterRows"></div>
       </div>
+
+      <div class="poster-aviso" id="posterAviso" hidden></div>
 
       <div class="poster-actions">
         <button class="btn btn-primary" id="downloadImgBtn" style="width:auto; margin-top:0;">⬇️ Baixar imagem (PNG)</button>
@@ -672,6 +686,7 @@ socket.on('tropa_add', item => {
 
   // ---------- Imagem final (poster) ----------
   const posterWrap = document.getElementById('posterWrap');
+  const posterAviso = document.getElementById('posterAviso');
   const posterImgArea = document.getElementById('posterImgArea');
   const posterRows = document.getElementById('posterRows');
   const posterEmbersEl = document.getElementById('posterEmbers');
@@ -716,6 +731,10 @@ socket.on('tropa_add', item => {
   //      (repetindo o passo 2 a cada corte, porque sobrou mais espaço pras
   //      linhas) — assim a foto só encolhe quando é realmente necessário.
   const POSTER_BASE = { pad: 8, gap: 7, fontNome: 13, fontTexto: 11, icon: 18 };
+  // Dois pisos: enquanto a foto ainda tem espaço pra ceder, as linhas param no
+  // "conforto" (texto ainda legível no story). O piso de verdade só vale quando
+  // a foto já está no mínimo — aí é espremer ou cortar, e cortar é pior.
+  const ROW_ESCALA_CONFORTO = 0.72;
   const ROW_ESCALA_MIN = 0.42;   // linhas nunca ficam menores que 42% do tamanho cheio
   const FOTO_MAX = 54, FOTO_MIN = 18, FOTO_PASSO = 4;
 
@@ -729,6 +748,20 @@ socket.on('tropa_add', item => {
     root.setProperty('--row-icon', (POSTER_BASE.icon * escala).toFixed(2) + 'px');
   }
 
+  // O scrollHeight não serve pra medir aqui: com justify-content:center o que
+  // não cabe sobra metade pra cima, e essa metade o scrollHeight não conta.
+  // Então somamos as linhas de verdade.
+  function alturaNecessariaDasLinhas(){
+    const linhas = posterRows.children;
+    if (!linhas.length) return 0;
+    const cs = getComputedStyle(posterRows);
+    const gap = parseFloat(cs.rowGap) || 0;
+    const padding = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+    let total = padding + gap * (linhas.length - 1);
+    for (const linha of linhas) total += linha.getBoundingClientRect().height;
+    return total;
+  }
+
   function ajustarPosterParaCaber(qtd){
     if (qtd === 0){ aplicarTamanhoPoster(FOTO_MAX, 1); return; }
 
@@ -738,11 +771,12 @@ socket.on('tropa_add', item => {
 
     for (let tentativa = 0; tentativa < 24; tentativa++){
       const disponivel = posterRows.clientHeight;
-      const necessario = posterRows.scrollHeight;
+      const necessario = alturaNecessariaDasLinhas();
       if (necessario <= disponivel + 0.5) break; // coube tudo
 
       const escalaNecessaria = disponivel / necessario;
-      const novaEscala = Math.max(ROW_ESCALA_MIN, escala * escalaNecessaria);
+      const piso = foto > FOTO_MIN ? ROW_ESCALA_CONFORTO : ROW_ESCALA_MIN;
+      const novaEscala = Math.max(piso, escala * escalaNecessaria);
 
       if (novaEscala < escala - 0.001){
         escala = novaEscala;
@@ -760,6 +794,21 @@ socket.on('tropa_add', item => {
 
       break; // já no mínimo de tudo; overflow:hidden evita quebrar o layout
     }
+
+    return linhasForaDoPoster();
+  }
+
+  // Passando de ~30 pessoas nem no tamanho mínimo cabe tudo no 9:16, e o
+  // overflow:hidden some com quem sobrou. Melhor avisar do que deixar alguém
+  // de fora do print sem ninguém perceber.
+  function linhasForaDoPoster(){
+    const caixa = posterRows.getBoundingClientRect();
+    let fora = 0;
+    for (const linha of posterRows.children){
+      const r = linha.getBoundingClientRect();
+      if (r.top < caixa.top - 0.5 || r.bottom > caixa.bottom + 0.5) fora++;
+    }
+    return fora;
   }
 
   function gerarBrasasDoPoster(qtd = 16){
@@ -810,7 +859,11 @@ socket.on('tropa_add', item => {
     }).join('');
 
     // Só dá pra medir o espaço depois que as linhas já estão no DOM.
-    ajustarPosterParaCaber(linhas.length);
+    const fora = ajustarPosterParaCaber(linhas.length);
+    posterAviso.hidden = !fora;
+    if (fora){
+      posterAviso.textContent = `⚠️ ${fora} ${fora === 1 ? 'pessoa não cabe' : 'pessoas não cabem'} no poster 9:16 e ${fora === 1 ? 'ficou' : 'ficaram'} de fora da imagem. Tire ${fora === 1 ? 'alguém' : 'algumas pessoas'} da lista pra caberem todos.`;
+    }
   }
 
   function arredondarCanvas(canvasOriginal, raioPx){
@@ -839,6 +892,7 @@ socket.on('tropa_add', item => {
 
   function gerarImagemFinal(){
     downloadImgBtn.textContent = 'Gerando...';
+    renderPoster(); // recalcula o encaixe com as fontes/foto já carregadas
     const larguraAlvo = 1080;
     const escala = larguraAlvo / posterWrap.clientWidth;
     const raioCss = 18;
@@ -891,20 +945,12 @@ socket.on('tropa_add', item => {
   gerarBrasasDoPoster();
   render();
 
-socket.on('tropa_add', ({ nome, nivel, tipo, avatar }) => {
-  // evita duplicar se a pessoa já está na lista com nível igual ou maior
-  const existente = pessoas.find(p => p.nome.toLowerCase() === nome.toLowerCase() && p.tipo === tipo);
-  if (existente && parseInt(existente.nivel) >= nivel) return;
+  // As fontes (Bungee) chegam DEPOIS do primeiro render e mudam a altura das
+  // linhas — sem refazer a conta, o encaixe fica calculado em cima da fonte
+  // de fallback e sobra/falta espaço no poster.
+  if (document.fonts?.ready) document.fonts.ready.then(renderPoster);
+  window.addEventListener('resize', renderPoster);
 
-  if (existente) {
-    existente.nivel = nivel;
-  } else {
-    pessoas.push({ id: Date.now(), nome, nivel, tipo, avatar });
-  }
-  salvar();
-  render();
-  showToast(`🔥 ${nome} subiu pra nível ${nivel} (${tipo})`);
-});
 </script>
 </body>
 </html>
