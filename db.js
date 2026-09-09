@@ -381,9 +381,37 @@ function updateViewerCount(count) {
 // Chamado quando a conexão com a live é estabelecida (live entrou no ar).
 // Tira uma "foto" dos totais atuais pra depois calcular só o que essa live
 // específica gerou (delta), e zera o pico de espectadores dessa sessão.
+// Batida de coração enquanto a live está no ar. Serve pra saber, depois de um
+// restart do servidor, se a live que estava rodando é a MESMA (retoma a
+// contagem) ou se já é outra (começa do zero).
+const RETOMAR_SESSAO_MS = 3 * 60 * 1000;
+
+function heartbeat() {
+  if (!state.global.liveActive) return;
+  state.global.lastActivityAt = Date.now();
+  dirty = true;
+}
+
 function markLiveOnline() {
   const now = Date.now();
+
+  // Um deploy/restart no meio da live derrubava startedAt pro instante da
+  // reconexão e a duração voltava do zero. Se a live estava no ar e a última
+  // batida foi agora há pouco, é a mesma live: mantém o relógio andando.
+  const mesmaLive =
+    state.global.liveActive &&
+    state.currentSessionSnapshot &&
+    now - (state.global.lastActivityAt || 0) < RETOMAR_SESSAO_MS;
+
   state.global.liveActive = true;
+  state.global.lastActivityAt = now;
+
+  if (mesmaLive) {
+    state.global.startedAt = state.currentSessionSnapshot.startedAt;
+    dirty = true;
+    return;
+  }
+
   state.global.startedAt = now;
   state.global.sessionPeakViewers = 0;
 
@@ -446,5 +474,6 @@ function getSessions() {
 module.exports = {
   addLikes, addGift, addPowerUp, getRanking, getUserProfile, resetAll,
   getGlobalStats, updateViewerCount, addComment, addFollow, addShare,
-  markLiveOnline, markLiveOffline, checkLevelUp, getTropa, limparTropa, getSessions
+  markLiveOnline, markLiveOffline, checkLevelUp, getTropa, limparTropa, getSessions,
+  heartbeat
 };

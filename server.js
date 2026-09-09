@@ -248,6 +248,10 @@ function startTikTokConnection() {
   connection.on('chat', data => {
     processarBadges(data);
     if (myId !== activeConnectionId) return;
+    // Sem isso o watchdog só enxergava like e presente: numa live de muita
+    // conversa e pouco like ele forçava reconexão a cada 5 min, a sessão era
+    // dada como encerrada e a duração voltava do zero no meio da live.
+    lastEventAt = Date.now();
     const uniqueId = data.user?.displayId || data.user?.uniqueId || data.uniqueId;
     const nickname = data.user?.nickname || data.nickname;
     const avatar = getAvatar(data);
@@ -261,29 +265,41 @@ function startTikTokConnection() {
     pushFeed({ type: 'chat', uniqueId, nickname, avatar, text: comment });
   });
 
-  connection.on('social', data => {
+  // A lib já separa seguir/compartilhar em eventos próprios (ela olha o
+  // displayText.key do WebcastSocialMessage) e, quando faz isso, NÃO emite
+  // 'social'. O handler antigo só ouvia 'social' e procurava um campo `label`
+  // que nem existe mais — por isso "Seguiram" ficava zerado.
+  function registrarSocial(data, tipo) {
     if (myId !== activeConnectionId) return;
+    lastEventAt = Date.now();
     const uniqueId = data.user?.displayId || data.user?.uniqueId || data.uniqueId;
     const nickname = data.user?.nickname || data.nickname;
     const avatar = getAvatar(data);
-    const label = (data.label || data.displayType || '').toLowerCase();
 
-    if (label.includes('follow')) {
-      db.addFollow(uniqueId, nickname, avatar);
-      broadcastRanking();
-      broadcastGlobalStats();
-      pushFeed({ type: 'follow', uniqueId, nickname, avatar });
-    } else if (label.includes('share')) {
-      db.addShare(uniqueId, nickname, avatar);
-      broadcastRanking();
-      broadcastGlobalStats();
-      pushFeed({ type: 'share', uniqueId, nickname, avatar });
-    }
+    if (tipo === 'follow') db.addFollow(uniqueId, nickname, avatar);
+    else db.addShare(uniqueId, nickname, avatar);
+
+    broadcastRanking();
+    broadcastGlobalStats();
+    pushFeed({ type: tipo, uniqueId, nickname, avatar });
+  }
+
+  connection.on('follow', data => registrarSocial(data, 'follow'));
+  connection.on('share', data => registrarSocial(data, 'share'));
+
+  // Sobra pra versões da lib que mandam tudo junto em 'social'.
+  connection.on('social', data => {
+    const rotulo = (
+      data.label || data.displayType || data.common?.displayText?.key || ''
+    ).toLowerCase();
+    if (rotulo.includes('follow')) registrarSocial(data, 'follow');
+    else if (rotulo.includes('share')) registrarSocial(data, 'share');
   });
 
   connection.on('member', data => {
     processarBadges(data);
     if (myId !== activeConnectionId) return;
+    lastEventAt = Date.now();
     const uniqueId = data.user?.displayId || data.user?.uniqueId || data.uniqueId;
     const nickname = data.user?.nickname || data.nickname;
     const avatar = getAvatar(data);
@@ -294,7 +310,10 @@ function startTikTokConnection() {
   // nem chamava db.updateViewerCount — foi removido).
   connection.on('roomUser', data => {
     if (myId !== activeConnectionId) return;
-    const count = data.viewerCount ?? 0;
+    lastEventAt = Date.now();
+    // Na v2 o número vem em totalUser/total (string); viewerCount era da v1,
+    // por isso "assistindo" e "pico" ficavam sempre em 0.
+    const count = Number(data.totalUser ?? data.total ?? data.viewerCount ?? 0) || 0;
     roomUserEventCount++;
     console.log(`[roomUser #${roomUserEventCount}] espectadores: ${count}`);
     db.updateViewerCount(count);
@@ -348,6 +367,10 @@ function startTikTokConnection() {
 
 const WATCHDOG_TIMEOUT_MS = 5 * 60 * 1000;
 setInterval(() => {
+  // marca que a live seguia no ar; se o servidor reiniciar logo em seguida,
+  // a duração é retomada em vez de voltar pro zero
+  if (liveOnline) db.heartbeat();
+
   if (liveOnline && !reconnecting && Date.now() - lastEventAt > WATCHDOG_TIMEOUT_MS) {
     forceReconnect('watchdog: sem eventos há muito tempo');
   }
