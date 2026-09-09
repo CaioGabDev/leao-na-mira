@@ -558,7 +558,7 @@ function markLiveOffline() {
 // ---------- BATALHAS (PK / link mic) ----------
 const MAX_BATALHAS = 500;
 
-function iniciarBatalha(battleId, oponente) {
+function iniciarBatalha(battleId, oponente, terminaEm) {
   // o TikTok repete o evento de abertura; não recomeça a mesma batalha
   if (state.currentBattle && state.currentBattle.battleId === battleId) {
     return state.currentBattle;
@@ -568,7 +568,9 @@ function iniciarBatalha(battleId, oponente) {
     startedAt: Date.now(),
     oponente, // { uniqueId, nickname, avatar }
     meuScore: 0,
-    scoreOponente: 0
+    scoreOponente: 0,
+    terminaEm: terminaEm || null,  // horário previsto de fim, quando o TikTok manda
+    ultimoSinalEm: Date.now()      // última vez que o placar mexeu
   };
   dirty = true;
   return state.currentBattle;
@@ -580,8 +582,37 @@ function atualizarPlacarBatalha(battleId, meuScore, scoreOponente) {
   if (battleId && b.battleId !== battleId) return null;
   b.meuScore = meuScore;
   b.scoreOponente = scoreOponente;
+  b.ultimoSinalEm = Date.now();
   dirty = true;
   return b;
+}
+
+// Quando o adversário abandona no meio, o TikTok simplesmente para de mandar
+// evento — não vem FINISH nenhum. Sem isso a batalha ficava "ao vivo" pra
+// sempre no painel, travada no último placar.
+const BATALHA_SILENCIO_MS = 3 * 60 * 1000;   // placar parado por tanto tempo
+const BATALHA_LIMITE_MS = 20 * 60 * 1000;    // teto absoluto, se nada mais servir
+
+function fecharBatalhaAbandonada() {
+  const b = state.currentBattle;
+  if (!b) return false;
+
+  const agora = Date.now();
+  const passouDoFim = b.terminaEm && agora > b.terminaEm + 60 * 1000;
+  const semSinal = agora - (b.ultimoSinalEm || b.startedAt) > BATALHA_SILENCIO_MS;
+  const velhaDemais = agora - b.startedAt > BATALHA_LIMITE_MS;
+  if (!passouDoFim && !semSinal && !velhaDemais) return false;
+
+  // batalha que nem chegou a pontuar (convite cancelado, por ex.) some sem
+  // virar registro — senão o histórico enche de 0 x 0
+  if (!b.meuScore && !b.scoreOponente) {
+    state.currentBattle = null;
+    dirty = true;
+    return true;
+  }
+
+  finalizarBatalha(b.battleId, { interrompida: true });
+  return true;
 }
 
 function finalizarBatalha(battleId, dados = {}) {
@@ -610,7 +641,10 @@ function finalizarBatalha(battleId, dados = {}) {
     oponente: b.oponente,
     meuScore,
     scoreOponente,
-    resultado
+    resultado,
+    // marca que não veio veredito do TikTok: o adversário saiu no meio e o
+    // resultado saiu do placar em que a batalha parou
+    interrompida: !!dados.interrompida
   };
 
   state.battles.push(registro);
@@ -700,6 +734,6 @@ module.exports = {
   markLiveOnline, markLiveOffline, checkLevelUp, getTropa, limparTropa, getSessions,
   heartbeat,
   registrarSuperfa, removerDaTropa,
-  iniciarBatalha, atualizarPlacarBatalha, finalizarBatalha,
+  iniciarBatalha, atualizarPlacarBatalha, finalizarBatalha, fecharBatalhaAbandonada,
   cancelarBatalhaEmAndamento, getBattleStats
 };

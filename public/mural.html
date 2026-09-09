@@ -317,6 +317,22 @@
   }
   .poster-rows:empty{ margin-top:0; padding:0; background:none; }
 
+  .imagem-pronta{
+    display:none; max-width:420px; margin:14px auto 0;
+    background: var(--card-2, #0f0b08); border:1px solid rgba(255,122,26,.45);
+    border-radius:14px; padding:12px; text-align:center;
+  }
+  .imagem-pronta.show{ display:block; }
+  .imagem-pronta img{ width:100%; border-radius:10px; display:block; }
+  .imagem-pronta .dica{
+    margin-top:10px; font-size:13px; font-weight:700; color:#FFC98A; line-height:1.4;
+  }
+  .imagem-pronta .fechar{
+    margin-top:10px; background:none; border:1px solid rgba(255,255,255,.2);
+    color:#C9B9A6; border-radius:999px; padding:6px 16px;
+    font-family:'Rajdhani',sans-serif; font-weight:700; font-size:12.5px; cursor:pointer;
+  }
+
   .poster-aviso{
     max-width: 420px; margin: 10px auto 0;
     padding: 8px 12px; border-radius: 10px;
@@ -420,6 +436,12 @@
       </div>
 
       <div class="poster-aviso" id="posterAviso" hidden></div>
+
+      <div class="imagem-pronta" id="imagemPronta">
+        <img id="imagemProntaImg" alt="Imagem do mural gerada">
+        <div class="dica" id="imagemProntaDica"></div>
+        <button class="fechar" id="imagemProntaFechar">Fechar</button>
+      </div>
 
       <div class="poster-actions">
         <button class="btn btn-primary" id="downloadImgBtn" style="width:auto; margin-top:0;">⬇️ Baixar imagem (PNG)</button>
@@ -953,16 +975,77 @@ socket.on('tropa_add', item => {
       imageTimeout: 0,
     }).then(canvas => {
       const canvasFinal = arredondarCanvas(canvas, raioCss * escala);
-      const link = document.createElement('a');
-      link.download = 'tropa.png';
-      link.href = canvasFinal.toDataURL('image/png');
-      link.click();
+      return entregarImagem(canvasFinal);
+    }).then(() => {
       downloadImgBtn.textContent = '⬇️ Baixar imagem (PNG)';
-      showToast('Imagem gerada ✓');
     }).catch(() => {
       downloadImgBtn.textContent = '⬇️ Baixar imagem (PNG)';
       alert('Não consegui gerar a imagem. Tenta de novo.');
     });
+  }
+
+  // ---------- Entregar a imagem pronta ----------
+  // No iPhone/iPad o Safari IGNORA o atributo `download` do link: o clique
+  // simplesmente não salva nada, sem erro nenhum. Por isso aqui existem três
+  // caminhos, do melhor pro que sempre funciona.
+  const imagemPronta = document.getElementById('imagemPronta');
+  const imagemProntaImg = document.getElementById('imagemProntaImg');
+  const imagemProntaDica = document.getElementById('imagemProntaDica');
+  document.getElementById('imagemProntaFechar')
+    .addEventListener('click', () => imagemPronta.classList.remove('show'));
+
+  function canvasParaBlob(canvas) {
+    return new Promise(resolve => {
+      if (canvas.toBlob) canvas.toBlob(resolve, 'image/png');
+      else resolve(null);
+    });
+  }
+
+  const ehToque = matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 1;
+
+  function mostrarImagemNaTela(canvas, dica) {
+    imagemProntaImg.src = canvas.toDataURL('image/png');
+    imagemProntaDica.textContent = dica;
+    imagemPronta.classList.add('show');
+    imagemPronta.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  async function entregarImagem(canvas) {
+    // 1) Menu nativo de compartilhar (iOS 15+, Android). É o melhor caminho no
+    //    celular/tablet: dá pra "Salvar em Fotos" ou mandar direto pro story.
+    try {
+      const blob = await canvasParaBlob(canvas);
+      if (blob && navigator.canShare) {
+        const arquivo = new File([blob], 'tropa.png', { type: 'image/png' });
+        if (navigator.canShare({ files: [arquivo] })) {
+          await navigator.share({ files: [arquivo], title: 'Mural da Tropa' });
+          showToast('Imagem enviada ✓');
+          return;
+        }
+      }
+    } catch (e) {
+      // usuário fechou o menu: não é erro, e não precisa de plano B
+      if (e && e.name === 'AbortError') return;
+      // qualquer outra falha cai pros caminhos abaixo
+    }
+
+    // 2) Download normal (computador).
+    if (!ehToque) {
+      try {
+        const link = document.createElement('a');
+        link.download = 'tropa.png';
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+        showToast('Imagem gerada ✓');
+        return;
+      } catch (e) { /* cai pro plano C */ }
+    }
+
+    // 3) Mostra a imagem na tela pra salvar segurando o dedo em cima.
+    //    É o que sempre funciona no iPad, mesmo sem menu de compartilhar.
+    mostrarImagemNaTela(canvas, ehToque
+      ? '👆 Segure o dedo na imagem e escolha "Salvar em Fotos" (ou "Adicionar às Fotos").'
+      : 'Clique com o botão direito na imagem e escolha "Salvar imagem como...".');
   }
 
   downloadImgBtn.addEventListener('click', () => {

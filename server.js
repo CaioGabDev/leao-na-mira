@@ -117,14 +117,32 @@ function broadcastGlobalStats() {
 // ---------- BATALHAS (PK / link mic) ----------
 // Ações do evento linkMicBattle (enum LinkMicBattleBattleAction da lib)
 const BATALHA_ABRIU = 4;      // OPEN
-const BATALHA_TERMINOU = 5;   // FINISH
-const BATALHA_CORTADA = 6;    // CUT_SHORT
+// Tudo que encerra: FINISH, CUT_SHORT, CANCEL e alguém largando o link mic.
+// Antes eu só ouvia FINISH e CUT_SHORT — quando o adversário saía do ar a
+// batalha ficava aberta pra sempre no painel.
+const ACOES_DE_FIM = new Set([5, 6, 3, 11]);
 // Resultado por anfitrião (enum BattleResultResult)
 const RESULTADO = { 0: 'vitoria', 1: 'derrota', 2: 'empate' };
 
 // Guardamos o id numérico do dono da live assim que ele aparece numa batalha,
 // pra reconhecer quem é quem no placar (o linkMicArmies só manda userId).
 let meuUserId = null;
+
+// O TikTok manda quando a batalha deve acabar; serve de rede de segurança pra
+// fechar a batalha caso o evento de fim nunca chegue.
+function fimPrevisto(settings) {
+  if (!settings) return null;
+  const paraMs = v => {
+    const n = Number(v);
+    if (!n) return 0;
+    return n < 1e12 ? n * 1000 : n; // alguns campos vêm em segundos
+  };
+  const fim = paraMs(settings.endTimeMs);
+  if (fim) return fim;
+  const inicio = paraMs(settings.startTimeMs);
+  const dur = Number(settings.duration) || 0;
+  return inicio && dur ? inicio + dur * 1000 : null;
+}
 
 function broadcastBattles() {
   io.emit('battle_stats', db.getBattleStats());
@@ -367,13 +385,13 @@ function startTikTokConnection() {
         uniqueId: adversario.displayId || adversario.userId,
         nickname: adversario.nickname || adversario.displayId || adversario.userId,
         avatar: adversario.avatar
-      });
+      }, fimPrevisto(data.battleSettings));
       console.log(`Batalha começou contra ${adversario.nickname || adversario.displayId}`);
       broadcastBattles();
       return;
     }
 
-    if (acao === BATALHA_TERMINOU || acao === BATALHA_CORTADA) {
+    if (ACOES_DE_FIM.has(acao)) {
       // battleResult é um mapa userId -> { result, score }
       const resultados = data.battleResult || {};
       const meu = meuUserId ? resultados[meuUserId] : null;
@@ -518,6 +536,12 @@ setInterval(() => {
   // marca que a live seguia no ar; se o servidor reiniciar logo em seguida,
   // a duração é retomada em vez de voltar pro zero
   if (liveOnline) db.heartbeat();
+
+  // adversário que some no meio não gera evento de fim: fecha na unha
+  if (db.fecharBatalhaAbandonada()) {
+    console.log('Batalha encerrada por abandono (o adversário parou de responder)');
+    broadcastBattles();
+  }
 
   if (liveOnline && !reconnecting && Date.now() - lastEventAt > WATCHDOG_TIMEOUT_MS) {
     forceReconnect('watchdog: sem eventos há muito tempo');

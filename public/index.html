@@ -801,7 +801,7 @@
         <span>${ICONE[b.resultado] || '⚔️'}</span>
         <div>
           <div class="quem">${esc(b.oponente?.nickname || '?')}</div>
-          <div class="quando">${new Date(b.endedAt).toLocaleString('pt-BR')} · ${formatUptime(b.duracaoSegundos)}</div>
+          <div class="quando">${new Date(b.endedAt).toLocaleString('pt-BR')} · ${formatUptime(b.duracaoSegundos)}${b.interrompida ? ' · ⚠️ adversário saiu no meio' : ''}</div>
         </div>
         <span class="score dinheiro">${placarDaBatalha(b)}</span>
       </div>
