@@ -523,7 +523,7 @@
     }[c]));
   }
 
-  const FEED_ICONS = { chat: '💬', follow: '➕', share: '🔁', join: '👋', gift: '🎁' };
+  const FEED_ICONS = { chat: '💬', follow: '➕', share: '🔁', join: '👋', gift: '🎁', superfa: '⭐' };
   function feedLine(event) {
     const icon = FEED_ICONS[event.type] || '•';
     const nome = esc(event.nickname || event.uniqueId);
@@ -535,6 +535,7 @@
     else if (event.type === 'follow') texto = `<b>${nome}</b> começou a seguir`;
     else if (event.type === 'share') texto = `<b>${nome}</b> compartilhou a live`;
     else if (event.type === 'join') texto = `<b>${nome}</b> entrou na live`;
+    else if (event.type === 'superfa') texto = `<b>${nome}</b> virou superfã`;
     return `
       <div class="feed-item">
         <img class="feed-avatar" src="${avatarOf(event)}" onerror="this.src='${FALLBACK_AVATAR}'">

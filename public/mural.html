@@ -487,7 +487,10 @@ socket.on('tropa_init', lista => {
 
 socket.on('tropa_add', item => {
   upsertPessoaAuto(item);
-  showToast(`🔥 ${item.nome} subiu pra nível ${item.nivel} (${item.tipo})`);
+  // superfã não tem nível — o aviso antigo saía como "subiu pra nível 1"
+  showToast(item.tipo === 'superfã'
+    ? `⭐ ${item.nome} se tornou superfã`
+    : `🔥 ${item.nome} subiu pra nível ${item.nivel} (${item.tipo})`);
 });
   // ---------- Estado: biblioteca de nomes salvos (reuso rápido) ----------
   const BIBLIOTECA_KEY = 'mural-da-tropa-biblioteca';

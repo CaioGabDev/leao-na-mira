@@ -160,9 +160,9 @@ function processarBadges(data) {
   // badgeList é o nome na v2 da lib (userBadges era v1) — sem isso nenhum
   // nível era lido e a tropa nunca enchia sozinha.
   const badges = data.user?.badgeList || data.user?.userBadges;
-  if (!badges && !data.user) return;
+  if (!badges) return;
 
-  const subidas = db.checkLevelUp(uniqueId, nickname, avatar, badges, data.user);
+  const subidas = db.checkLevelUp(uniqueId, nickname, avatar, badges);
   subidas.forEach(item => io.emit('tropa_add', item));
 }
 
@@ -411,6 +411,25 @@ function startTikTokConnection() {
       String(data.battleId || ''), pontos(meuUserId), pontos(outroId)
     );
     if (atual) io.emit('battle_live', atual);
+  });
+
+  // Virou superfã. A lib separa superFanJoin (entrou no clube agora) de
+  // superFan (avisos de quem já é) — só o primeiro vira registro no mural.
+  connection.on('superFanJoin', data => {
+    if (myId !== activeConnectionId) return;
+    lastEventAt = Date.now();
+    const uniqueId = data.user?.displayId || data.user?.uniqueId
+      || data.user?.id || data.uniqueId;
+    const nickname = data.user?.nickname || data.user?.nickName;
+    const avatar = getAvatar(data);
+
+    const item = db.registrarSuperfa(uniqueId, nickname, avatar);
+    console.log(
+      `[superfã] ${nickname || '(sem nome)'} id=${uniqueId || 'NENHUM'} ` +
+      (item ? 'ENTROU no mural' : 'não entrou (já registrado ou sem id)')
+    );
+    if (item) io.emit('tropa_add', item);
+    pushFeed({ type: 'superfa', uniqueId, nickname, avatar });
   });
 
   connection.on('member', data => {

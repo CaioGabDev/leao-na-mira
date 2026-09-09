@@ -98,18 +98,22 @@ const pendingLikes = {};
 const likeActionRef = {};
 
 function addLikes(uniqueId, nickname, count, avatar) {
-  ensureUser(uniqueId, nickname, avatar);
-  state.users[uniqueId].likes += count;
-  state.global.totalLikes += count; // NOVO
+  state.global.totalLikes += count;
   dirty = true;
+  // Sem id o like aconteceu do mesmo jeito (entra no total), só não dá pra
+  // dizer de quem foi — então não entra no ranking de ninguém.
+  if (!ensureUser(uniqueId, nickname, avatar)) return false;
+  state.users[uniqueId].likes += count;
   if (!pendingLikes[uniqueId]) pendingLikes[uniqueId] = { nickname, count: 0 };
   pendingLikes[uniqueId].nickname = nickname;
   pendingLikes[uniqueId].count += count;
 }
 
 function addToTropa(nome, nivel, tipo, avatar) {
+  // a lista do mural é casada por nome; sem nome não dá pra encaixar ninguém
+  if (!nome || !String(nome).trim()) return null;
   const existente = state.tropa.find(p =>
-    p.nome.toLowerCase() === nome.toLowerCase() && p.tipo === tipo
+    String(p.nome || '').toLowerCase() === String(nome).toLowerCase() && p.tipo === tipo
   );
   if (existente) {
     if (nivel <= existente.nivel) return null; // nada novo, ignora
@@ -152,20 +156,26 @@ function getBadgeLevel(badges, sceneType) {
   }, null);
 }
 
-function checkLevelUp(uniqueId, nickname, avatar, badges, user) {
-  ensureUser(uniqueId, nickname, avatar);
+// Deixa rastro de toda leitura de nível, pra dar pra conferir no log da live
+// por que fulano entrou ou não entrou no mural.
+function registrarLeitura(msg) {
+  console.log('[nivel]', msg);
+}
+
+function checkLevelUp(uniqueId, nickname, avatar, badges) {
+  // sem id não dá pra saber de quem é o nível — e sem isso o `u` abaixo vinha
+  // undefined e derrubava o handler inteiro do evento (o comentário/presente
+  // daquele evento se perdia junto)
+  if (!ensureUser(uniqueId, nickname, avatar)) return [];
   const u = state.users[uniqueId];
   const resultados = [];
 
-  // payGrade/fansClub são o mesmo nível vindo por outro caminho: em muitos
-  // eventos o badge não vem, mas esses campos vêm. Ficamos com o maior.
-  const gradeDireto = Number(user?.payGrade?.level) || 0;
-  const fansDireto = Number(
-    user?.fansClub?.data?.level ?? user?.fansClubInfo?.fansLevel
-  ) || 0;
-
-  const presenteador = Math.max(getBadgeLevel(badges, 8) || 0, gradeDireto) || null;
-  const membro = Math.max(getBadgeLevel(badges, 10) || 0, fansDireto) || null;
+  // Uma fonte só: o selo. Antes eu também olhava payGrade/fansClub como
+  // reforço e ficava com o maior valor — mas as duas fontes nem sempre dizem
+  // o mesmo número pra mesma pessoa, e a diferença entre elas era lida como
+  // "subiu de nível". É o selo que aparece do lado do nome; é ele que vale.
+  const presenteador = getBadgeLevel(badges, 8);
+  const membro = getBadgeLevel(badges, 10);
 
   // Primeira vez que conseguimos ler um nível dessa pessoa: só anotamos o ponto
   // de partida, sem anunciar. Sem isso, quem já era nível 17 há meses entraria
@@ -177,12 +187,25 @@ function checkLevelUp(uniqueId, nickname, avatar, badges, user) {
   // depois) também não pode contar como subida.
   const anotar = (nivel, tipo, campoNivel, campoLido) => {
     if (!nivel) return; // esse selo não veio nesse evento: não aprendemos nada
+    const anterior = u[campoNivel] || 0;
     const primeiraLeitura = !u[campoLido];
     u[campoLido] = true;
-    if (nivel <= u[campoNivel]) return;
+    if (nivel <= anterior) return;
     u[campoNivel] = nivel;
-    if (nivel < 10 || primeiraLeitura) return;
+
+    if (primeiraLeitura) {
+      registrarLeitura(`${nickname} ${tipo} nv${nivel} — primeira leitura, só anotei`);
+      return;
+    }
+    if (nivel < 10) {
+      registrarLeitura(`${nickname} ${tipo} ${anterior} -> ${nivel} — subiu, mas ainda não chegou no 10`);
+      return;
+    }
     const item = addToTropa(nickname, nivel, tipo, avatar);
+    registrarLeitura(
+      `${nickname} ${tipo} ${anterior} -> ${nivel} — ` +
+      (item ? 'ENTROU no mural' : 'já estava no mural com nível igual ou maior')
+    );
     if (item) resultados.push(item);
   };
 
@@ -191,6 +214,21 @@ function checkLevelUp(uniqueId, nickname, avatar, badges, user) {
 
   dirty = true;
   return resultados;
+}
+
+// Superfã não tem nível: ou a pessoa é, ou não é. O TikTok avisa no momento em
+// que alguém ENTRA no clube (superFanJoin), então esse é o único evento que
+// serve — o outro (superFan) dispara pra quem já era, e encheria o mural de
+// gente que já saiu em print antigo.
+// O nível 1 aqui é só pra travar a repetição no addToTropa; o mural ignora o
+// número quando o tipo é superfã.
+function registrarSuperfa(uniqueId, nickname, avatar) {
+  if (!ensureUser(uniqueId, nickname, avatar)) return null;
+  const u = state.users[uniqueId];
+  if (u.superFaEm) return null; // já registramos essa pessoa antes
+  u.superFaEm = Date.now();
+  dirty = true;
+  return addToTropa(nickname, 1, 'superfã', avatar);
 }
 
 function getTropa() {
@@ -231,12 +269,13 @@ setInterval(flushLikeBuffer, 10000);
 const giftActionRef = {}; // chave: `${uniqueId}::${giftName}`
 
 function addGift(uniqueId, nickname, giftName, value, avatar) {
-  ensureUser(uniqueId, nickname, avatar);
+  state.global.totalDiamonds += value;
+  dirty = true;
+  if (!ensureUser(uniqueId, nickname, avatar)) return false;
   state.users[uniqueId].gifts_count += 1;
   state.users[uniqueId].gifts_value += value;
-  state.global.totalDiamonds += value; // NOVO
-  dirty = true;
   logGiftAction(uniqueId, nickname, giftName, value);
+  return true;
 }
 
 function logGiftAction(uniqueId, nickname, giftName, value) {
@@ -258,7 +297,7 @@ function logGiftAction(uniqueId, nickname, giftName, value) {
 }
 
 function addPowerUp(uniqueId, nickname, name, avatar) {
-  ensureUser(uniqueId, nickname, avatar);
+  if (!ensureUser(uniqueId, nickname, avatar)) return false;
   const powerups = state.users[uniqueId].powerups;
   powerups[name] = (powerups[name] || 0) + 1;
   dirty = true;
@@ -335,11 +374,12 @@ function resetAll() {
 const MAX_COMMENTS_PER_USER = 50;
 
 function addComment(uniqueId, nickname, avatar, text) {
-  ensureUser(uniqueId, nickname, avatar);
-  state.users[uniqueId].comments += 1;
   state.global.totalComments += 1;
-  logCommentAction(uniqueId, nickname, text);
   dirty = true;
+  if (!ensureUser(uniqueId, nickname, avatar)) return false;
+  state.users[uniqueId].comments += 1;
+  logCommentAction(uniqueId, nickname, text);
+  return true;
 }
 
 // Fila dos comentários guardados de cada pessoa (mais antigo primeiro), pra não
@@ -636,6 +676,7 @@ module.exports = {
   getGlobalStats, updateViewerCount, addComment, addFollow, addShare,
   markLiveOnline, markLiveOffline, checkLevelUp, getTropa, limparTropa, getSessions,
   heartbeat,
+  registrarSuperfa,
   iniciarBatalha, atualizarPlacarBatalha, finalizarBatalha,
   cancelarBatalhaEmAndamento, getBattleStats
 };
