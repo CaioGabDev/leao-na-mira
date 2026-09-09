@@ -278,6 +278,7 @@
         <span>📜 Histórico de lives</span>
       </button>
       <button class="ghost-btn danger-btn" id="resetBtn">🗑️ Resetar dados</button>
+      <button class="ghost-btn" id="logoutBtn">🚪 Sair</button>
     </div>
 
   </aside>
@@ -355,6 +356,7 @@
   const statusBanner = document.getElementById('statusBanner');
   const liveEyebrow = document.getElementById('liveEyebrow');
   const resetBtn = document.getElementById('resetBtn');
+  const logoutBtn = document.getElementById('logoutBtn');
   const searchInput = document.getElementById('searchInput');
   const sortButtons = document.querySelectorAll('.sort-btn');
   const loadMoreBtn = document.getElementById('loadMoreBtn');
@@ -491,6 +493,11 @@
   socket.on('ranking', data => {
     latestData = data;
     render();
+  });
+
+  logoutBtn.addEventListener('click', async () => {
+    await fetch('/api/logout', { method: 'POST' });
+    location.href = '/login.html';
   });
 
   function avatarOf(u) {

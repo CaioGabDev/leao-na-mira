@@ -93,13 +93,22 @@ function addToTropa(nome, nivel, tipo, avatar) {
   return novo;
 }
 
+// A lib do TikTok pode devolver, pro mesmo badgeSceneType, mais de um objeto:
+// um só com a imagem do selo (sem "level") e outro com o level de verdade
+// (vindo de privilegeLogExtra). Um .find() simples podia cair no objeto sem
+// "level" e achar que a pessoa não tinha nível nenhum, mesmo tendo — por isso
+// aqui procuramos especificamente pelo badge que TEM level definido.
+function getBadgeLevel(badges, sceneType) {
+  return badges?.find(b => b.badgeSceneType === sceneType && b.level != null)?.level;
+}
+
 function checkLevelUp(uniqueId, nickname, avatar, badges) {
   ensureUser(uniqueId, nickname, avatar);
   const u = state.users[uniqueId];
   const resultados = [];
 
-  const presenteador = badges?.find(b => b.badgeSceneType === 8)?.level;
-  const membro = badges?.find(b => b.badgeSceneType === 10)?.level;
+  const presenteador = getBadgeLevel(badges, 8);
+  const membro = getBadgeLevel(badges, 10);
 
   if (presenteador && presenteador > u.gifterLevel) {
     u.gifterLevel = presenteador;

@@ -374,8 +374,10 @@
     <label for="nome">Nome</label>
     <input type="text" id="nome" placeholder="Ex: Eliton Silva" />
 
-    <label for="nivel">Nível</label>
-    <input type="number" id="nivel" placeholder="Ex: 22" />
+    <div id="nivelGroup">
+      <label for="nivel">Nível</label>
+      <input type="number" id="nivel" placeholder="Ex: 22" />
+    </div>
 
     <label>Tipo</label>
     <div class="tipo-row" id="tipoRow">
@@ -498,10 +500,16 @@ socket.on('tropa_add', item => {
     renderTipoOptions();
   });
 
+  const nivelGroup = document.getElementById('nivelGroup');
+
   function renderTipoOptions(){
     [...tipoRow.children].forEach(el => {
       el.classList.toggle('active', el.dataset.tipo === tipoSelecionado);
     });
+    // Superfã não tem "nível" — vira superfã e pronto, sem precisar informar nada a mais.
+    const isSuperfa = tipoSelecionado === 'superfã';
+    nivelGroup.style.display = isSuperfa ? 'none' : '';
+    if (isSuperfa) nivelInput.value = '';
   }
 
   function salvar(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(pessoas)); }
@@ -567,7 +575,7 @@ socket.on('tropa_add', item => {
       showToast('Atualizado ✓');
     } else {
       pessoas.push({ id: Date.now(), nome, nivel, tipo: tipoSelecionado });
-      showToast('Adicionado ✓');
+      showToast(tipoSelecionado === 'superfã' ? `🔥 ${nome} se tornou superfã` : 'Adicionado ✓');
     }
 
     upsertBiblioteca(nome);
@@ -614,9 +622,9 @@ socket.on('tropa_add', item => {
   });
 
   const ORDEM_TIPOS = [
+    { key: 'superfã', label: 'Superfãs' },
     { key: 'presenteador', label: 'Presenteadores' },
     { key: 'membro', label: 'Membros' },
-    { key: 'superfã', label: 'Superfãs' },
   ];
 
   function render(){
@@ -640,7 +648,9 @@ socket.on('tropa_add', item => {
       html += `<div class="group-title">${grupo.label} · ${doGrupo.length}</div>`;
       doGrupo.forEach(p => {
         const icons = TIPO_ICONS[p.tipo];
-        const nivelTxt = p.nivel ? `atingiu o nível ${p.nivel} de ${p.tipo}` : `é ${p.tipo}`;
+        const nivelTxt = p.tipo === 'superfã'
+          ? 'se tornou superfã'
+          : (p.nivel ? `atingiu o nível ${p.nivel} de ${p.tipo}` : `é ${p.tipo}`);
         html += `
           <div class="patch ${p.tipo}">
             <span class="side-icon">${ICONS[icons.left]}</span>
@@ -785,7 +795,9 @@ socket.on('tropa_add', item => {
 
     posterRows.innerHTML = linhas.map(p => {
       const icons = TIPO_ICONS[p.tipo];
-      const nivelTxt = p.nivel ? `atingiu o nível ${p.nivel} de ${p.tipo}` : `é ${p.tipo}`;
+      const nivelTxt = p.tipo === 'superfã'
+        ? 'se tornou superfã'
+        : (p.nivel ? `atingiu o nível ${p.nivel} de ${p.tipo}` : `é ${p.tipo}`);
       return `
         <div class="poster-row ${p.tipo}">
           <span class="side-icon">${ICONS[icons.left]}</span>

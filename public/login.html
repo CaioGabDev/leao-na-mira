@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Login — Ranking da Live</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bungee&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0807; --card: #150f0b; --card-2: #0f0b08; --line: #2b2119;
+    --ink: #f3e9dc; --ink-dim: #9c8b7d; --gold: #ffb03a; --ember1: #ff7a1a; --ember2: #ff2d2d;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%;
+    background:
+      radial-gradient(700px 420px at 12% -6%, rgba(255,122,26,.14), transparent 60%),
+      radial-gradient(900px 600px at 100% 0%, rgba(255,45,45,.08), transparent 55%),
+      var(--bg);
+    color: var(--ink); font-family: 'Rajdhani', sans-serif; font-weight: 600;
+    display: flex; align-items: center; justify-content: center; padding: 20px;
+  }
+  .box {
+    width: 100%; max-width: 360px;
+    background: linear-gradient(165deg, var(--card), var(--card-2));
+    border: 1px solid var(--line); border-radius: 18px; padding: 28px 24px;
+  }
+  h1 {
+    font-family: 'Bungee', sans-serif; font-weight: 400; font-size: 24px; text-align: center;
+    margin: 0 0 4px;
+    background: linear-gradient(180deg, #ffe9b0 0%, var(--gold) 30%, var(--ember1) 65%, #a3230f 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  p.sub { text-align: center; color: var(--ink-dim); font-size: 13px; margin: 0 0 22px; }
+  label { display: block; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; font-weight: 700; color: var(--ink-dim); margin: 14px 0 6px; }
+  input {
+    width: 100%; padding: 11px 12px; border-radius: 10px; border: 1.5px solid var(--line);
+    background: #0d0907; font-family: 'Rajdhani', sans-serif; font-weight: 600; font-size: 15px;
+    color: var(--ink); outline: none;
+  }
+  input:focus { border-color: var(--gold); }
+  button {
+    width: 100%; margin-top: 20px; cursor: pointer;
+    background: linear-gradient(180deg, var(--gold), var(--ember1));
+    color: #2a1400; font-weight: 700; font-size: 14px;
+    padding: 12px 14px; border-radius: 12px; border: none;
+    font-family: 'Rajdhani', sans-serif;
+  }
+  button:disabled { opacity: .6; cursor: default; }
+  .error {
+    display: none; margin-top: 14px; background: rgba(90,20,20,.35); border: 1px solid rgba(255,70,70,.4);
+    border-radius: 10px; padding: 9px 12px; font-size: 13px; color: #ff9a9a; text-align: center;
+  }
+  .error.show { display: block; }
+</style>
+</head>
+<body>
+
+<div class="box">
+  <h1>Ranking da Live</h1>
+  <p class="sub">Faça login pra acessar</p>
+  <form id="loginForm">
+    <label for="username">Usuário</label>
+    <input type="text" id="username" autocomplete="username" required>
+    <label for="password">Senha</label>
+    <input type="password" id="password" autocomplete="current-password" required>
+    <div class="error" id="errorMsg"></div>
+    <button type="submit" id="submitBtn">Entrar</button>
+  </form>
+</div>
+
+<script>
+  const form = document.getElementById('loginForm');
+  const errorMsg = document.getElementById('errorMsg');
+  const submitBtn = document.getElementById('submitBtn');
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    errorMsg.classList.remove('show');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Entrando...';
+    try {
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: document.getElementById('username').value.trim(),
+          password: document.getElementById('password').value
+        })
+      });
+      if (res.ok) {
+        const params = new URLSearchParams(location.search);
+        location.href = params.get('next') || '/';
+        return;
+      }
+      const data = await res.json().catch(() => ({}));
+      errorMsg.textContent = data.error || 'Usuário ou senha inválidos.';
+      errorMsg.classList.add('show');
+    } catch (e) {
+      errorMsg.textContent = 'Erro ao conectar com o servidor.';
+      errorMsg.classList.add('show');
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Entrar';
+    }
+  });
+</script>
+</body>
+</html>
