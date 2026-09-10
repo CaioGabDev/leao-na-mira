@@ -163,6 +163,19 @@ function anfitrioesDaBatalha(data) {
     .filter(a => a.userId);
 }
 
+// Batalha de dupla (2v2): o TikTok manda quem é de qual time em teamMember,
+// e o placar somado de cada time em teamArmies/teamBattleResult.
+// Sem isso, `o primeiro que não é você` podia ser o SEU PARCEIRO — e ele ia
+// parar no histórico como adversário, com o placar dele no lugar do inimigo.
+function timesDaBatalha(data) {
+  return (data.teamMember || [])
+    .map(t => ({
+      teamId: String(t.teamId || ''),
+      membros: (t.userId || []).map(String)
+    }))
+    .filter(t => t.teamId && t.membros.length);
+}
+
 function souEu(anfitriao) {
   if (!anfitriao) return false;
   if (meuUserId && anfitriao.userId === meuUserId) return true;
@@ -377,32 +390,99 @@ function startTikTokConnection() {
     if (eu) meuUserId = eu.userId;
 
     if (acao === BATALHA_ABRIU) {
-      // 2v2 pode trazer mais gente; o adversário aqui é o primeiro que não é ele
+      const times = timesDaBatalha(data);
+      const nomeDe = a => a.nickname || a.displayId || a.userId;
+
+      // ---- 2v2 (ou mais): decide pelo TIME, não pela ordem da lista ----
+      if (times.length >= 2) {
+        const meuTime = meuUserId && times.find(t => t.membros.includes(meuUserId));
+        const timeRival = meuTime && times.find(t => t.teamId !== meuTime.teamId);
+        if (!meuTime || !timeRival) {
+          // não deu pra saber quem é de qual lado: melhor não registrar nada
+          // do que registrar o parceiro como adversário
+          console.log('Batalha em dupla ignorada: não identifiquei os times');
+          return;
+        }
+
+        const rivais = timeRival.membros
+          .map(id => anfitrioes.find(a => a.userId === id))
+          .filter(Boolean);
+        if (!rivais.length) {
+          console.log('Batalha em dupla ignorada: time rival sem nomes');
+          return;
+        }
+
+        db.iniciarBatalha(battleId, {
+          uniqueId: 'dupla:' + timeRival.membros.slice().sort().join('+'),
+          nickname: rivais.map(nomeDe).join(' + '),
+          avatar: rivais[0].avatar
+        }, fimPrevisto(data.battleSettings),
+          { meuTimeId: meuTime.teamId, timeRivalId: timeRival.teamId });
+
+        console.log(`Batalha em dupla começou contra ${rivais.map(nomeDe).join(' + ')}`);
+        broadcastBattles();
+        return;
+      }
+
+      // ---- 1v1 ----
       const adversario = anfitrioes.find(a => !souEu(a));
       if (!adversario) return;
+      // mais de dois anfitriões sem teamMember: não dá pra dizer quem é inimigo
+      if (anfitrioes.length > 2) {
+        console.log('Batalha com vários anfitriões e sem times: ignorada');
+        return;
+      }
 
       db.iniciarBatalha(battleId, {
         uniqueId: adversario.displayId || adversario.userId,
-        nickname: adversario.nickname || adversario.displayId || adversario.userId,
+        nickname: nomeDe(adversario),
         avatar: adversario.avatar
       }, fimPrevisto(data.battleSettings));
-      console.log(`Batalha começou contra ${adversario.nickname || adversario.displayId}`);
+      console.log(`Batalha começou contra ${nomeDe(adversario)}`);
       broadcastBattles();
       return;
     }
 
     if (ACOES_DE_FIM.has(acao)) {
-      // battleResult é um mapa userId -> { result, score }
-      const resultados = data.battleResult || {};
-      const meu = meuUserId ? resultados[meuUserId] : null;
-      const doOutro = Object.entries(resultados)
-        .find(([uid]) => uid !== meuUserId)?.[1];
+      // CANCEL costuma ser convite abortado antes de valer: se ninguém pontuou,
+      // some sem virar registro em vez de gerar um "empate 0 x 0" no histórico
+      const emCurso = db.getBattleStats().emAndamento;
+      if (acao === 3 && emCurso && !emCurso.meuScore && !emCurso.scoreOponente) {
+        db.cancelarBatalhaEmAndamento();
+        broadcastBattles();
+        return;
+      }
+
+      let veredito, meuScore, scoreRival;
+
+      // Em dupla o veredito vem por time, em teamBattleResult.
+      if (emCurso?.emDupla && Array.isArray(data.teamBattleResult)) {
+        const doTime = id => data.teamBattleResult.find(t => String(t.teamId) === String(id));
+        const meu = doTime(emCurso.meuTimeId);
+        const rival = doTime(emCurso.timeRivalId);
+        if (meu) {
+          veredito = RESULTADO[Number(meu.result)];
+          meuScore = Number(meu.totalScore) || 0;
+        }
+        if (rival) scoreRival = Number(rival.totalScore) || 0;
+      } else {
+        // 1v1: battleResult é um mapa userId -> { result, score }
+        const resultados = data.battleResult || {};
+        const meu = meuUserId ? resultados[meuUserId] : null;
+        const doOutro = Object.entries(resultados)
+          .find(([uid]) => uid !== meuUserId)?.[1];
+        if (meu) {
+          veredito = RESULTADO[Number(meu.result)];
+          meuScore = Number(meu.score) || 0;
+        }
+        if (doOutro) scoreRival = Number(doOutro.score) || 0;
+      }
 
       const registro = db.finalizarBatalha(battleId, {
         // se o TikTok mandou o veredito, ele manda; senão o placar decide
-        resultado: meu ? RESULTADO[Number(meu.result)] : undefined,
-        meuScore: meu ? Number(meu.score) || 0 : undefined,
-        scoreOponente: doOutro ? Number(doOutro.score) || 0 : undefined
+        resultado: veredito,
+        meuScore,
+        scoreOponente: scoreRival
       });
 
       if (registro) {
@@ -417,17 +497,31 @@ function startTikTokConnection() {
     if (myId !== activeConnectionId) return;
     lastEventAt = Date.now();
 
-    const armies = data.armies || {};
-    const entradas = Object.entries(armies);
-    if (!entradas.length) return;
+    const emCurso = db.getBattleStats().emAndamento;
+    if (!emCurso) return;
+    const battleId = String(data.battleId || '');
+    let meuPlacar = null, placarRival = null;
 
-    const pontos = uid => Number(armies[uid]?.hostscore) || 0;
-    const outroId = entradas.map(([uid]) => uid).find(uid => uid !== meuUserId);
+    // Em dupla o que vale é o total do time, não o de cada um.
+    if (emCurso.emDupla && Array.isArray(data.teamArmies)) {
+      const doTime = id => data.teamArmies.find(t => String(t.teamId) === String(id));
+      const meu = doTime(emCurso.meuTimeId);
+      const rival = doTime(emCurso.timeRivalId);
+      if (!meu || !rival) return;
+      meuPlacar = Number(meu.teamTotalScore) || 0;
+      placarRival = Number(rival.teamTotalScore) || 0;
+    } else {
+      const armies = data.armies || {};
+      const entradas = Object.entries(armies);
+      if (!entradas.length || !meuUserId) return;
+      const outroId = entradas.map(([uid]) => uid).find(uid => uid !== meuUserId);
+      if (!outroId) return;
+      const pontos = uid => Number(armies[uid]?.hostscore) || 0;
+      meuPlacar = pontos(meuUserId);
+      placarRival = pontos(outroId);
+    }
 
-    if (!meuUserId || !outroId) return;
-    const atual = db.atualizarPlacarBatalha(
-      String(data.battleId || ''), pontos(meuUserId), pontos(outroId)
-    );
+    const atual = db.atualizarPlacarBatalha(battleId, meuPlacar, placarRival);
     if (atual) io.emit('battle_live', atual);
   });
 
@@ -458,7 +552,44 @@ function startTikTokConnection() {
 
   connection.on('superFanJoin', data => espiarBarrage(data, 'superFanJoin'));
   connection.on('superFan', data => espiarBarrage(data, 'superFan'));
-  connection.on('barrage', data => espiarBarrage(data, 'barrage'));
+
+  // SUBIDA DE NÍVEL — a fonte certa.
+  //
+  // O banner que passa na live quando alguém sobe de nível chega como
+  // WebcastBarrageMessage com um destes preenchidos:
+  //   userGradeParam.currentGrade -> nível de presenteador
+  //   fansLevelParam.currentGrade -> nível no clube de fãs (membro)
+  // É o TikTok dizendo "essa pessoa ACABOU de subir, pro nível X" — bem
+  // diferente do selo, que só diz o nível atual e me obrigava a adivinhar a
+  // subida comparando leituras.
+  connection.on('barrage', data => {
+    espiarBarrage(data, 'barrage');
+    if (myId !== activeConnectionId) return;
+
+    const subidas = [
+      { param: data.userGradeParam, tipo: 'presenteador' },
+      { param: data.fansLevelParam, tipo: 'membro' }
+    ];
+
+    subidas.forEach(({ param, tipo }) => {
+      if (!param) return;
+      const nivel = Number(param.currentGrade);
+      if (!nivel) return;
+
+      const quem = param.user || data.user || {};
+      const uniqueId = quem.displayId || quem.uniqueId || quem.id
+        || param.userId || null;
+      const nickname = quem.nickname || quem.nickName;
+      if (!nickname) {
+        console.log(`[nivel] (TikTok) subida de ${tipo} nv${nivel} sem nome — ignorada`);
+        return;
+      }
+      const avatar = quem.avatarThumb?.urlList?.[0] || null;
+
+      const item = db.registrarSubidaDeNivel(uniqueId, nickname, avatar, nivel, tipo);
+      if (item) io.emit('tropa_add', item);
+    });
+  });
 
   connection.on('member', data => {
     processarBadges(data);

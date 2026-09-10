@@ -750,7 +750,7 @@
     battleLiveEl.innerHTML = `
       <img class="row-avatar" src="${b.oponente?.avatar || FALLBACK_AVATAR}"
            onerror="this.src='${FALLBACK_AVATAR}'">
-      <span class="vs">AO VIVO vs ${nome}</span>
+      <span class="vs">AO VIVO vs ${nome}${b.emDupla ? ' <small>(2v2)</small>' : ''}</span>
       <span class="placar dinheiro">${placarDaBatalha(b)}</span>
     `;
   }
@@ -801,7 +801,7 @@
         <span>${ICONE[b.resultado] || '⚔️'}</span>
         <div>
           <div class="quem">${esc(b.oponente?.nickname || '?')}</div>
-          <div class="quando">${new Date(b.endedAt).toLocaleString('pt-BR')} · ${formatUptime(b.duracaoSegundos)}${b.interrompida ? ' · ⚠️ adversário saiu no meio' : ''}</div>
+          <div class="quando">${new Date(b.endedAt).toLocaleString('pt-BR')} · ${formatUptime(b.duracaoSegundos)}${b.emDupla ? ' · 2v2' : ''}${b.interrompida ? ' · ⚠️ adversário saiu no meio' : ''}</div>
         </div>
         <span class="score dinheiro">${placarDaBatalha(b)}</span>
       </div>

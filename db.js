@@ -44,7 +44,9 @@ let dirty = false;
 // registro certo quando ele existir.
 if (!state.global.superfaRemarcado) {
   Object.values(state.users).forEach(u => { delete u.superFaEm; });
-  state.tropa = state.tropa.filter(p => p.tipo !== 'superfã' || p.manual);
+  // (o cadastro manual de superfã vive no navegador, não aqui — então isso
+  //  só tira o que foi anotado errado pelo automático)
+  state.tropa = state.tropa.filter(p => p.tipo !== 'superfã');
   state.global.superfaRemarcado = true;
   dirty = true;
 }
@@ -98,7 +100,9 @@ function ensureUser(uniqueId, nickname, avatar) {
     };
     state.global.uniqueViewers += 1;
   } else {
-    state.users[uniqueId].nickname = nickname;
+    // só sobrescreve com o que veio de verdade: tem evento que chega sem
+    // apelido, e antes isso apagava o nome que já estava guardado
+    if (nickname) state.users[uniqueId].nickname = nickname;
     if (avatar) state.users[uniqueId].avatar = avatar;
   }
   return true;
@@ -196,28 +200,30 @@ function checkLevelUp(uniqueId, nickname, avatar, badges) {
   // A marca é POR CATEGORIA: muita gente aparece primeiro só com o selo de
   // presenteador, e a primeira leitura do selo de membro (que pode vir lives
   // depois) também não pode contar como subida.
+  // O selo NÃO manda mais ninguém pro mural — quem faz isso é o aviso de
+  // subida do próprio TikTok (ver registrarSubidaDeNivel). Aqui a gente só
+  // mantém o nível guardado em dia, porque o selo é a única fonte que aparece
+  // em evento comum (comentário, presente) e serve pro perfil da pessoa.
+  //
+  // Por que o selo não serve pra anunciar: ele só diz o nível ATUAL, nunca
+  // "acabou de subir". Pra virar anúncio eu tinha que comparar com a leitura
+  // anterior, e isso errava dos dois lados — quem já era nível alto e apareceu
+  // pela primeira vez virava "subiu", e quem subiu antes da primeira leitura
+  // passava batido.
   const anotar = (nivel, tipo, campoNivel, campoLido) => {
-    if (!nivel) return; // esse selo não veio nesse evento: não aprendemos nada
+    if (!nivel) return;
     const anterior = u[campoNivel] || 0;
     const primeiraLeitura = !u[campoLido];
     u[campoLido] = true;
     if (nivel <= anterior) return;
     u[campoNivel] = nivel;
 
-    if (primeiraLeitura) {
-      registrarLeitura(`${nickname} ${tipo} nv${nivel} — primeira leitura, só anotei`);
-      return;
-    }
-    if (nivel < 10) {
-      registrarLeitura(`${nickname} ${tipo} ${anterior} -> ${nivel} — subiu, mas ainda não chegou no 10`);
-      return;
-    }
-    const item = addToTropa(nickname, nivel, tipo, avatar);
+    // fica no log como sombra: dá pra comparar, numa live, o que o selo teria
+    // anunciado contra o que o TikTok realmente anunciou
     registrarLeitura(
-      `${nickname} ${tipo} ${anterior} -> ${nivel} — ` +
-      (item ? 'ENTROU no mural' : 'já estava no mural com nível igual ou maior')
+      `(selo) ${nickname} ${tipo} ${anterior} -> ${nivel}` +
+      (primeiraLeitura ? ' [primeira leitura]' : '') + ' — só anotei'
     );
-    if (item) resultados.push(item);
   };
 
   anotar(presenteador, 'presenteador', 'gifterLevel', 'gifterLido');
@@ -225,6 +231,38 @@ function checkLevelUp(uniqueId, nickname, avatar, badges) {
 
   dirty = true;
   return resultados;
+}
+
+// Subida anunciada pelo próprio TikTok (o banner que passa na live).
+// Diferente do selo, aqui não tem adivinhação: o TikTok está dizendo que a
+// pessoa ACABOU de subir, e pra qual nível. Não precisa de linha de base, não
+// perde quem subiu antes da primeira leitura e não inventa quem não subiu.
+function registrarSubidaDeNivel(uniqueId, nickname, avatar, nivel, tipo) {
+  const n = Number(nivel);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  // Só atualiza quem o servidor já conhece. Antes eu criava o registro aqui, e
+  // quem só apareceu no aviso de subida entrava no ranking zerado e ainda
+  // contava como espectador único.
+  if (uniqueId) {
+    const u = state.users[uniqueId];
+    if (u) {
+      const campo = tipo === 'membro' ? 'memberLevel' : 'gifterLevel';
+      const lido = tipo === 'membro' ? 'memberLido' : 'gifterLido';
+      if (n > (u[campo] || 0)) u[campo] = n;
+      u[lido] = true;
+      dirty = true;
+    }
+  }
+  if (n < 10) {
+    registrarLeitura(`(TikTok) ${nickname} ${tipo} nv${n} — subiu, mas ainda não chegou no 10`);
+    return null;
+  }
+  const item = addToTropa(nickname, n, tipo, avatar);
+  registrarLeitura(
+    `(TikTok) ${nickname} ${tipo} nv${n} — ` +
+    (item ? 'ENTROU no mural' : 'já estava no mural com nível igual ou maior')
+  );
+  return item;
 }
 
 // Superfã não tem nível: ou a pessoa é, ou não é. O TikTok avisa no momento em
@@ -558,7 +596,7 @@ function markLiveOffline() {
 // ---------- BATALHAS (PK / link mic) ----------
 const MAX_BATALHAS = 500;
 
-function iniciarBatalha(battleId, oponente, terminaEm) {
+function iniciarBatalha(battleId, oponente, terminaEm, times) {
   // o TikTok repete o evento de abertura; não recomeça a mesma batalha
   if (state.currentBattle && state.currentBattle.battleId === battleId) {
     return state.currentBattle;
@@ -570,7 +608,11 @@ function iniciarBatalha(battleId, oponente, terminaEm) {
     meuScore: 0,
     scoreOponente: 0,
     terminaEm: terminaEm || null,  // horário previsto de fim, quando o TikTok manda
-    ultimoSinalEm: Date.now()      // última vez que o placar mexeu
+    ultimoSinalEm: Date.now(),     // última vez que o placar mexeu
+    // batalha de dupla: guardamos os times pra somar o placar do lado certo
+    emDupla: !!(times && times.meuTimeId),
+    meuTimeId: times?.meuTimeId || null,
+    timeRivalId: times?.timeRivalId || null
   };
   dirty = true;
   return state.currentBattle;
@@ -644,7 +686,8 @@ function finalizarBatalha(battleId, dados = {}) {
     resultado,
     // marca que não veio veredito do TikTok: o adversário saiu no meio e o
     // resultado saiu do placar em que a batalha parou
-    interrompida: !!dados.interrompida
+    interrompida: !!dados.interrompida,
+    emDupla: !!b.emDupla
   };
 
   state.battles.push(registro);
@@ -733,7 +776,7 @@ module.exports = {
   getGlobalStats, updateViewerCount, addComment, addFollow, addShare,
   markLiveOnline, markLiveOffline, checkLevelUp, getTropa, limparTropa, getSessions,
   heartbeat,
-  registrarSuperfa, removerDaTropa,
+  registrarSuperfa, removerDaTropa, registrarSubidaDeNivel,
   iniciarBatalha, atualizarPlacarBatalha, finalizarBatalha, fecharBatalhaAbandonada,
   cancelarBatalhaEmAndamento, getBattleStats
 };
