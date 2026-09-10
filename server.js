@@ -144,6 +144,22 @@ function fimPrevisto(settings) {
   return inicio && dur ? inicio + dur * 1000 : null;
 }
 
+// ---------- DIAGNÓSTICO ----------
+// As linhas de decisão de nível e do farejador vão pro log do servidor E pra
+// página /diagnostico.html, pra dar pra acompanhar durante a live sem precisar
+// abrir o painel do Railway. Guarda as últimas linhas pra quem abrir depois.
+const diagnostico = [];
+const MAX_DIAGNOSTICO = 400;
+
+function registrarDiagnostico(canal, texto) {
+  const linha = { canal, texto, em: Date.now() };
+  diagnostico.push(linha);
+  if (diagnostico.length > MAX_DIAGNOSTICO) diagnostico.shift();
+  io.emit('diagnostico', linha);
+}
+
+db.setLogListener(registrarDiagnostico);
+
 function broadcastBattles() {
   io.emit('battle_stats', db.getBattleStats());
 }
@@ -553,42 +569,87 @@ function startTikTokConnection() {
   connection.on('superFanJoin', data => espiarBarrage(data, 'superFanJoin'));
   connection.on('superFan', data => espiarBarrage(data, 'superFan'));
 
-  // SUBIDA DE NÍVEL — a fonte certa.
+  // BANNER DE NÍVEL — desligado de propósito, só observando.
   //
-  // O banner que passa na live quando alguém sobe de nível chega como
-  // WebcastBarrageMessage com um destes preenchidos:
-  //   userGradeParam.currentGrade -> nível de presenteador
-  //   fansLevelParam.currentGrade -> nível no clube de fãs (membro)
-  // É o TikTok dizendo "essa pessoa ACABOU de subir, pro nível X" — bem
-  // diferente do selo, que só diz o nível atual e me obrigava a adivinhar a
-  // subida comparando leituras.
+  // Eu tinha tratado `userGradeParam.currentGrade` como "acabou de subir pro
+  // nível X". Na prática ele é o nível ATUAL da pessoa, e vem carregado em
+  // vários tipos de banner — então qualquer um que aparecesse num banner
+  // entrava no mural com o nível que já tinha, vários de uma vez.
+  //
+  // Quem decide o mural agora é a subida do selo (ver checkLevelUp no db.js).
+  // Aqui a gente só anota no log o que cada banner trouxe, pra um dia saber
+  // qual é o banner de subida de verdade — sem escrever nada na lista.
   connection.on('barrage', data => {
     espiarBarrage(data, 'barrage');
     if (myId !== activeConnectionId) return;
 
-    const subidas = [
-      { param: data.userGradeParam, tipo: 'presenteador' },
-      { param: data.fansLevelParam, tipo: 'membro' }
-    ];
+    const grade = Number(data.userGradeParam?.currentGrade) || 0;
+    const fans = Number(data.fansLevelParam?.currentGrade) || 0;
+    if (!grade && !fans) return;
 
-    subidas.forEach(({ param, tipo }) => {
-      if (!param) return;
-      const nivel = Number(param.currentGrade);
-      if (!nivel) return;
+    const quem = data.userGradeParam?.user || data.fansLevelParam?.user || data.user || {};
+    const nome = quem.nickname || quem.nickName || '(sem nome)';
+    const chave = data.content?.key || data.commonBarrageContent?.key || '(sem chave)';
+    const linha = `${nome} grade=${grade || '-'} fans=${fans || '-'} chave="${chave}"`;
+    console.log(`[banner] ${linha} (só observando)`);
+    registrarDiagnostico('banner', linha);
+  });
 
-      const quem = param.user || data.user || {};
-      const uniqueId = quem.displayId || quem.uniqueId || quem.id
-        || param.userId || null;
-      const nickname = quem.nickname || quem.nickName;
-      if (!nickname) {
-        console.log(`[nivel] (TikTok) subida de ${tipo} nv${nivel} sem nome — ignorada`);
-        return;
-      }
-      const avatar = quem.avatarThumb?.urlList?.[0] || null;
+  // ---------- FAREJADOR DE SUBIDA DE NÍVEL ----------
+  // Objetivo: descobrir QUAL mensagem o TikTok manda no instante em que alguém
+  // sobe de nível. Com essa mensagem na mão, o mural para de depender de
+  // inferência e passa a ser exato.
+  //
+  // A lib emite 'decodedData' pra TODA mensagem que chega, com o nome do tipo.
+  // Aqui a gente ignora as de alto volume (comentário, presente, like...) e
+  // anota o resto: uma linha por tipo novo, e linha cheia pra qualquer mensagem
+  // que cheire a "subiu de nível".
+  const ALTO_VOLUME = new Set([
+    'WebcastChatMessage', 'WebcastGiftMessage', 'WebcastLikeMessage',
+    'WebcastMemberMessage', 'WebcastRoomUserSeqMessage', 'WebcastSocialMessage',
+    'WebcastLinkMicArmies', 'WebcastEmoteChatMessage'
+  ]);
+  const CHEIRO_DE_SUBIDA = /upgrade|level_?up|grade_?up|levelup|niveis|new_?level/i;
+  const tiposVistos = new Set();
+  let farejadosNaLive = 0;
+  const LIMITE_FAREJADOR = 300; // teto de segurança pra não inundar o log
 
-      const item = db.registrarSubidaDeNivel(uniqueId, nickname, avatar, nivel, tipo);
-      if (item) io.emit('tropa_add', item);
-    });
+  connection.on('decodedData', (metodo, decodificada) => {
+    if (myId !== activeConnectionId) return;
+    if (farejadosNaLive >= LIMITE_FAREJADOR) return;
+
+    const tipo = decodificada?.type || metodo;
+    if (!tipo || ALTO_VOLUME.has(tipo)) return;
+
+    const dados = decodificada?.data ?? decodificada;
+    let texto;
+    try {
+      texto = JSON.stringify(dados, (k, v) => (typeof v === 'bigint' ? String(v) : v));
+    } catch (e) { return; }
+    if (!texto) return;
+
+    const quem = dados?.user?.nickname || dados?.user?.nickName || '';
+    const hora = new Date().toLocaleTimeString('pt-BR');
+
+    // 1) Cheirou a subida: manda a mensagem inteira (é o que eu preciso ver)
+    if (CHEIRO_DE_SUBIDA.test(texto)) {
+      farejadosNaLive++;
+      const cabecalho = `>>> POSSÍVEL SUBIDA <<< tipo=${tipo} quem="${quem}"`;
+      console.log(`[FAREJADOR ${hora}] ${cabecalho}`);
+      console.log(`[FAREJADOR ${hora}] ${texto.slice(0, 1800)}`);
+      registrarDiagnostico('subida', cabecalho);
+      registrarDiagnostico('subida', texto.slice(0, 1800));
+      return;
+    }
+
+    // 2) Tipo nunca visto: uma linha só, pra montar o inventário da live
+    if (!tiposVistos.has(tipo)) {
+      tiposVistos.add(tipo);
+      farejadosNaLive++;
+      const linha = `tipo novo: ${tipo} quem="${quem}" ${texto.slice(0, 300)}`;
+      console.log(`[FAREJADOR ${hora}] ${linha}`);
+      registrarDiagnostico('farejador', linha);
+    }
   });
 
   connection.on('member', data => {
@@ -730,6 +791,7 @@ io.on('connection', socket => {
   socket.emit('global_stats', db.getGlobalStats());
   socket.emit('tropa_init', db.getTropa());
   socket.emit('battle_stats', db.getBattleStats());
+  socket.emit('diagnostico_init', diagnostico);
 });
 
 

@@ -173,8 +173,15 @@ function getBadgeLevel(badges, sceneType) {
 
 // Deixa rastro de toda leitura de nível, pra dar pra conferir no log da live
 // por que fulano entrou ou não entrou no mural.
+// Além do log do servidor, manda a linha pra quem estiver ouvindo (o server
+// repassa pra página de diagnóstico, pra dar pra acompanhar sem abrir o
+// Railway no meio da live).
+let ouvinteDeLog = null;
+function setLogListener(fn) { ouvinteDeLog = fn; }
+
 function registrarLeitura(msg) {
   console.log('[nivel]', msg);
+  if (ouvinteDeLog) { try { ouvinteDeLog('nivel', msg); } catch (e) {} }
 }
 
 function checkLevelUp(uniqueId, nickname, avatar, badges) {
@@ -200,30 +207,56 @@ function checkLevelUp(uniqueId, nickname, avatar, badges) {
   // A marca é POR CATEGORIA: muita gente aparece primeiro só com o selo de
   // presenteador, e a primeira leitura do selo de membro (que pode vir lives
   // depois) também não pode contar como subida.
-  // O selo NÃO manda mais ninguém pro mural — quem faz isso é o aviso de
-  // subida do próprio TikTok (ver registrarSubidaDeNivel). Aqui a gente só
-  // mantém o nível guardado em dia, porque o selo é a única fonte que aparece
-  // em evento comum (comentário, presente) e serve pro perfil da pessoa.
+  // Quem manda pro mural é a SUBIDA DO SELO — o número que aparece do lado do
+  // nome. É a única fonte que dá pra ler com certeza. A regra é diferente pra
+  // cada tipo, porque os dois níveis têm natureza diferente:
   //
-  // Por que o selo não serve pra anunciar: ele só diz o nível ATUAL, nunca
-  // "acabou de subir". Pra virar anúncio eu tinha que comparar com a leitura
-  // anterior, e isso errava dos dois lados — quem já era nível alto e apareceu
-  // pela primeira vez virava "subiu", e quem subiu antes da primeira leitura
-  // passava batido.
+  //   membro  = clube de fãs DE VOCÊS. Se subiu, subiu aqui. Ponto.
+  //   presenteador = nível global do TikTok. A pessoa pode ter subido gastando
+  //                  na live de outro streamer e só aparecer aqui depois. Por
+  //                  isso só conta se ela também mandou presente NESTA live —
+  //                  sem presente não tem como o nível ter subido aqui.
+  // Janela: o presente tem que ter vindo DEPOIS da última vez que a gente leu o
+  // nível dela. Assim não basta ter presenteado em algum momento da live — o
+  // presente precisa estar dentro do intervalo em que a subida aconteceu.
+  // (Antes: presenteou em qualquer momento da live. Isso deixava passar quem
+  //  presenteou cedo, subiu na live de outro, e voltou aqui já com nível novo.)
+  const inicioDaJanela = Math.max(u.gifterLidoEm || 0, state.global.startedAt || 0);
+  const presenteouNaJanela = (u.ultimoPresenteEm || 0) >= inicioDaJanela;
+
   const anotar = (nivel, tipo, campoNivel, campoLido) => {
-    if (!nivel) return;
+    if (!nivel) return; // esse selo não veio nesse evento
     const anterior = u[campoNivel] || 0;
     const primeiraLeitura = !u[campoLido];
     u[campoLido] = true;
+    if (tipo === 'presenteador') u.gifterLidoEm = Date.now(); // fecha a janela
     if (nivel <= anterior) return;
     u[campoNivel] = nivel;
 
-    // fica no log como sombra: dá pra comparar, numa live, o que o selo teria
-    // anunciado contra o que o TikTok realmente anunciou
+    // Primeira vez que lemos o nível dessa pessoa: só ponto de partida. Sem
+    // isso, quem já era nível alto entraria como se tivesse acabado de subir.
+    if (primeiraLeitura) {
+      registrarLeitura(`${nickname} ${tipo} nv${nivel} — primeira leitura, só anotei`);
+      return;
+    }
+    if (nivel < 10) {
+      registrarLeitura(`${nickname} ${tipo} ${anterior} -> ${nivel} — ainda não chegou no 10`);
+      return;
+    }
+    if (tipo === 'presenteador' && !presenteouNaJanela) {
+      registrarLeitura(
+        `${nickname} presenteador ${anterior} -> ${nivel} — subiu FORA daqui ` +
+        '(não mandou presente entre uma leitura e outra), fica de fora'
+      );
+      return;
+    }
+
+    const item = addToTropa(nickname, nivel, tipo, avatar);
     registrarLeitura(
-      `(selo) ${nickname} ${tipo} ${anterior} -> ${nivel}` +
-      (primeiraLeitura ? ' [primeira leitura]' : '') + ' — só anotei'
+      `${nickname} ${tipo} ${anterior} -> ${nivel} — ` +
+      (item ? 'ENTROU no mural' : 'já estava no mural com nível igual ou maior')
     );
+    if (item) resultados.push(item);
   };
 
   anotar(presenteador, 'presenteador', 'gifterLevel', 'gifterLido');
@@ -335,6 +368,8 @@ function addGift(uniqueId, nickname, giftName, value, avatar) {
   if (!ensureUser(uniqueId, nickname, avatar)) return false;
   state.users[uniqueId].gifts_count += 1;
   state.users[uniqueId].gifts_value += value;
+  // usado pra saber se a subida de presenteador aconteceu AQUI (ver checkLevelUp)
+  state.users[uniqueId].ultimoPresenteEm = Date.now();
   logGiftAction(uniqueId, nickname, giftName, value);
   return true;
 }
@@ -776,7 +811,7 @@ module.exports = {
   getGlobalStats, updateViewerCount, addComment, addFollow, addShare,
   markLiveOnline, markLiveOffline, checkLevelUp, getTropa, limparTropa, getSessions,
   heartbeat,
-  registrarSuperfa, removerDaTropa, registrarSubidaDeNivel,
+  registrarSuperfa, removerDaTropa, registrarSubidaDeNivel, setLogListener,
   iniciarBatalha, atualizarPlacarBatalha, finalizarBatalha, fecharBatalhaAbandonada,
   cancelarBatalhaEmAndamento, getBattleStats
 };

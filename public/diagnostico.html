@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diagnóstico da Live</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bungee&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0807;
+    --card: #150f0b;
+    --card-2: #0f0b08;
+    --line: #2b2119;
+    --ink: #f3e9dc;
+    --ink-dim: #9c8b7d;
+    --gold: #ffb03a;
+    --ember1: #ff7a1a;
+    --verde: #6ee787;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; min-height: 100%;
+    background:
+      radial-gradient(700px 420px at 12% -6%, rgba(255,122,26,.14), transparent 60%),
+      var(--bg);
+    color: var(--ink); font-family: 'Rajdhani', sans-serif; font-weight: 600;
+  }
+  .shell { max-width: 1000px; margin: 0 auto; padding: 24px 18px 60px; }
+
+  h1 {
+    font-family: 'Bungee', cursive; font-size: clamp(24px, 5vw, 38px);
+    margin: 0 0 6px;
+    background: linear-gradient(180deg, var(--gold), var(--ember1));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .sub { color: var(--ink-dim); font-size: 14px; margin: 0 0 18px; }
+
+  .como {
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 14px 16px; margin-bottom: 16px; font-size: 14px; line-height: 1.55;
+  }
+  .como b { color: var(--gold); }
+  .como ol { margin: 8px 0 0; padding-left: 20px; }
+  .como li { margin-bottom: 4px; }
+
+  .barra { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; align-items: center; }
+  .btn {
+    background: var(--card-2); border: 1.5px solid var(--line); color: var(--ink-dim);
+    font-family: 'Rajdhani', sans-serif; font-weight: 700; font-size: 13px;
+    border-radius: 999px; padding: 9px 16px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--gold); color: var(--ink); }
+  .btn.ativo { background: linear-gradient(180deg, var(--gold), var(--ember1)); color: #2a1400; border-color: transparent; }
+  .btn.destaque { background: linear-gradient(180deg, var(--gold), var(--ember1)); color: #2a1400; border-color: transparent; }
+  .contador { margin-left: auto; font-size: 13px; color: var(--ink-dim); }
+
+  .lista {
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 10px; max-height: 70vh; overflow-y: auto;
+    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+    font-size: 12.5px; line-height: 1.5;
+  }
+  .linha {
+    padding: 6px 10px; border-radius: 8px; margin-bottom: 4px;
+    word-break: break-word; white-space: pre-wrap;
+    background: var(--card-2); border-left: 3px solid var(--line);
+  }
+  .linha .hora { color: var(--ink-dim); margin-right: 8px; }
+  .linha.subida { border-left-color: var(--verde); background: rgba(110,231,135,.08); }
+  .linha.nivel-entrou { border-left-color: var(--gold); background: rgba(255,176,58,.08); }
+  .linha.banner { border-left-color: #3e7bfa; }
+  .vazio { text-align: center; color: var(--ink-dim); padding: 40px 0; font-size: 14px; }
+  a.voltar { color: var(--ink-dim); font-size: 13px; text-decoration: none; }
+  a.voltar:hover { color: var(--gold); }
+</style>
+</head>
+<body>
+<div class="shell">
+  <a class="voltar" href="/index.html">← Voltar pro Ranking</a>
+  <h1>Diagnóstico da Live</h1>
+  <p class="sub">O que o TikTok está mandando, ao vivo. Serve pra descobrir a mensagem exata de subida de nível.</p>
+
+  <div class="como">
+    <b>Como usar:</b>
+    <ol>
+      <li>Deixe esta página aberta durante a live.</li>
+      <li>Quando você <b>ver alguém subir de nível</b> na tela do TikTok, anote o nome e o horário.</li>
+      <li>Aperte <b>Copiar tudo</b> e mande o texto pro Claude, junto com o nome e a hora.</li>
+    </ol>
+    Linha <span style="color:var(--verde)">verde</span> = mensagem que cheira a subida de nível.
+    Linha <span style="color:var(--gold)">dourada</span> = alguém entrou no mural.
+  </div>
+
+  <div class="barra">
+    <button class="btn ativo" data-filtro="tudo">Tudo</button>
+    <button class="btn" data-filtro="subida">Possíveis subidas</button>
+    <button class="btn" data-filtro="nivel">Decisões do mural</button>
+    <button class="btn" data-filtro="farejador">Tipos de mensagem</button>
+    <button class="btn destaque" id="copiarBtn">📋 Copiar tudo</button>
+    <span class="contador" id="contador">0 linhas</span>
+  </div>
+
+  <div class="lista" id="lista">
+    <div class="vazio">Esperando mensagens da live...</div>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+  const socket = io();
+  const listaEl = document.getElementById('lista');
+  const contadorEl = document.getElementById('contador');
+  let linhas = [];
+  let filtro = 'tudo';
+
+  function esc(txt) {
+    return String(txt ?? '').replace(/[&<>"']/g, c => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+  }
+
+  function hora(ms) {
+    return new Date(ms).toLocaleTimeString('pt-BR');
+  }
+
+  // destaca as linhas que interessam: subida farejada e quem entrou no mural
+  function classeDa(linha) {
+    if (linha.canal === 'subida') return 'subida';
+    if (linha.canal === 'banner') return 'banner';
+    if (linha.canal === 'nivel' && /ENTROU no mural/.test(linha.texto)) return 'nivel-entrou';
+    return '';
+  }
+
+  function passaNoFiltro(linha) {
+    if (filtro === 'tudo') return true;
+    return linha.canal === filtro;
+  }
+
+  function render() {
+    const visiveis = linhas.filter(passaNoFiltro);
+    contadorEl.textContent = visiveis.length + ' de ' + linhas.length + ' linhas';
+
+    if (!visiveis.length) {
+      listaEl.innerHTML = '<div class="vazio">Nada aqui ainda.</div>';
+      return;
+    }
+    const colado = listaEl.scrollTop + listaEl.clientHeight >= listaEl.scrollHeight - 40;
+    listaEl.innerHTML = visiveis.map(l => `
+      <div class="linha ${classeDa(l)}">
+        <span class="hora">${hora(l.em)}</span>${esc(l.texto)}
+      </div>
+    `).join('');
+    // só acompanha o fim se o usuário já estava no fim (não atrapalha a leitura)
+    if (colado) listaEl.scrollTop = listaEl.scrollHeight;
+  }
+
+  socket.on('diagnostico_init', historico => {
+    linhas = Array.isArray(historico) ? historico.slice() : [];
+    render();
+  });
+
+  socket.on('diagnostico', linha => {
+    linhas.push(linha);
+    if (linhas.length > 600) linhas.shift();
+    render();
+  });
+
+  document.querySelectorAll('[data-filtro]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('[data-filtro]').forEach(b => b.classList.remove('ativo'));
+      btn.classList.add('ativo');
+      filtro = btn.dataset.filtro;
+      render();
+    });
+  });
+
+  document.getElementById('copiarBtn').addEventListener('click', async () => {
+    const texto = linhas.filter(passaNoFiltro)
+      .map(l => `[${hora(l.em)}] (${l.canal}) ${l.texto}`)
+      .join('\n');
+    const btn = document.getElementById('copiarBtn');
+    try {
+      await navigator.clipboard.writeText(texto);
+      btn.textContent = '✓ Copiado!';
+    } catch (e) {
+      // navegador bloqueou a área de transferência: mostra pra copiar na mão
+      const area = document.createElement('textarea');
+      area.value = texto;
+      area.style.cssText = 'position:fixed;inset:5%;width:90%;height:80%;z-index:99;font-size:12px;';
+      document.body.appendChild(area);
+      area.select();
+      btn.textContent = 'Selecione e copie';
+      setTimeout(() => area.remove(), 20000);
+    }
+    setTimeout(() => { btn.textContent = '📋 Copiar tudo'; }, 2500);
+  });
+</script>
+</body>
+</html>
