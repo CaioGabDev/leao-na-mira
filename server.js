@@ -569,30 +569,53 @@ function startTikTokConnection() {
   connection.on('superFanJoin', data => espiarBarrage(data, 'superFanJoin'));
   connection.on('superFan', data => espiarBarrage(data, 'superFan'));
 
-  // BANNER DE NÍVEL — desligado de propósito, só observando.
+  // SUBIDA DE NÍVEL ANUNCIADA PELO TIKTOK — agora com a chave certa.
   //
-  // Eu tinha tratado `userGradeParam.currentGrade` como "acabou de subir pro
-  // nível X". Na prática ele é o nível ATUAL da pessoa, e vem carregado em
-  // vários tipos de banner — então qualquer um que aparecesse num banner
-  // entrava no mural com o nível que já tinha, vários de uma vez.
-  //
-  // Quem decide o mural agora é a subida do selo (ver checkLevelUp no db.js).
-  // Aqui a gente só anota no log o que cada banner trouxe, pra um dia saber
-  // qual é o banner de subida de verdade — sem escrever nada na lista.
+  // O que me enganou antes: `userGradeParam`/`fansLevelParam` vêm preenchidos
+  // TAMBÉM no banner de entrada na live (a pessoa entra, o banner mostra o
+  // nível dela). Quem separa uma coisa da outra é o msgType, do enum
+  // BarrageMessageBarrageType da lib:
+  //     8  = USER_UPGRADE                     -> presenteador SUBIU
+  //     9  = GRADE_USER_ENTRANCE_NOTIFICATION -> só entrou
+  //     10 = FANS_LEVEL_UPGRADE               -> membro SUBIU
+  //     11 = FANS_LEVEL_ENTRANCE              -> só entrou
+  // Confirmado no log da live: AJB veio com 9 e caiozz com 11, os dois entrada.
+  const BARRAGE_SUBIU_PRESENTEADOR = 8;
+  const BARRAGE_SUBIU_MEMBRO = 10;
+
   connection.on('barrage', data => {
     espiarBarrage(data, 'barrage');
     if (myId !== activeConnectionId) return;
 
-    const grade = Number(data.userGradeParam?.currentGrade) || 0;
-    const fans = Number(data.fansLevelParam?.currentGrade) || 0;
-    if (!grade && !fans) return;
+    const msgType = Number(data.msgType);
+    const ehSubida = msgType === BARRAGE_SUBIU_PRESENTEADOR || msgType === BARRAGE_SUBIU_MEMBRO;
+    const tipo = msgType === BARRAGE_SUBIU_MEMBRO ? 'membro' : 'presenteador';
+    const param = msgType === BARRAGE_SUBIU_MEMBRO ? data.fansLevelParam : data.userGradeParam;
 
-    const quem = data.userGradeParam?.user || data.fansLevelParam?.user || data.user || {};
+    const quem = param?.user || data.user || {};
     const nome = quem.nickname || quem.nickName || '(sem nome)';
-    const chave = data.content?.key || data.commonBarrageContent?.key || '(sem chave)';
-    const linha = `${nome} grade=${grade || '-'} fans=${fans || '-'} chave="${chave}"`;
-    console.log(`[banner] ${linha} (só observando)`);
-    registrarDiagnostico('banner', linha);
+    const nivel = Number(param?.currentGrade) || 0;
+
+    if (!ehSubida) {
+      // entrada e outros banners: só observa, não escreve na lista
+      const grade = Number(data.userGradeParam?.currentGrade) || 0;
+      const fans = Number(data.fansLevelParam?.currentGrade) || 0;
+      if (grade || fans) {
+        registrarDiagnostico('banner',
+          `${nome} msgType=${msgType} grade=${grade || '-'} fans=${fans || '-'} (não é subida)`);
+      }
+      return;
+    }
+
+    if (!nivel || nome === '(sem nome)') {
+      registrarDiagnostico('banner', `subida de ${tipo} sem dados suficientes (msgType=${msgType})`);
+      return;
+    }
+
+    const uniqueId = quem.displayId || quem.uniqueId || quem.id || param?.userId || null;
+    const avatar = quem.avatarThumb?.urlList?.[0] || null;
+    const item = db.registrarSubidaDeNivel(uniqueId, nome, avatar, nivel, tipo);
+    if (item) io.emit('tropa_add', item);
   });
 
   // ---------- FAREJADOR DE SUBIDA DE NÍVEL ----------
@@ -609,7 +632,24 @@ function startTikTokConnection() {
     'WebcastMemberMessage', 'WebcastRoomUserSeqMessage', 'WebcastSocialMessage',
     'WebcastLinkMicArmies', 'WebcastEmoteChatMessage'
   ]);
-  const CHEIRO_DE_SUBIDA = /upgrade|level_?up|grade_?up|levelup|niveis|new_?level/i;
+  // Procuramos só nos TEXTOS da mensagem (as chaves e as frases que o TikTok
+  // manda), nunca no JSON inteiro — senão nome de arquivo de imagem tipo
+  // "grade_badge_lv28.png" dispara alarme falso, que foi o que aconteceu.
+  const CHEIRO_DE_SUBIDA = /upgrade|level.?up|grade.?up|promote|reached|now.?level|subiu|n[ií]vel/i;
+
+  // varre a mensagem atrás de key/defaultPattern em qualquer profundidade
+  function textosDaMensagem(obj, achados = [], profundidade = 0) {
+    if (!obj || typeof obj !== 'object' || profundidade > 6) return achados;
+    for (const [chave, valor] of Object.entries(obj)) {
+      if ((chave === 'key' || chave === 'defaultPattern') && typeof valor === 'string' && valor) {
+        achados.push(valor);
+      } else if (valor && typeof valor === 'object') {
+        textosDaMensagem(valor, achados, profundidade + 1);
+      }
+      if (achados.length > 40) break;
+    }
+    return achados;
+  }
   const tiposVistos = new Set();
   let farejadosNaLive = 0;
   const LIMITE_FAREJADOR = 300; // teto de segurança pra não inundar o log
@@ -630,9 +670,10 @@ function startTikTokConnection() {
 
     const quem = dados?.user?.nickname || dados?.user?.nickName || '';
     const hora = new Date().toLocaleTimeString('pt-BR');
+    const textos = textosDaMensagem(dados);
 
     // 1) Cheirou a subida: manda a mensagem inteira (é o que eu preciso ver)
-    if (CHEIRO_DE_SUBIDA.test(texto)) {
+    if (textos.some(t => CHEIRO_DE_SUBIDA.test(t))) {
       farejadosNaLive++;
       const cabecalho = `>>> POSSÍVEL SUBIDA <<< tipo=${tipo} quem="${quem}"`;
       console.log(`[FAREJADOR ${hora}] ${cabecalho}`);
@@ -643,10 +684,13 @@ function startTikTokConnection() {
     }
 
     // 2) Tipo nunca visto: uma linha só, pra montar o inventário da live
+    // 2) Tipo nunca visto: uma linha curta e legível, com as frases da mensagem
+    //    em vez do JSON cru (que só enchia a tela de cabeçalho e id).
     if (!tiposVistos.has(tipo)) {
       tiposVistos.add(tipo);
       farejadosNaLive++;
-      const linha = `tipo novo: ${tipo} quem="${quem}" ${texto.slice(0, 300)}`;
+      const resumo = textos.length ? textos.slice(0, 4).join(' | ') : '(sem texto)';
+      const linha = `tipo novo: ${tipo}${quem ? ` quem="${quem}"` : ''} → ${resumo}`;
       console.log(`[FAREJADOR ${hora}] ${linha}`);
       registrarDiagnostico('farejador', linha);
     }

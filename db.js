@@ -179,6 +179,9 @@ function getBadgeLevel(badges, sceneType) {
 let ouvinteDeLog = null;
 function setLogListener(fn) { ouvinteDeLog = fn; }
 
+// A partir de que nível a pessoa entra no mural. Mudar aqui muda os dois tipos.
+const NIVEL_MINIMO_MURAL = 10;
+
 function registrarLeitura(msg) {
   console.log('[nivel]', msg);
   if (ouvinteDeLog) { try { ouvinteDeLog('nivel', msg); } catch (e) {} }
@@ -239,14 +242,20 @@ function checkLevelUp(uniqueId, nickname, avatar, badges) {
       registrarLeitura(`${nickname} ${tipo} nv${nivel} — primeira leitura, só anotei`);
       return;
     }
-    if (nivel < 10) {
-      registrarLeitura(`${nickname} ${tipo} ${anterior} -> ${nivel} — ainda não chegou no 10`);
-      return;
-    }
+    // A checagem da janela vem ANTES do corte de nível 10 de propósito: assim
+    // toda subida pequena (2 -> 3, etc) também passa pela regra e vira teste
+    // grátis dela no log, mesmo sem entrar no mural.
     if (tipo === 'presenteador' && !presenteouNaJanela) {
       registrarLeitura(
         `${nickname} presenteador ${anterior} -> ${nivel} — subiu FORA daqui ` +
         '(não mandou presente entre uma leitura e outra), fica de fora'
+      );
+      return;
+    }
+    if (nivel < NIVEL_MINIMO_MURAL) {
+      registrarLeitura(
+        `${nickname} ${tipo} ${anterior} -> ${nivel} — subiu AQUI ✔ ` +
+        `mas o mural só mostra do ${NIVEL_MINIMO_MURAL} pra cima`
       );
       return;
     }
@@ -286,8 +295,8 @@ function registrarSubidaDeNivel(uniqueId, nickname, avatar, nivel, tipo) {
       dirty = true;
     }
   }
-  if (n < 10) {
-    registrarLeitura(`(TikTok) ${nickname} ${tipo} nv${n} — subiu, mas ainda não chegou no 10`);
+  if (n < NIVEL_MINIMO_MURAL) {
+    registrarLeitura(`(TikTok) ${nickname} ${tipo} nv${n} — subiu AQUI ✔ mas o mural só mostra do ${NIVEL_MINIMO_MURAL} pra cima`);
     return null;
   }
   const item = addToTropa(nickname, n, tipo, avatar);
