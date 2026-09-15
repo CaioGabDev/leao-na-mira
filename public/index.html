@@ -7,310 +7,515 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bungee&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/theme.css">
 <style>
-  :root {
-    --bg: #0a0807;
-    --card: #150f0b;
-    --card-2: #0f0b08;
-    --line: #2b2119;
-    --ink: #f3e9dc;
-    --ink-dim: #9c8b7d;
-    --ink-faint: #5a4c40;
-    --gold: #ffb03a;
-    --ember1: #ff7a1a;
-    --ember2: #ff2d2d;
-    --sidebar-w: 300px;
-  }
-  * { box-sizing: border-box; }
-  html, body {
-    margin: 0; height: 100%;
-    background:
-      radial-gradient(700px 420px at 12% -6%, rgba(255,122,26,.14), transparent 60%),
-      radial-gradient(900px 600px at 100% 0%, rgba(255,45,45,.08), transparent 55%),
-      var(--bg);
-    color: var(--ink); font-family: 'Rajdhani', sans-serif; font-weight: 600;
-    overflow-x: hidden;
-  }
-  a { color: inherit; }
+  body { overflow-x: hidden; }
   canvas#embers, canvas#confetti { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
   canvas#confetti { z-index: 60; }
 
-  /* ---------- SHELL ---------- */
-  .shell {
-    position: relative; z-index: 1;
-    max-width: 1180px; margin: 0 auto;
-    padding: 28px 20px 70px;
-    display: grid;
-    grid-template-columns: var(--sidebar-w) 1fr;
-    gap: 26px;
-    align-items: start;
+  /* ========================================================================
+     TOPBAR
+     ===================================================================== */
+  .topbar {
+    position: sticky; top: 0; z-index: 40;
+    background: rgba(10, 8, 7, .86);
+    backdrop-filter: blur(16px) saturate(140%);
+    -webkit-backdrop-filter: blur(16px) saturate(140%);
+    border-bottom: 1px solid var(--line);
   }
-  @media (max-width: 880px) {
-    .shell { grid-template-columns: 1fr; }
+  .topbar-inner {
+    max-width: var(--maxw); margin: 0 auto;
+    padding: 13px 22px;
+    display: flex; flex-direction: column; gap: 12px;
   }
+  .topbar-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 
-  /* ---------- SIDEBAR ---------- */
-  .sidebar {
-    display: flex; flex-direction: column; gap: 18px;
-    position: sticky; top: 20px;
+  .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .brand-mark {
+    width: 40px; height: 40px; flex-shrink: 0;
+    display: grid; place-items: center; font-size: 19px;
+    border-radius: 12px;
+    background: linear-gradient(160deg, rgba(255,176,58,.22), rgba(255,45,45,.10));
+    border: 1px solid rgba(255,176,58,.32);
+    box-shadow: inset 0 0 18px -6px rgba(255,122,26,.7);
   }
-  @media (max-width: 880px) { .sidebar { position: static; } }
-
-  .brand-card {
-    background: linear-gradient(165deg, var(--card), var(--card-2));
-    border: 1px solid var(--line); border-radius: 18px; padding: 22px 20px;
-  }
-  .eyebrow {
-    display: flex; align-items: center; gap: 7px;
-    font-size: 11.5px; letter-spacing: .14em; color: var(--gold); font-weight: 700;
-  }
-  .eyebrow .dot { width: 6px; height: 6px; border-radius: 50%; background: #4ade80; box-shadow: 0 0 6px #4ade80; flex-shrink:0; }
-  .eyebrow.is-offline .dot { background: #ff3b3b; box-shadow: 0 0 6px #ff3b3b; }
   h1.brand-title {
     font-family: 'Bungee', sans-serif; font-weight: 400;
-    font-size: 30px; line-height: 1.05; letter-spacing: .01em;
-    margin: 10px 0 6px;
-    background: linear-gradient(180deg, #ffe9b0 0%, var(--gold) 30%, var(--ember1) 65%, #a3230f 100%);
+    font-size: 21px; line-height: 1.1; letter-spacing: .01em; margin: 0;
+    background: var(--grad-ink);
     -webkit-background-clip: text; background-clip: text; color: transparent;
   }
-  .brand-sub { font-size: 13.5px; color: var(--ink-dim); margin: 0; }
+  .brand-sub { font-size: 12.5px; color: var(--ink-faint); margin: 2px 0 0; letter-spacing: .02em; }
+
+  .topbar-status { display: flex; align-items: center; gap: 10px; margin-left: auto; flex-wrap: wrap; }
 
   .viewer-line {
-    display: flex; align-items: center; gap: 8px;
-    margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line);
-    font-size: 13px; color: var(--ink-dim); font-weight: 700;
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 6px 13px; border-radius: var(--r-pill);
+    border: 1px solid var(--line); background: var(--card-2);
+    font-size: 12.5px; color: var(--ink-dim); font-weight: 700;
   }
-  .viewer-line .num { color: var(--ink); font-size: 15px; }
+  .viewer-line .num { color: var(--ink); font-size: 14px; }
   .viewer-line[hidden] { display: none; }
 
-  .sidebar-section {
-    background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px 16px 18px;
+  /* barra de ações */
+  .toolbar {
+    display: flex; align-items: center; gap: 8px;
+    overflow-x: auto; padding-bottom: 2px;
+    scrollbar-width: none;
   }
-  .sidebar-section h2 {
-    font-family: 'Bungee', sans-serif; font-weight: 400; font-size: 12px;
-    letter-spacing: .06em; color: var(--ink-dim); margin: 0 0 12px;
+  .toolbar::-webkit-scrollbar { display: none; }
+  .toolbar .sep { width: 1px; height: 20px; background: var(--line); flex-shrink: 0; margin: 0 2px; }
+  .toolbar .spacer { flex: 1; min-width: 0; }
+
+  /* ========================================================================
+     SHELL
+     ===================================================================== */
+  .shell {
+    position: relative; z-index: 1;
+    max-width: var(--maxw); margin: 0 auto;
+    padding: 24px 22px 80px;
+    display: flex; flex-direction: column; gap: 22px;
   }
 
-  .stats-grid {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+  .layout {
+    display: grid; grid-template-columns: minmax(0, 1fr) 340px;
+    gap: 22px; align-items: start;
   }
-  .stats-card {
-    background: var(--card-2); border: 1px solid var(--line);
-    border-radius: 12px; padding: 10px 8px; text-align: center;
+  .col-main { display: flex; flex-direction: column; gap: 22px; min-width: 0; }
+  /* 118px = altura da topbar; com o placar do PK ela vai pra 190px, então o
+     offset do sticky acompanha, senão o feed some por baixo da barra. */
+  .col-rail { display: flex; flex-direction: column; gap: 22px; position: sticky; top: 134px; min-width: 0; }
+  body:has(.battle-live.show) .col-rail { top: 206px; }
+  @media (max-width: 1080px) {
+    .layout { grid-template-columns: 1fr; }
+    .col-rail { position: static; }
   }
-  .stats-card .num { font-family: 'Bungee', sans-serif; font-size: 17px; color: var(--gold); }
-  .stats-card .lbl { font-size: 10px; color: var(--ink-dim); margin-top: 3px; }
-
-  .nav-btn {
-    display: flex; align-items: center; justify-content: center; gap: 7px;
-    width: 100%; text-decoration: none; cursor: pointer;
-    background: linear-gradient(180deg, var(--gold), var(--ember1));
-    color: #2a1400; font-weight: 700; font-size: 13.5px;
-    padding: 12px 14px; border-radius: 12px; border: none;
-    font-family: 'Rajdhani', sans-serif;
+  @media (max-width: 560px) {
+    /* com a toolbar quebrando em duas linhas o divisor vira um risco solto */
+    .toolbar .sep { display: none; }
+    .topbar-inner { padding: 12px 16px; }
+    .shell { padding: 18px 16px 60px; gap: 16px; }
+    .layout { gap: 16px; }
+    .col-main, .col-rail { gap: 16px; }
   }
 
-  .ghost-btn {
-    display: flex; align-items: center; justify-content: center; gap: 7px;
-    width: 100%; cursor: pointer; background: transparent;
-    border: 1.5px solid var(--line); color: var(--ink-dim);
-    font-weight: 700; font-size: 13px; padding: 11px 14px; border-radius: 12px;
-    font-family: 'Rajdhani', sans-serif;
+  /* painel: mesma primitiva do tema, com padding próprio */
+  .panel {
+    background: linear-gradient(168deg, var(--card), var(--card-2));
+    border: 1px solid var(--line); border-radius: var(--r-lg);
+    box-shadow: var(--shadow-2); padding: 18px 20px 20px;
   }
-  .ghost-btn:hover { border-color: var(--ink-faint); color: var(--ink); }
-  .danger-btn { border-color: rgba(255,61,26,.4); color: #ff8a6a; }
-  .danger-btn:hover { border-color: var(--ember2); color: var(--ember2); }
+  @media (max-width: 560px) { .panel { padding: 16px 14px 18px; } }
 
-  /* ---------- MAIN ---------- */
-  .main { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+  .panel-head {
+    display: flex; align-items: center; gap: 12px;
+    padding-bottom: 12px; margin-bottom: 16px;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  /* só empurra pra direita quando existe um segundo elemento (a meta) */
+  .panel-head > :last-child:not(:first-child) { margin-left: auto; }
+  .panel-title {
+    display: flex; align-items: center; gap: 9px;
+    font-size: 12.5px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--ink); margin: 0;
+  }
+  .panel-title::before {
+    content: ''; width: 3px; height: 14px; border-radius: 2px;
+    background: var(--grad-fire); flex-shrink: 0;
+  }
+  .panel-meta { font-size: 12px; font-weight: 700; color: var(--ink-faint); letter-spacing: .04em; }
 
+  /* ========================================================================
+     ABAS (Ranking / Batalhas / Histórico)
+     Cada .tab-panel é só um invólucro. As seções lá dentro continuam mandando
+     no próprio display (o script original faz style.display = 'block'/'none'),
+     então as duas coisas não brigam.
+     ===================================================================== */
+  .tabs {
+    display: flex; gap: 6px; padding: 5px;
+    background: #0d0907; border: 1px solid var(--line); border-radius: var(--r-pill);
+    overflow-x: auto; scrollbar-width: none;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab-btn {
+    flex: 1 1 auto; white-space: nowrap;
+    background: transparent; border: none; color: var(--ink-faint);
+    font-family: 'Rajdhani', sans-serif; font-weight: 700; font-size: 13.5px;
+    padding: 10px 18px; border-radius: var(--r-pill); cursor: pointer;
+    transition: color .15s ease, background .15s ease;
+  }
+  .tab-btn:hover { color: var(--ink); background: rgba(255,255,255,.04); }
+  .tab-btn.is-active {
+    background: var(--grad-fire); color: #2a1400;
+    box-shadow: 0 4px 12px -6px rgba(255,122,26,.9);
+  }
+
+  .tab-panel { display: flex; flex-direction: column; gap: 22px; }
+  .tab-panel[hidden] { display: none; }
+  @media (max-width: 560px) { .tab-panel { gap: 16px; } }
+
+  /* vazio da aba: aparece só quando a seção irmã está escondida pelo script */
+  .tab-empty { display: none; text-align: center; color: var(--ink-faint); font-size: 14.5px; padding: 46px 24px; }
+  #battleSection[style*="none"] + .tab-empty,
+  #historySection[style*="none"] + .tab-empty { display: block; }
+
+  /* ========================================================================
+     BANNER DE STATUS
+     ===================================================================== */
   .status-banner {
-    display: none; align-items: center; justify-content: center; gap: 8px;
-    background: rgba(90,20,20,0.35); border: 1px solid rgba(255,70,70,0.4); border-radius: 999px;
-    padding: 9px 16px; font-size: 13px; font-weight: 700; letter-spacing: .04em;
-    color: #ff9a9a; width: fit-content; margin: 0 auto;
+    display: none; align-items: center; gap: 9px;
+    background: rgba(90,20,20,.3); border: 1px solid rgba(255,70,70,.32);
+    border-radius: var(--r-md); padding: 11px 18px;
+    font-size: 13px; font-weight: 700; letter-spacing: .03em; color: #ffb3b3;
   }
   .status-banner.show { display: flex; }
-  .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #ff3b3b; box-shadow: 0 0 8px #ff3b3b; }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #ff3b3b; box-shadow: 0 0 8px #ff3b3b; flex-shrink: 0; }
 
-  .podium { display: flex; align-items: flex-end; justify-content: center; gap: 12px; padding-top: 6px; }
-  .podium-slot { display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer; transition: transform 0.2s ease; }
-  .podium-slot:hover { transform: translateY(-4px); }
-  .podium-avatar { width: 64px; height: 64px; border-radius: 50%; object-fit: cover; border: 3px solid var(--ink-faint); background: #2a1810; }
-  .podium-slot.p1 .podium-avatar { width: 86px; height: 86px; border-color: var(--gold); box-shadow: 0 0 22px rgba(255,176,58,0.5); }
+  /* ========================================================================
+     FAIXA DE NÚMEROS
+     ===================================================================== */
+  .stats-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  @media (min-width: 640px)  { .stats-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+  @media (min-width: 1080px) { .stats-grid { grid-template-columns: repeat(8, minmax(0, 1fr)); } }
+
+  .stats-card {
+    background: var(--card-2); border: 1px solid var(--line);
+    border-radius: var(--r-md); padding: 14px 12px;
+    display: flex; flex-direction: column; gap: 4px;
+    transition: border-color .15s ease;
+  }
+  .stats-card:hover { border-color: rgba(255,176,58,.35); }
+  .stats-card .num { font-family: 'Bungee', sans-serif; font-size: 19px; line-height: 1.1; color: var(--gold); }
+  .stats-card .lbl { font-size: 10.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint); }
+
+  /* ========================================================================
+     PÓDIO
+     ===================================================================== */
+  /* a régua embaixo faz as barras "pisarem" em algo em vez de parecerem cortadas */
+  .podium { display: flex; align-items: flex-end; justify-content: center; gap: 18px; padding: 10px 0 0; border-bottom: 1px solid var(--line); }
+  .podium-slot {
+    display: flex; flex-direction: column; align-items: center; gap: 9px;
+    cursor: pointer; transition: transform .2s ease; flex: 0 1 140px; min-width: 0;
+  }
+  .podium-slot > .podium-bar { margin-top: 3px; }
+  .podium-slot:hover { transform: translateY(-5px); }
+  .podium-medal { font-size: 19px; line-height: 1; }
+  .podium-avatar {
+    width: 62px; height: 62px; border-radius: 50%; object-fit: cover;
+    border: 2px solid var(--line); background: #2a1810;
+  }
+  .podium-slot.p1 .podium-avatar {
+    width: 84px; height: 84px; border-color: var(--gold);
+    box-shadow: 0 0 26px -4px rgba(255,176,58,.65);
+  }
   .podium-slot.p2 .podium-avatar { border-color: #ffcf9e; }
   .podium-slot.p3 .podium-avatar { border-color: #ff9d6a; }
-  .podium-name { font-size: 13px; font-weight: 700; max-width: 96px; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .podium-stat { font-size: 12px; color: var(--ink-dim); font-weight: 600; }
+  .podium-name { font-size: 13.5px; font-weight: 700; max-width: 130px; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .podium-stat { font-size: 12.5px; color: var(--ink-dim); font-weight: 700; }
+  /* o degrau leva o número do lugar (via ::after, sem tocar no JS que monta o pódio) */
   .podium-bar {
-    width: 96px; border-radius: 10px 10px 0 0;
-    background: linear-gradient(180deg, rgba(255,176,58,0.22), rgba(255,90,20,0.08));
-    border: 1px solid rgba(255,122,26,0.28); border-bottom: none;
+    width: 100%; max-width: 130px; border-radius: 10px 10px 0 0;
+    background: linear-gradient(180deg, rgba(255,176,58,.16), rgba(255,90,20,.02));
+    border: 1px solid rgba(255,122,26,.3); border-bottom: none;
+    box-shadow: inset 0 1px 0 rgba(255,233,176,.18);
+    display: grid; place-items: center;
+    font-family: 'Bungee', sans-serif; line-height: 1;
+    color: rgba(255,176,58,.4); font-size: 19px;
   }
-  .podium-slot.p1 .podium-bar { height: 72px; }
-  .podium-slot.p2 .podium-bar { height: 48px; }
-  .podium-slot.p3 .podium-bar { height: 30px; }
-  .podium-medal { font-size: 20px; }
-
-  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px 18px; }
-  .panel-title {
-    font-family: 'Bungee', sans-serif; font-weight: 400; font-size: 12px;
-    letter-spacing: .06em; color: var(--gold); margin: 0 0 10px;
+  .podium-slot.p1 .podium-bar {
+    height: 92px; font-size: 26px; color: rgba(255,233,176,.6);
+    background: linear-gradient(180deg, rgba(255,176,58,.3), rgba(255,90,20,.03));
+    border-color: rgba(255,176,58,.5);
+    box-shadow: inset 0 1px 0 rgba(255,233,176,.35), 0 -10px 30px -14px rgba(255,140,20,.8);
   }
+  .podium-slot.p2 .podium-bar { height: 64px; }
+  .podium-slot.p3 .podium-bar { height: 44px; }
+  .podium-slot.p1 .podium-bar::after { content: '1'; }
+  .podium-slot.p2 .podium-bar::after { content: '2'; }
+  .podium-slot.p3 .podium-bar::after { content: '3'; }
+  /* sem top 3 ainda: some com o painel em vez de deixar uma caixa vazia */
+  .podium-panel:has(#podium:empty) { display: none; }
 
-  .feed-panel { max-height: 190px; overflow-y: auto; }
-  .feed-item { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+  /* ========================================================================
+     FEED
+     ===================================================================== */
+  .feed-panel { max-height: min(56vh, 520px); overflow-y: auto; margin-right: -6px; padding-right: 6px; }
+  @media (max-width: 1080px) { .feed-panel { max-height: 260px; } }
+  .feed-item {
+    display: flex; align-items: center; gap: 9px; font-size: 13px;
+    padding: 8px 0; border-bottom: 1px solid var(--line-soft);
+  }
   .feed-item:last-child { border-bottom: none; }
-  .feed-avatar { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; background: #2a1810; flex-shrink: 0; }
-  .feed-text { flex: 1; min-width: 0; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .feed-text b { color: var(--gold); }
-  .feed-empty { text-align: center; color: var(--ink-faint); font-size: 13px; padding: 14px 0; }
+  .feed-avatar { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; background: #2a1810; flex-shrink: 0; }
+  .feed-text { flex: 1; min-width: 0; color: var(--ink-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .feed-text b { color: var(--gold); font-weight: 700; }
+  .feed-empty { text-align: center; color: var(--ink-faint); font-size: 13px; padding: 22px 0; }
 
-  /* Controls row above the ranking list */
-  .list-controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  /* ========================================================================
+     CONTROLES DO RANKING
+     ===================================================================== */
+  .list-controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 16px; }
   .search-input {
-    flex: 1; min-width: 160px; background: var(--card-2); border: 1px solid var(--line);
-    border-radius: 999px; padding: 10px 16px; color: var(--ink); font-family: 'Rajdhani', sans-serif;
+    flex: 1 1 200px; min-width: 0;
+    background: #0d0907; border: 1.5px solid var(--line); border-radius: var(--r-pill);
+    padding: 10px 18px; color: var(--ink); font-family: 'Rajdhani', sans-serif;
     font-weight: 600; font-size: 14px; outline: none;
+    transition: border-color .15s ease, box-shadow .15s ease;
   }
   .search-input::placeholder { color: var(--ink-faint); }
-  .search-input:focus { border-color: var(--gold); }
-  .sort-group { display: flex; gap: 8px; flex-wrap: wrap; }
-  .sort-btn {
-    background: var(--card-2); border: 1px solid var(--line); color: var(--ink-dim);
-    font-family: 'Rajdhani', sans-serif; font-weight: 700; font-size: 13px; padding: 10px 15px;
-    border-radius: 999px; cursor: pointer; white-space: nowrap; transition: all 0.15s ease;
-  }
-  .sort-btn:hover { border-color: var(--gold); color: var(--ink); }
-  .sort-btn.active { background: linear-gradient(180deg, var(--gold), var(--ember1)); color: #2a1400; border-color: transparent; }
+  .search-input:focus { border-color: var(--gold); box-shadow: var(--glow-gold); }
 
-  .list { display: flex; flex-direction: column; gap: 10px; }
-  .row {
-    display: grid; grid-template-columns: 34px 32px 1fr auto; align-items: center; gap: 10px;
-    background: linear-gradient(180deg, rgba(40,18,10,0.55), rgba(15,7,5,0.55));
-    border: 1px solid var(--line); border-radius: 999px; padding: 8px 16px;
-    cursor: pointer; transition: border-color 0.3s ease;
+  /* controle segmentado */
+  .sort-group {
+    display: flex; gap: 4px; padding: 4px;
+    background: #0d0907; border: 1px solid var(--line); border-radius: var(--r-pill);
   }
-  .row.rank-up { animation: flashUp 0.8s ease; }
-  .row.top1 { border-color: rgba(255,176,58,0.7); box-shadow: 0 0 18px rgba(255,140,20,0.28); }
-  .row.top2 { border-color: rgba(255,122,26,0.5); }
-  .row.top3 { border-color: rgba(255,90,60,0.4); }
-  .rank { font-family: 'Bungee', sans-serif; font-size: 15px; color: var(--ink-dim); text-align: center; }
+  .sort-btn {
+    background: transparent; border: none; color: var(--ink-faint);
+    font-family: 'Rajdhani', sans-serif; font-weight: 700; font-size: 13px;
+    padding: 8px 15px; border-radius: var(--r-pill); cursor: pointer; white-space: nowrap;
+    transition: color .15s ease, background .15s ease;
+  }
+  .sort-btn:hover { color: var(--ink); background: rgba(255,255,255,.04); }
+  .sort-btn.active { background: var(--grad-fire); color: #2a1400; box-shadow: 0 4px 12px -6px rgba(255,122,26,.9); }
+
+  /* ========================================================================
+     LISTA DO RANKING
+     ===================================================================== */
+  .list { display: flex; flex-direction: column; gap: 6px; }
+  .row {
+    display: grid; grid-template-columns: 34px 34px minmax(0, 1fr) auto;
+    align-items: center; gap: 12px;
+    background: var(--card-2); border: 1px solid var(--line);
+    border-left: 3px solid transparent;
+    border-radius: var(--r-md); padding: 9px 16px;
+    cursor: pointer; transition: border-color .25s ease, background .15s ease, transform .12s ease;
+  }
+  .row:hover { background: var(--card-3); border-left-color: var(--ink-faint); transform: translateX(2px); }
+  .row.rank-up { animation: flashUp .8s ease; }
+  .row.top1 { background: linear-gradient(90deg, rgba(255,176,58,.10), var(--card-2) 55%); border-left-color: var(--gold); }
+  .row.top2 { background: linear-gradient(90deg, rgba(255,207,158,.07), var(--card-2) 55%); border-left-color: #ffcf9e; }
+  .row.top3 { background: linear-gradient(90deg, rgba(255,157,106,.06), var(--card-2) 55%); border-left-color: #ff9d6a; }
+  .rank { font-family: 'Bungee', sans-serif; font-size: 14px; color: var(--ink-faint); text-align: center; }
   .top1 .rank { color: var(--gold); }
   .top2 .rank { color: #ffcf9e; }
   .top3 .rank { color: #ff9d6a; }
-  .row-avatar { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; background: #2a1810; }
-  .name { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .stats { display: flex; gap: 14px; font-size: 13.5px; font-weight: 600; color: var(--ink-dim); }
-  .stat { display: flex; align-items: center; gap: 4px; }
+  .row-avatar { width: 34px; height: 34px; border-radius: 50%; object-fit: cover; background: #2a1810; }
+  .name {
+    display: flex; align-items: center; gap: 8px; min-width: 0;
+    font-weight: 700; font-size: 14.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .name .crown { flex-shrink: 0; }
+  .stats { display: flex; gap: 8px; font-size: 13px; font-weight: 600; color: var(--ink-faint); }
+  .stat {
+    display: flex; align-items: center; gap: 5px; justify-content: flex-end;
+    min-width: 76px; padding: 4px 10px; border-radius: var(--r-xs);
+    background: rgba(0,0,0,.28);
+  }
   .stat .val { color: var(--ink); font-weight: 700; }
-  .badge-tag { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 999px; background: rgba(255,122,26,0.15); color: var(--gold); }
-  .empty { text-align: center; color: var(--ink-dim); padding: 40px 0; font-size: 15px; }
+  .badge-tag {
+    flex-shrink: 0; font-size: 9.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+    padding: 2px 7px; border-radius: var(--r-pill);
+    background: rgba(255,122,26,.14); color: var(--gold); border: 1px solid rgba(255,122,26,.2);
+  }
+  .empty { text-align: center; color: var(--ink-faint); padding: 44px 0; font-size: 14.5px; }
 
   .load-more-btn {
-    display: block; margin: 4px auto 0; background: var(--card-2); border: 1px solid var(--line);
-    color: var(--ink-dim); font-family: 'Rajdhani', sans-serif; font-weight: 700; letter-spacing: .03em;
-    font-size: 13px; padding: 10px 24px; border-radius: 999px; cursor: pointer;
+    display: block; margin: 14px auto 0;
+    background: var(--card-2); border: 1px solid var(--line); color: var(--ink-dim);
+    font-family: 'Rajdhani', sans-serif; font-weight: 700; letter-spacing: .06em;
+    text-transform: uppercase; font-size: 12px; padding: 10px 26px;
+    border-radius: var(--r-pill); cursor: pointer; transition: all .15s ease;
   }
   .load-more-btn:hover { border-color: var(--gold); color: var(--ink); }
 
   /* Ocultar valores em diamante (pra mostrar a tela sem expor o faturamento) */
   .dinheiro { transition: filter .15s ease; }
-  body.ocultar-dinheiro .dinheiro {
-    filter: blur(8px);
-    user-select: none; pointer-events: none;
-  }
+  body.ocultar-dinheiro .dinheiro { filter: blur(8px); user-select: none; pointer-events: none; }
   body.ocultar-dinheiro .dinheiro * { color: inherit; }
 
-  /* Batalhas (PK) */
-  .battle-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px; }
+  /* ========================================================================
+     BATALHAS (PK)
+     ===================================================================== */
+  .battle-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+  @media (max-width: 520px) { .battle-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   .battle-card {
-    background: var(--card-2); border: 1px solid var(--line); border-radius: 12px;
-    padding: 10px 6px; text-align: center;
+    background: var(--card-2); border: 1px solid var(--line); border-radius: var(--r-md);
+    padding: 13px 10px; text-align: center;
   }
-  .battle-card .num { font-family: 'Bungee', sans-serif; font-size: 19px; color: var(--gold); }
-  .battle-card .lbl { font-size: 10px; color: var(--ink-dim); margin-top: 3px; }
-  .battle-card.win .num { color: #6ee787; }
-  .battle-card.loss .num { color: #ff6b6b; }
+  .battle-card .num { font-family: 'Bungee', sans-serif; font-size: 20px; color: var(--gold); }
+  .battle-card .lbl { font-size: 10.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint); margin-top: 4px; }
+  .battle-card.win .num { color: var(--green); }
+  .battle-card.loss .num { color: var(--red); }
 
+  /* Placar do PK — vive na topbar sticky, então some junto quando não há batalha.
+     O JS só troca .show e o innerHTML; a posição no DOM é só nossa. */
   .battle-live {
-    display: none; align-items: center; gap: 10px; margin-bottom: 14px;
-    background: linear-gradient(90deg, rgba(255,45,45,.16), rgba(255,122,26,.10));
-    border: 1px solid rgba(255,122,26,.55); border-radius: 12px; padding: 10px 14px;
+    display: none; align-items: center; gap: 14px;
+    background: linear-gradient(90deg, rgba(255,45,45,.28), rgba(255,122,26,.12) 60%, transparent);
+    border: 1px solid rgba(255,122,26,.55); border-radius: var(--r-md);
+    padding: 11px 18px;
+    box-shadow: inset 0 0 26px -10px rgba(255,90,20,.9), 0 6px 20px -14px rgba(255,45,45,.9);
   }
   .battle-live.show { display: flex; }
-  .battle-live .vs { font-family: 'Bungee', sans-serif; font-size: 15px; }
-  .battle-live .placar { margin-left: auto; font-family: 'Bungee', sans-serif; font-size: 16px; color: var(--gold); }
+  .battle-live .row-avatar { width: 36px; height: 36px; border: 2px solid rgba(255,122,26,.7); }
+  .battle-live .vs {
+    font-family: 'Bungee', sans-serif; font-size: 14px; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .battle-live .vs small { font-family: 'Rajdhani', sans-serif; font-weight: 700; color: var(--gold); }
+  .battle-live .placar {
+    margin-left: auto; font-family: 'Bungee', sans-serif; font-size: 21px;
+    color: var(--gold); white-space: nowrap; letter-spacing: .01em;
+    text-shadow: 0 0 18px rgba(255,176,58,.5);
+  }
+  /* pontinho pulsando pra deixar claro que é ao vivo */
+  .battle-live::before {
+    content: ''; width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0;
+    background: var(--ember2); box-shadow: 0 0 10px var(--ember2);
+    animation: app-pulse 1.2s ease-in-out infinite;
+  }
+  @media (max-width: 560px) {
+    .battle-live { gap: 10px; padding: 10px 13px; }
+    .battle-live .vs { font-size: 12px; }
+    .battle-live .placar { font-size: 16px; }
+    .battle-live .row-avatar { width: 30px; height: 30px; }
+  }
 
-  .battle-highlights { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+  .battle-highlights { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
   .battle-tag {
-    background: rgba(255,122,26,0.10); border: 1px solid var(--line); border-radius: 999px;
-    padding: 6px 12px; font-size: 12.5px; color: var(--ink-dim);
+    background: var(--card-2); border: 1px solid var(--line); border-radius: var(--r-pill);
+    padding: 7px 14px; font-size: 12.5px; color: var(--ink-dim);
   }
   .battle-tag b { color: var(--ink); }
 
   .rival-row {
-    display: grid; grid-template-columns: 32px 1fr auto; align-items: center; gap: 10px;
-    background: linear-gradient(180deg, rgba(40,18,10,0.55), rgba(15,7,5,0.55));
-    border: 1px solid var(--line); border-radius: 999px; padding: 8px 16px;
+    display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 12px;
+    background: var(--card-2); border: 1px solid var(--line);
+    border-radius: var(--r-md); padding: 9px 16px;
   }
-  .rival-row .placar-mini { font-size: 13px; font-weight: 700; white-space: nowrap; }
-  .rival-row .v { color: #6ee787; }
-  .rival-row .d { color: #ff6b6b; }
-  .rival-row .e { color: var(--ink-dim); }
-  .rival-row .diamantes { display: block; font-size: 11px; color: var(--ink-dim); font-weight: 600; text-align: right; }
+  .rival-row .placar-mini { font-size: 13px; font-weight: 700; white-space: nowrap; text-align: right; }
+  .rival-row .v { color: var(--green); }
+  .rival-row .d { color: var(--red); }
+  .rival-row .e { color: var(--ink-faint); }
+  .rival-row .diamantes { display: block; font-size: 11px; color: var(--ink-faint); font-weight: 600; text-align: right; margin-top: 2px; }
 
   .battle-item {
-    background: var(--card-2); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px;
-    display: flex; align-items: center; gap: 10px;
+    background: var(--card-2); border: 1px solid var(--line);
+    border-left: 3px solid var(--line); border-radius: var(--r-md);
+    padding: 11px 16px; display: flex; align-items: center; gap: 12px;
   }
-  .battle-item.vitoria { border-left: 3px solid #6ee787; }
-  .battle-item.derrota { border-left: 3px solid #ff6b6b; }
-  .battle-item.empate { border-left: 3px solid var(--ink-faint); }
+  .battle-item.vitoria { border-left-color: var(--green); }
+  .battle-item.derrota { border-left-color: var(--red); }
+  .battle-item.empate  { border-left-color: var(--ink-faint); }
   .battle-item .quem { font-size: 13.5px; font-weight: 700; }
-  .battle-item .quando { font-size: 11.5px; color: var(--ink-dim); }
-  .battle-item .score { margin-left: auto; font-size: 13px; font-weight: 700; }
+  .battle-item .quando { font-size: 11.5px; color: var(--ink-faint); margin-top: 1px; }
+  .battle-item .score { margin-left: auto; font-size: 13.5px; font-weight: 700; white-space: nowrap; }
 
-  /* History */
+  /* ========================================================================
+     SEÇÕES RETRÁTEIS
+     ===================================================================== */
   .history-toggle {
-    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
     cursor: pointer; user-select: none;
   }
-  .history-toggle .caret { color: var(--ink-dim); font-size: 12px; transition: transform .2s ease; }
+  .history-toggle .caret {
+    color: var(--ink-faint); font-size: 11px; transition: transform .2s ease;
+    width: 24px; height: 24px; display: grid; place-items: center;
+    border: 1px solid var(--line); border-radius: 50%; flex-shrink: 0;
+  }
+  .history-toggle:hover .caret { color: var(--ink); border-color: var(--ink-faint); }
   .history-toggle.open .caret { transform: rotate(180deg); }
-  .history-list { display: none; flex-direction: column; gap: 8px; margin-top: 12px; }
+  .history-list { display: none; flex-direction: column; gap: 8px; margin-top: 14px; }
   .history-list.show { display: flex; }
   .history-item {
-    background: var(--card-2); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px;
-    display: flex; flex-direction: column; gap: 2px;
+    background: var(--card-2); border: 1px solid var(--line); border-radius: var(--r-md);
+    padding: 12px 16px; display: flex; flex-direction: column; gap: 3px;
   }
   .history-item .when { font-size: 13.5px; font-weight: 700; }
   .history-item .nums { font-size: 12.5px; color: var(--ink-dim); }
 
-  /* Modal */
-  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 100; align-items: center; justify-content: center; padding: 20px; }
+  /* ========================================================================
+     MODAL
+     ===================================================================== */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; z-index: 100;
+    background: rgba(0,0,0,.72); backdrop-filter: blur(4px);
+    align-items: center; justify-content: center; padding: 20px;
+  }
   .modal-overlay.show { display: flex; }
-  .modal-box { background: linear-gradient(180deg, #1a0e08, #0a0605); border: 1px solid var(--line); border-radius: 20px; padding: 24px; max-width: 400px; width: 100%; max-height: 80vh; overflow-y: auto; }
-  .modal-close { float: right; background: none; border: none; color: var(--ink-dim); font-size: 22px; cursor: pointer; }
-  .modal-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
-  .modal-avatar { width: 56px; height: 56px; border-radius: 50%; object-fit: cover; background: #2a1810; }
+  .modal-box {
+    background: linear-gradient(168deg, #1a1009, var(--card-2));
+    border: 1px solid var(--line); border-radius: var(--r-xl);
+    padding: 24px; max-width: 420px; width: 100%; max-height: 82vh; overflow-y: auto;
+    box-shadow: 0 30px 70px -30px #000;
+  }
+  .modal-close {
+    float: right; background: none; border: none; color: var(--ink-faint);
+    font-size: 24px; line-height: 1; cursor: pointer; padding: 0 2px;
+  }
+  .modal-close:hover { color: var(--ink); }
+  .modal-header { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
+  .modal-avatar { width: 56px; height: 56px; border-radius: 50%; object-fit: cover; background: #2a1810; border: 2px solid var(--line); }
   .modal-name { font-size: 18px; font-weight: 700; }
-  .modal-summary { display: flex; gap: 16px; margin-bottom: 16px; font-size: 14px; color: var(--ink-dim); }
-  .modal-summary .val { color: var(--gold); font-weight: 700; }
+  .modal-summary {
+    display: flex; gap: 8px; margin-bottom: 18px; font-size: 13.5px; color: var(--ink-dim);
+    padding-bottom: 18px; border-bottom: 1px solid var(--line-soft);
+  }
+  .modal-summary > div {
+    flex: 1; text-align: center; background: var(--card-2);
+    border: 1px solid var(--line); border-radius: var(--r-sm); padding: 8px 6px;
+  }
+  .modal-summary .val { display: block; color: var(--gold); font-weight: 700; font-size: 16px; margin-top: 2px; }
   .modal-gift-list { display: flex; flex-direction: column; gap: 8px; }
-  .modal-gift-row { display: flex; justify-content: space-between; align-items: center; background: rgba(255,122,26,0.08); border-radius: 10px; padding: 8px 12px; font-size: 14px; }
-  .modal-empty { text-align: center; color: var(--ink-dim); padding: 20px 0; font-size: 14px; }
+  .modal-gift-row {
+    display: flex; justify-content: space-between; align-items: center; gap: 10px;
+    background: var(--card-2); border: 1px solid var(--line);
+    border-radius: var(--r-sm); padding: 9px 13px; font-size: 13.5px;
+  }
+  .modal-empty { text-align: center; color: var(--ink-faint); padding: 24px 0; font-size: 13.5px; }
   .modal-section-title {
-    font-family: 'Bungee', cursive; font-size: 11px; letter-spacing: .06em;
-    color: var(--ink-dim); margin: 0 0 10px;
+    font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--ink-faint); margin: 0 0 10px;
   }
   .modal-comment-row {
-    background: rgba(255,122,26,0.08); border-radius: 10px; padding: 8px 12px;
-    font-size: 14px; color: var(--ink); word-break: break-word;
+    background: var(--card-2); border: 1px solid var(--line); border-radius: var(--r-sm);
+    padding: 9px 13px; font-size: 13.5px; color: var(--ink); word-break: break-word;
   }
-  .modal-comment-row .when { display: block; font-size: 11px; color: var(--ink-dim); margin-top: 3px; }
+  .modal-comment-row .when { display: block; font-size: 11px; color: var(--ink-faint); margin-top: 4px; }
 
-  @keyframes flashUp { 0% { border-color: #4ade80; } 100% { border-color: var(--line); } }
+  /* ========================================================================
+     TELAS ESTREITAS (< 480px) — o que tem largura fixa precisa encolher,
+     senão a linha do ranking e o pódio estouram pro lado.
+     ===================================================================== */
+  @media (max-width: 480px) {
+    .stats-card { padding: 12px 10px; }
+    .stats-card .num { font-size: 16px; }
+    .stats-card .lbl { font-size: 9.5px; letter-spacing: .07em; }
+
+    .podium { gap: 10px; }
+    .podium-slot { flex: 1 1 0; }
+    .podium-avatar { width: 52px; height: 52px; }
+    .podium-slot.p1 .podium-avatar { width: 68px; height: 68px; }
+    .podium-name { font-size: 12px; }
+    .podium-stat { font-size: 11.5px; }
+
+    .sort-group { width: 100%; flex-wrap: wrap; }
+    .sort-btn { flex: 1 1 auto; padding: 8px 12px; font-size: 12.5px; }
+
+    .row { grid-template-columns: 26px 28px minmax(0, 1fr) auto; gap: 8px; padding: 9px 12px; }
+    .row-avatar { width: 28px; height: 28px; }
+    .rank { font-size: 13px; }
+    .name { font-size: 13.5px; gap: 6px; }
+    .stats { gap: 6px; }
+    .stat { min-width: 0; padding: 4px 8px; gap: 4px; font-size: 12.5px; }
+
+    .rival-row { grid-template-columns: 28px minmax(0, 1fr) auto; gap: 8px; padding: 9px 12px; }
+    .battle-item { padding: 10px 12px; gap: 9px; }
+  }
+
+  @keyframes flashUp { 0% { border-left-color: var(--green); } 100% { border-left-color: transparent; } }
 </style>
 </head>
 <body>
@@ -318,103 +523,162 @@
 <canvas id="embers"></canvas>
 <canvas id="confetti"></canvas>
 
-<div class="shell">
+<!-- ================= TOPBAR ================= -->
+<header class="topbar">
+  <div class="topbar-inner">
 
-  <!-- ================= SIDEBAR ================= -->
-  <aside class="sidebar">
-
-    <div class="brand-card">
-      <div class="eyebrow" id="liveEyebrow"><span class="dot"></span>Ao vivo agora</div>
-      <h1 class="brand-title">Ranking da Live</h1>
-      <p class="brand-sub">Quem mais tá na treta hoje 🔥</p>
-      <div class="viewer-line" id="viewerBadge" hidden>
-        👀 <span class="num" id="viewerCount">0</span> assistindo agora
-      </div>
-    </div>
-
-    <div class="sidebar-section">
-      <h2>Números da live</h2>
-      <div class="stats-grid" id="statsBar"></div>
-    </div>
-
-    <div class="sidebar-section" style="display:flex; flex-direction:column; gap:8px;">
-      <h2>Ações</h2>
-      <a class="nav-btn" href="/mural.html">🖼️ Ver Mural da Tropa</a>
-      <button class="ghost-btn" id="toggleHistoryBtn">
-        <span>📜 Histórico de lives</span>
-      </button>
-      <button class="ghost-btn" id="toggleDinheiroBtn">👁️ Ocultar diamantes</button>
-      <a class="ghost-btn" href="/diagnostico.html" style="text-align:center; text-decoration:none;">🔬 Diagnóstico da live</a>
-      <button class="ghost-btn danger-btn" id="resetBtn">🗑️ Resetar dados</button>
-      <button class="ghost-btn" id="logoutBtn">🚪 Sair</button>
-    </div>
-
-  </aside>
-
-  <!-- ================= MAIN ================= -->
-  <main class="main">
-
-    <div class="status-banner" id="statusBanner">
-      <span class="status-dot"></span>
-      <span>Live offline — mostrando resultados da última live</span>
-    </div>
-
-    <div class="podium" id="podium"></div>
-
-    <section class="panel">
-      <div class="panel-title">Feed ao vivo</div>
-      <div class="feed-panel" id="feedPanel">
-        <div id="feedList"></div>
-      </div>
-    </section>
-
-    <section class="panel">
-      <div class="panel-title">Ranking</div>
-
-      <div class="list-controls" style="margin-bottom: 14px;">
-        <input type="text" class="search-input" id="searchInput" placeholder="Buscar usuário...">
-        <div class="sort-group">
-          <button class="sort-btn active" data-sort="likes">❤️ Likes</button>
-          <button class="sort-btn" data-sort="gifts_value">🎁 Presentes</button>
-          <button class="sort-btn" data-sort="comments">💬 Comentários</button>
+    <div class="topbar-row">
+      <div class="brand">
+        <div class="brand-mark">🔥</div>
+        <div>
+          <h1 class="brand-title">Ranking da Live</h1>
+          <p class="brand-sub">Quem mais tá na treta hoje</p>
         </div>
       </div>
 
-      <div class="list" id="ranking">
-        <div class="empty">Esperando a live começar...</div>
+      <div class="topbar-status">
+        <div class="app-pill" id="liveEyebrow"><span class="dot"></span>Ao vivo agora</div>
+        <div class="viewer-line" id="viewerBadge" hidden>👀 <span class="num" id="viewerCount">0</span> assistindo</div>
+      </div>
+    </div>
+
+    <nav class="topbar-row toolbar">
+      <a class="app-btn app-btn--primary" href="/mural.html">🖼️ Mural da Tropa</a>
+      <a class="app-btn" href="/diagnostico.html">🔬 Diagnóstico</a>
+      <span class="sep"></span>
+      <button class="app-btn" id="toggleDinheiroBtn">👁️ Ocultar diamantes</button>
+      <span class="spacer"></span>
+      <button class="app-btn app-btn--danger" id="resetBtn">🗑️ Resetar dados</button>
+      <button class="app-btn" id="logoutBtn">🚪 Sair</button>
+    </nav>
+
+    <!-- Placar do PK: mora na topbar (sticky) pra ficar visível o tempo todo.
+         Fica display:none até o JS chamar renderBattleLive(). -->
+    <div class="battle-live" id="battleLive"></div>
+
+  </div>
+</header>
+
+<!-- ================= CONTEÚDO ================= -->
+<main class="shell">
+
+  <div class="status-banner" id="statusBanner">
+    <span class="status-dot"></span>
+    <span>Live offline — mostrando resultados da última live</span>
+  </div>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2 class="panel-title">Números da live</h2>
+      <span class="panel-meta">Tempo real</span>
+    </div>
+    <div class="stats-grid" id="statsBar"></div>
+  </section>
+
+  <div class="layout">
+
+    <div class="col-main">
+
+      <!-- ===== NAVEGAÇÃO ENTRE AS TELAS ===== -->
+      <nav class="tabs">
+        <button class="tab-btn is-active" data-tab="ranking">🏆 Ranking</button>
+        <button class="tab-btn" data-tab="batalhas">⚔️ Batalhas</button>
+        <!-- este é o #toggleHistoryBtn original: o handler dele (abrir + carregar
+             o histórico) continua valendo, só mudou de lugar e virou aba -->
+        <button class="tab-btn" id="toggleHistoryBtn" data-tab="historico"><span>📜 Histórico</span></button>
+      </nav>
+
+      <!-- ===== TELA: RANKING ===== -->
+      <div class="tab-panel" data-panel="ranking">
+
+        <section class="panel podium-panel">
+          <div class="panel-head">
+            <h2 class="panel-title">Pódio</h2>
+            <span class="panel-meta">Top 3</span>
+          </div>
+          <div class="podium" id="podium"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2 class="panel-title">Ranking</h2>
+          </div>
+
+          <div class="list-controls">
+            <input type="text" class="search-input" id="searchInput" placeholder="Buscar usuário...">
+            <div class="sort-group">
+              <button class="sort-btn active" data-sort="likes">❤️ Likes</button>
+              <button class="sort-btn" data-sort="gifts_value">🎁 Presentes</button>
+              <button class="sort-btn" data-sort="comments">💬 Comentários</button>
+            </div>
+          </div>
+
+          <div class="list" id="ranking">
+            <div class="empty">Esperando a live começar...</div>
+          </div>
+
+          <button class="load-more-btn" id="loadMoreBtn" style="display:none;">Carregar mais</button>
+        </section>
+
       </div>
 
-      <button class="load-more-btn" id="loadMoreBtn" style="display:none;">Carregar mais</button>
-    </section>
+      <!-- ===== TELA: BATALHAS ===== -->
+      <div class="tab-panel" data-panel="batalhas" hidden>
 
-    <section class="panel" id="battleSection" style="display:none;">
-      <div class="panel-title">⚔️ Batalhas</div>
+        <section class="panel" id="battleSection" style="display:none;">
+          <div class="panel-head">
+            <h2 class="panel-title">⚔️ Resumo</h2>
+          </div>
 
-      <div class="battle-live" id="battleLive"></div>
-      <div class="battle-summary" id="battleSummary"></div>
-      <div class="battle-highlights" id="battleHighlights"></div>
+          <div class="battle-summary" id="battleSummary"></div>
+          <div class="battle-highlights" id="battleHighlights"></div>
 
-      <div class="panel-title" style="margin-top:4px;">Adversários</div>
-      <div class="list" id="rivalList"></div>
+          <div class="panel-head">
+            <h2 class="panel-title">Adversários</h2>
+          </div>
+          <div class="list" id="rivalList"></div>
 
-      <div class="history-toggle" id="battleHistToggle" style="margin-top:16px;">
-        <div class="panel-title" style="margin:0;">Últimas batalhas</div>
-        <span class="caret">▾</span>
+          <div class="history-toggle" id="battleHistToggle" style="margin-top:22px;">
+            <h2 class="panel-title">Últimas batalhas</h2>
+            <span class="caret">▾</span>
+          </div>
+          <div class="history-list" id="battleHistory"></div>
+        </section>
+        <div class="panel tab-empty">Nenhuma batalha registrada ainda. Quando rolar um PK, ele aparece aqui.</div>
+
       </div>
-      <div class="history-list" id="battleHistory"></div>
-    </section>
 
-    <section class="panel" id="historySection" style="display:none;">
-      <div class="history-toggle" id="historyToggleRow">
-        <div class="panel-title" style="margin:0;">Histórico de lives · até o último reset</div>
-        <span class="caret">▾</span>
+      <!-- ===== TELA: HISTÓRICO ===== -->
+      <div class="tab-panel" data-panel="historico" hidden>
+
+        <section class="panel" id="historySection" style="display:none;">
+          <div class="history-toggle" id="historyToggleRow">
+            <h2 class="panel-title">Histórico de lives · até o último reset</h2>
+            <span class="caret">▾</span>
+          </div>
+          <div class="history-list" id="historyList"></div>
+        </section>
+        <div class="panel tab-empty">Nenhuma live finalizada ainda.</div>
+
       </div>
-      <div class="history-list" id="historyList"></div>
-    </section>
 
-  </main>
+    </div>
 
-</div>
+    <aside class="col-rail">
+      <section class="panel">
+        <div class="panel-head">
+          <h2 class="panel-title">Feed ao vivo</h2>
+          <span class="panel-meta">Últimos 30</span>
+        </div>
+        <div class="feed-panel" id="feedPanel">
+          <div id="feedList"></div>
+        </div>
+      </section>
+    </aside>
+
+  </div>
+
+</main>
 
 <div class="modal-overlay" id="modalOverlay">
   <div class="modal-box">
@@ -1034,6 +1298,40 @@
     requestAnimationFrame(tick);
   }
   tick();
+</script>
+<script>
+  // ---------- ABAS ----------
+  // Bloco novo, separado do script acima de propósito: ele só troca qual
+  // .tab-panel está visível. Quem decide se a seção tem conteúdo continua
+  // sendo o script original.
+  (function () {
+    const botoes = document.querySelectorAll('.tab-btn');
+    const telas  = document.querySelectorAll('.tab-panel');
+    const battleHistory   = document.getElementById('battleHistory');
+    const battleHistToggle= document.getElementById('battleHistToggle');
+    const historyList     = document.getElementById('historyList');
+    const historyToggleRow= document.getElementById('historyToggleRow');
+
+    function abrir(nome) {
+      botoes.forEach(b => b.classList.toggle('is-active', b.dataset.tab === nome));
+      telas.forEach(t => { t.hidden = t.dataset.panel !== nome; });
+      // prefixo 'aba-' de propósito: um hash '#ranking' bateria com o
+      // id="ranking" da lista e o navegador rolaria até lá ao abrir a página.
+      try { history.replaceState(null, '', '#aba-' + nome); } catch (e) {}
+
+      // Com tela própria, não faz sentido a lista nascer fechada. Em vez de
+      // duplicar a lógica, clica no próprio toggle do script original — que é
+      // quem também dispara o fetch do histórico.
+      if (nome === 'batalhas'  && !battleHistory.classList.contains('show')) battleHistToggle.click();
+      if (nome === 'historico' && !historyList.classList.contains('show'))   historyToggleRow.click();
+    }
+
+    botoes.forEach(b => b.addEventListener('click', () => abrir(b.dataset.tab)));
+
+    const alvo = (location.hash || '').replace('#aba-', '');
+    const existe = [...telas].some(t => t.dataset.panel === alvo);
+    abrir(existe ? alvo : 'ranking');
+  })();
 </script>
 </body>
 </html>

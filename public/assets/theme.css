@@ -1,0 +1,188 @@
+/* ============================================================================
+   Tema compartilhado — Ranking da Live
+   Só tokens, base e primitivas com prefixo `app-`/`ui-`.
+   Componentes de cada página continuam no <style> da própria página, então
+   este arquivo nunca colide com o CSS existente (mural, poster, etc).
+   ========================================================================= */
+
+:root {
+  /* superfícies */
+  --bg:        #0a0807;
+  --card:      #150f0b;
+  --card-2:    #0f0b08;
+  --card-3:    #1c1510;
+  --line:      #2b2119;
+  --line-soft: #201810;
+
+  /* texto */
+  --ink:       #f3e9dc;
+  --ink-dim:   #9c8b7d;
+  --ink-faint: #5a4c40;
+
+  /* acentos (a brasa) */
+  --gold:      #ffb03a;
+  --gold-soft: #ffe9b0;
+  --ember1:    #ff7a1a;
+  --ember2:    #ff2d2d;
+  --green:     #6ee787;
+  --red:       #ff6b6b;
+  --blue:      #3e7bfa;
+
+  --grad-fire: linear-gradient(180deg, var(--gold), var(--ember1));
+  --grad-ink:  linear-gradient(180deg, #ffe9b0 0%, var(--gold) 30%, var(--ember1) 65%, #a3230f 100%);
+
+  /* raios */
+  --r-xs: 8px;
+  --r-sm: 10px;
+  --r-md: 14px;
+  --r-lg: 18px;
+  --r-xl: 22px;
+  --r-pill: 999px;
+
+  /* espaçamento */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 22px;
+  --sp-6: 30px;
+  --sp-7: 44px;
+
+  /* profundidade */
+  --shadow-1: 0 2px 10px -4px rgba(0,0,0,.6);
+  --shadow-2: 0 18px 40px -22px rgba(0,0,0,.85);
+  --glow-gold: 0 0 0 3px rgba(255,176,58,.16);
+
+  --maxw: 1320px;
+}
+
+* { box-sizing: border-box; }
+
+html { height: 100%; }
+body {
+  margin: 0;
+  /* min-height (e NÃO height:100%) — com height:100% o body para na altura da
+     viewport e todo position:sticky de dentro dele deixa de grudar.
+     O html continua em 100%, que é a área que posiciona o gradiente do fundo. */
+  min-height: 100%;
+  /* O fundo é a identidade do site — não mexer. */
+  background:
+    radial-gradient(700px 420px at 12% -6%, rgba(255,122,26,.14), transparent 60%),
+    radial-gradient(900px 600px at 100% 0%, rgba(255,45,45,.08), transparent 55%),
+    var(--bg);
+  color: var(--ink);
+  font-family: 'Rajdhani', sans-serif;
+  font-weight: 600;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a { color: inherit; }
+
+/* Números alinhados em coluna: faz a lista parecer relatório, não bagunça. */
+.ui-num, .num, .val, .rank { font-variant-numeric: tabular-nums; }
+
+/* ---------- tipografia utilitária ---------- */
+.ui-display {
+  font-family: 'Bungee', sans-serif; font-weight: 400;
+  background: var(--grad-ink);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.ui-label {
+  font-size: 11px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase;
+  color: var(--ink-faint); margin: 0;
+}
+
+/* ---------- botões ---------- */
+.app-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  font-family: 'Rajdhani', sans-serif; font-weight: 700; font-size: 13.5px;
+  line-height: 1; white-space: nowrap; text-decoration: none; cursor: pointer;
+  padding: 10px 16px; border-radius: var(--r-pill);
+  background: var(--card-2); border: 1px solid var(--line); color: var(--ink-dim);
+  transition: border-color .15s ease, color .15s ease, background .15s ease, transform .1s ease;
+}
+.app-btn:hover { border-color: var(--ink-faint); color: var(--ink); background: var(--card-3); }
+.app-btn:active { transform: translateY(1px); }
+.app-btn:disabled { opacity: .55; cursor: default; }
+
+.app-btn--primary {
+  background: var(--grad-fire); color: #2a1400; border-color: transparent;
+  box-shadow: 0 8px 20px -10px rgba(255,122,26,.8);
+}
+.app-btn--primary:hover { background: var(--grad-fire); color: #2a1400; filter: brightness(1.06); }
+
+.app-btn--danger { border-color: rgba(255,61,26,.35); color: #ff8a6a; }
+.app-btn--danger:hover { border-color: var(--ember2); color: var(--ember2); background: rgba(255,45,45,.08); }
+
+/* ---------- campos ---------- */
+.app-input {
+  width: 100%; padding: 11px 14px; border-radius: var(--r-sm);
+  border: 1.5px solid var(--line); background: #0d0907;
+  font-family: 'Rajdhani', sans-serif; font-weight: 600; font-size: 15px;
+  color: var(--ink); outline: none;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.app-input::placeholder { color: var(--ink-faint); }
+.app-input:focus { border-color: var(--gold); box-shadow: var(--glow-gold); }
+
+/* ---------- superfícies ---------- */
+.app-panel {
+  background: linear-gradient(168deg, var(--card), var(--card-2));
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-2);
+}
+
+/* cabeçalho padrão de painel: título à esquerda, meta à direita, régua embaixo */
+.app-panel-head {
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding-bottom: var(--sp-3); margin-bottom: var(--sp-4);
+  border-bottom: 1px solid var(--line-soft);
+}
+.app-panel-head > :last-child { margin-left: auto; }
+
+.app-panel-title {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12.5px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--ink); margin: 0;
+}
+.app-panel-title::before {
+  content: ''; width: 3px; height: 14px; border-radius: 2px;
+  background: var(--grad-fire); flex-shrink: 0;
+}
+.app-panel-meta { font-size: 12px; font-weight: 700; color: var(--ink-faint); letter-spacing: .04em; }
+
+/* ---------- pílula de status ---------- */
+.app-pill {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 6px 13px; border-radius: var(--r-pill);
+  border: 1px solid var(--line); background: rgba(0,0,0,.25);
+  font-size: 11.5px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--gold);
+}
+.app-pill .dot {
+  width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+  background: var(--green); box-shadow: 0 0 8px var(--green);
+  animation: app-pulse 2s ease-in-out infinite;
+}
+.app-pill.is-offline { color: #ff9a9a; border-color: rgba(255,70,70,.3); }
+.app-pill.is-offline .dot { background: var(--ember2); box-shadow: 0 0 8px var(--ember2); }
+
+@keyframes app-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+
+/* ---------- foco visível (acessibilidade) ---------- */
+:where(a, button, input, [tabindex]):focus-visible {
+  outline: 2px solid var(--gold); outline-offset: 2px; border-radius: var(--r-xs);
+}
+
+/* ---------- barra de rolagem ---------- */
+* { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--line); border-radius: var(--r-pill); border: 2px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: var(--ink-faint); background-clip: content-box; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+}

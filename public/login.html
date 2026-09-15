@@ -8,67 +8,120 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bungee&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
+  /* Esta página NÃO usa /assets/theme.css de propósito: o gate de autenticação
+     do server só libera /login.html e /api/login, então qualquer CSS externo
+     seria redirecionado e a tela cairia sem estilo. Os tokens abaixo são os
+     mesmos do theme.css — se mudar lá, mude aqui. */
   :root {
-    --bg: #0a0807; --card: #150f0b; --card-2: #0f0b08; --line: #2b2119;
-    --ink: #f3e9dc; --ink-dim: #9c8b7d; --gold: #ffb03a; --ember1: #ff7a1a; --ember2: #ff2d2d;
+    --bg: #0a0807; --card: #150f0b; --card-2: #0f0b08; --line: #2b2119; --line-soft: #201810;
+    --ink: #f3e9dc; --ink-dim: #9c8b7d; --ink-faint: #5a4c40;
+    --gold: #ffb03a; --ember1: #ff7a1a; --ember2: #ff2d2d;
+    --grad-fire: linear-gradient(180deg, var(--gold), var(--ember1));
+    --r-sm: 10px; --r-md: 14px; --r-lg: 18px; --r-xl: 22px; --r-pill: 999px;
   }
   * { box-sizing: border-box; }
   html, body {
-    margin: 0; height: 100%;
+    margin: 0; min-height: 100%;
     background:
       radial-gradient(700px 420px at 12% -6%, rgba(255,122,26,.14), transparent 60%),
       radial-gradient(900px 600px at 100% 0%, rgba(255,45,45,.08), transparent 55%),
       var(--bg);
     color: var(--ink); font-family: 'Rajdhani', sans-serif; font-weight: 600;
-    display: flex; align-items: center; justify-content: center; padding: 20px;
+    -webkit-font-smoothing: antialiased;
   }
+  body { display: grid; place-items: center; padding: 24px; min-height: 100vh; }
+
   .box {
-    width: 100%; max-width: 360px;
-    background: linear-gradient(165deg, var(--card), var(--card-2));
-    border: 1px solid var(--line); border-radius: 18px; padding: 28px 24px;
+    width: 100%; max-width: 380px;
+    background: linear-gradient(168deg, var(--card), var(--card-2));
+    border: 1px solid var(--line); border-radius: var(--r-xl);
+    padding: 34px 30px 30px;
+    box-shadow: 0 30px 70px -30px #000;
   }
+
+  .mark {
+    width: 52px; height: 52px; margin: 0 auto 18px;
+    display: grid; place-items: center; font-size: 24px;
+    border-radius: var(--r-md);
+    background: linear-gradient(160deg, rgba(255,176,58,.22), rgba(255,45,45,.10));
+    border: 1px solid rgba(255,176,58,.32);
+    box-shadow: inset 0 0 22px -6px rgba(255,122,26,.7);
+  }
+
   h1 {
-    font-family: 'Bungee', sans-serif; font-weight: 400; font-size: 24px; text-align: center;
-    margin: 0 0 4px;
+    font-family: 'Bungee', sans-serif; font-weight: 400; font-size: 23px;
+    text-align: center; margin: 0 0 6px; line-height: 1.15;
     background: linear-gradient(180deg, #ffe9b0 0%, var(--gold) 30%, var(--ember1) 65%, #a3230f 100%);
     -webkit-background-clip: text; background-clip: text; color: transparent;
   }
-  p.sub { text-align: center; color: var(--ink-dim); font-size: 13px; margin: 0 0 22px; }
-  label { display: block; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; font-weight: 700; color: var(--ink-dim); margin: 14px 0 6px; }
+  p.sub { text-align: center; color: var(--ink-faint); font-size: 13px; margin: 0 0 26px; }
+
+  .field + .field { margin-top: 16px; }
+  label {
+    display: block; font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase;
+    font-weight: 700; color: var(--ink-faint); margin: 0 0 7px;
+  }
   input {
-    width: 100%; padding: 11px 12px; border-radius: 10px; border: 1.5px solid var(--line);
-    background: #0d0907; font-family: 'Rajdhani', sans-serif; font-weight: 600; font-size: 15px;
+    width: 100%; padding: 12px 14px; border-radius: var(--r-sm);
+    border: 1.5px solid var(--line); background: #0d0907;
+    font-family: 'Rajdhani', sans-serif; font-weight: 600; font-size: 15px;
     color: var(--ink); outline: none;
+    transition: border-color .15s ease, box-shadow .15s ease;
   }
-  input:focus { border-color: var(--gold); }
+  input::placeholder { color: var(--ink-faint); }
+  input:focus { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(255,176,58,.16); }
+
   button {
-    width: 100%; margin-top: 20px; cursor: pointer;
-    background: linear-gradient(180deg, var(--gold), var(--ember1));
-    color: #2a1400; font-weight: 700; font-size: 14px;
-    padding: 12px 14px; border-radius: 12px; border: none;
-    font-family: 'Rajdhani', sans-serif;
+    width: 100%; margin-top: 26px; cursor: pointer;
+    background: var(--grad-fire); color: #2a1400;
+    font-family: 'Rajdhani', sans-serif; font-weight: 700; font-size: 14px;
+    letter-spacing: .04em; text-transform: uppercase;
+    padding: 13px 16px; border-radius: var(--r-pill); border: none;
+    box-shadow: 0 10px 24px -12px rgba(255,122,26,.9);
+    transition: filter .15s ease, transform .1s ease;
   }
-  button:disabled { opacity: .6; cursor: default; }
+  button:hover { filter: brightness(1.06); }
+  button:active { transform: translateY(1px); }
+  button:disabled { opacity: .55; cursor: default; filter: none; }
+
   .error {
-    display: none; margin-top: 14px; background: rgba(90,20,20,.35); border: 1px solid rgba(255,70,70,.4);
-    border-radius: 10px; padding: 9px 12px; font-size: 13px; color: #ff9a9a; text-align: center;
+    display: none; margin-top: 16px;
+    background: rgba(90,20,20,.3); border: 1px solid rgba(255,70,70,.32);
+    border-radius: var(--r-sm); padding: 10px 13px;
+    font-size: 13px; color: #ffb3b3; text-align: center;
   }
   .error.show { display: block; }
+
+  .foot {
+    margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line-soft);
+    text-align: center; font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  :where(input, button):focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 </style>
 </head>
 <body>
 
 <div class="box">
+  <div class="mark">🔥</div>
   <h1>Ranking da Live</h1>
   <p class="sub">Faça login pra acessar</p>
+
   <form id="loginForm">
-    <label for="username">Usuário</label>
-    <input type="text" id="username" autocomplete="username" required>
-    <label for="password">Senha</label>
-    <input type="password" id="password" autocomplete="current-password" required>
+    <div class="field">
+      <label for="username">Usuário</label>
+      <input type="text" id="username" autocomplete="username" placeholder="seu usuário" required>
+    </div>
+    <div class="field">
+      <label for="password">Senha</label>
+      <input type="password" id="password" autocomplete="current-password" placeholder="••••••••" required>
+    </div>
     <div class="error" id="errorMsg"></div>
     <button type="submit" id="submitBtn">Entrar</button>
   </form>
+
+  <div class="foot">Acesso restrito</div>
 </div>
 
 <script>

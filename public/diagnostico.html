@@ -7,105 +7,172 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bungee&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/theme.css">
 <style>
-  :root {
-    --bg: #0a0807;
-    --card: #150f0b;
-    --card-2: #0f0b08;
-    --line: #2b2119;
-    --ink: #f3e9dc;
-    --ink-dim: #9c8b7d;
-    --gold: #ffb03a;
-    --ember1: #ff7a1a;
-    --verde: #6ee787;
-  }
-  * { box-sizing: border-box; }
-  html, body {
-    margin: 0; min-height: 100%;
-    background:
-      radial-gradient(700px 420px at 12% -6%, rgba(255,122,26,.14), transparent 60%),
-      var(--bg);
-    color: var(--ink); font-family: 'Rajdhani', sans-serif; font-weight: 600;
-  }
-  .shell { max-width: 1000px; margin: 0 auto; padding: 24px 18px 60px; }
+  :root { --verde: #6ee787; --maxw: 1080px; }
+  html, body { min-height: 100%; height: auto; }
 
-  h1 {
-    font-family: 'Bungee', cursive; font-size: clamp(24px, 5vw, 38px);
-    margin: 0 0 6px;
-    background: linear-gradient(180deg, var(--gold), var(--ember1));
+  /* ---------- topbar (mesmo padrão do ranking) ---------- */
+  .topbar {
+    position: sticky; top: 0; z-index: 40;
+    background: rgba(10, 8, 7, .86);
+    backdrop-filter: blur(16px) saturate(140%);
+    -webkit-backdrop-filter: blur(16px) saturate(140%);
+    border-bottom: 1px solid var(--line);
+  }
+  .topbar-inner {
+    max-width: var(--maxw); margin: 0 auto; padding: 13px 22px;
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .brand-mark {
+    width: 40px; height: 40px; flex-shrink: 0;
+    display: grid; place-items: center; font-size: 18px; border-radius: 12px;
+    background: linear-gradient(160deg, rgba(255,176,58,.22), rgba(255,45,45,.10));
+    border: 1px solid rgba(255,176,58,.32);
+    box-shadow: inset 0 0 18px -6px rgba(255,122,26,.7);
+  }
+  .brand h1 {
+    font-family: 'Bungee', sans-serif; font-weight: 400; font-size: 19px; margin: 0; line-height: 1.1;
+    background: var(--grad-ink);
     -webkit-background-clip: text; background-clip: text; color: transparent;
   }
-  .sub { color: var(--ink-dim); font-size: 14px; margin: 0 0 18px; }
+  .brand .sub { color: var(--ink-faint); font-size: 12.5px; margin: 2px 0 0; }
+  .topbar-inner > .app-btn { margin-left: auto; }
 
-  .como {
-    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
-    padding: 14px 16px; margin-bottom: 16px; font-size: 14px; line-height: 1.55;
+  /* ---------- shell ---------- */
+  .shell {
+    max-width: var(--maxw); margin: 0 auto; padding: 24px 22px 70px;
+    display: flex; flex-direction: column; gap: 18px;
   }
+  @media (max-width: 560px) {
+    .topbar-inner { padding: 12px 16px; }
+    .shell { padding: 18px 16px 50px; }
+  }
+
+  .panel {
+    background: linear-gradient(168deg, var(--card), var(--card-2));
+    border: 1px solid var(--line); border-radius: var(--r-lg);
+    box-shadow: var(--shadow-2); padding: 18px 20px;
+  }
+  .panel-title {
+    display: flex; align-items: center; gap: 9px;
+    font-size: 12.5px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--ink); margin: 0 0 14px;
+  }
+  .panel-title::before {
+    content: ''; width: 3px; height: 14px; border-radius: 2px;
+    background: var(--grad-fire); flex-shrink: 0;
+  }
+
+  /* ---------- instruções ---------- */
+  .como { font-size: 14px; line-height: 1.6; color: var(--ink-dim); }
   .como b { color: var(--gold); }
-  .como ol { margin: 8px 0 0; padding-left: 20px; }
-  .como li { margin-bottom: 4px; }
-
-  .barra { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; align-items: center; }
-  .btn {
-    background: var(--card-2); border: 1.5px solid var(--line); color: var(--ink-dim);
-    font-family: 'Rajdhani', sans-serif; font-weight: 700; font-size: 13px;
-    border-radius: 999px; padding: 9px 16px; cursor: pointer;
+  .como ol { margin: 10px 0 12px; padding-left: 20px; }
+  .como li { margin-bottom: 5px; }
+  .legenda { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line-soft); }
+  .legenda span {
+    display: inline-flex; align-items: center; gap: 7px;
+    background: var(--card-2); border: 1px solid var(--line); border-radius: var(--r-pill);
+    padding: 5px 13px; font-size: 12px; font-weight: 700; color: var(--ink-dim);
   }
-  .btn:hover { border-color: var(--gold); color: var(--ink); }
-  .btn.ativo { background: linear-gradient(180deg, var(--gold), var(--ember1)); color: #2a1400; border-color: transparent; }
-  .btn.destaque { background: linear-gradient(180deg, var(--gold), var(--ember1)); color: #2a1400; border-color: transparent; }
-  .contador { margin-left: auto; font-size: 13px; color: var(--ink-dim); }
+  .legenda i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
 
+  /* ---------- barra de filtros ---------- */
+  .barra { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .filtros {
+    display: flex; gap: 4px; padding: 4px; flex-wrap: wrap;
+    background: #0d0907; border: 1px solid var(--line); border-radius: var(--r-pill);
+  }
+  .btn {
+    background: transparent; border: none; color: var(--ink-faint);
+    font-family: 'Rajdhani', sans-serif; font-weight: 700; font-size: 13px;
+    border-radius: var(--r-pill); padding: 8px 15px; cursor: pointer; white-space: nowrap;
+    transition: color .15s ease, background .15s ease;
+  }
+  .btn:hover { color: var(--ink); background: rgba(255,255,255,.04); }
+  .btn.ativo { background: var(--grad-fire); color: #2a1400; box-shadow: 0 4px 12px -6px rgba(255,122,26,.9); }
+  .btn.destaque {
+    background: var(--card-2); border: 1px solid var(--line); color: var(--ink-dim);
+    padding: 10px 16px; margin-left: auto;
+  }
+  .btn.destaque:hover { border-color: var(--gold); color: var(--ink); background: var(--card-3); }
+  .contador {
+    font-size: 12px; font-weight: 700; letter-spacing: .06em; color: var(--ink-faint);
+    padding: 8px 14px; border: 1px solid var(--line); border-radius: var(--r-pill); background: var(--card-2);
+    white-space: nowrap;
+  }
+
+  /* ---------- log ---------- */
   .lista {
-    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
-    padding: 10px; max-height: 70vh; overflow-y: auto;
+    background: #0b0806; border: 1px solid var(--line); border-radius: var(--r-lg);
+    padding: 10px; max-height: 68vh; overflow-y: auto;
     font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
-    font-size: 12.5px; line-height: 1.5;
+    font-size: 12.5px; line-height: 1.55;
+    box-shadow: var(--shadow-2);
   }
   .linha {
-    padding: 6px 10px; border-radius: 8px; margin-bottom: 4px;
+    padding: 7px 12px; border-radius: var(--r-xs); margin-bottom: 4px;
     word-break: break-word; white-space: pre-wrap;
     background: var(--card-2); border-left: 3px solid var(--line);
   }
-  .linha .hora { color: var(--ink-dim); margin-right: 8px; }
-  .linha.subida { border-left-color: var(--verde); background: rgba(110,231,135,.08); }
-  .linha.nivel-entrou { border-left-color: var(--gold); background: rgba(255,176,58,.08); }
-  .linha.banner { border-left-color: #3e7bfa; }
-  .vazio { text-align: center; color: var(--ink-dim); padding: 40px 0; font-size: 14px; }
-  a.voltar { color: var(--ink-dim); font-size: 13px; text-decoration: none; }
-  a.voltar:hover { color: var(--gold); }
+  .linha:last-child { margin-bottom: 0; }
+  .linha .hora { color: var(--ink-faint); margin-right: 10px; }
+  .linha.subida { border-left-color: var(--verde); background: rgba(110,231,135,.07); }
+  .linha.nivel-entrou { border-left-color: var(--gold); background: rgba(255,176,58,.07); }
+  .linha.banner { border-left-color: var(--blue); }
+  .vazio { text-align: center; color: var(--ink-faint); padding: 46px 0; font-size: 14px; font-family: 'Rajdhani', sans-serif; }
 </style>
 </head>
 <body>
-<div class="shell">
-  <a class="voltar" href="/index.html">← Voltar pro Ranking</a>
-  <h1>Diagnóstico da Live</h1>
-  <p class="sub">O que o TikTok está mandando, ao vivo. Serve pra descobrir a mensagem exata de subida de nível.</p>
 
-  <div class="como">
-    <b>Como usar:</b>
-    <ol>
-      <li>Deixe esta página aberta durante a live.</li>
-      <li>Quando você <b>ver alguém subir de nível</b> na tela do TikTok, anote o nome e o horário.</li>
-      <li>Aperte <b>Copiar tudo</b> e mande o texto pro Claude, junto com o nome e a hora.</li>
-    </ol>
-    Linha <span style="color:var(--verde)">verde</span> = mensagem que cheira a subida de nível.
-    Linha <span style="color:var(--gold)">dourada</span> = alguém entrou no mural.
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <div class="brand-mark">🔬</div>
+      <div>
+        <h1>Diagnóstico da Live</h1>
+        <p class="sub">O que o TikTok está mandando, ao vivo</p>
+      </div>
+    </div>
+    <a class="app-btn" href="/index.html">⬅️ Voltar pro Ranking</a>
   </div>
+</header>
+
+<main class="shell">
+
+  <section class="panel">
+    <h2 class="panel-title">Como usar</h2>
+    <div class="como">
+      <ol>
+        <li>Deixe esta página aberta durante a live.</li>
+        <li>Quando você <b>ver alguém subir de nível</b> na tela do TikTok, anote o nome e o horário.</li>
+        <li>Aperte <b>Copiar tudo</b> e mande o texto pro Claude, junto com o nome e a hora.</li>
+      </ol>
+      <div class="legenda">
+        <span><i style="background:var(--verde)"></i> Possível subida de nível</span>
+        <span><i style="background:var(--gold)"></i> Alguém entrou no mural</span>
+        <span><i style="background:var(--blue)"></i> Banner</span>
+      </div>
+    </div>
+  </section>
 
   <div class="barra">
-    <button class="btn ativo" data-filtro="tudo">Tudo</button>
-    <button class="btn" data-filtro="subida">Possíveis subidas</button>
-    <button class="btn" data-filtro="nivel">Decisões do mural</button>
-    <button class="btn" data-filtro="farejador">Tipos de mensagem</button>
-    <button class="btn destaque" id="copiarBtn">📋 Copiar tudo</button>
+    <div class="filtros">
+      <button class="btn ativo" data-filtro="tudo">Tudo</button>
+      <button class="btn" data-filtro="subida">Possíveis subidas</button>
+      <button class="btn" data-filtro="nivel">Decisões do mural</button>
+      <button class="btn" data-filtro="farejador">Tipos de mensagem</button>
+    </div>
     <span class="contador" id="contador">0 linhas</span>
+    <button class="btn destaque" id="copiarBtn">📋 Copiar tudo</button>
   </div>
 
   <div class="lista" id="lista">
     <div class="vazio">Esperando mensagens da live...</div>
   </div>
-</div>
+
+</main>
 
 <script src="/socket.io/socket.io.js"></script>
 <script>
@@ -147,11 +214,12 @@
       return;
     }
     const colado = listaEl.scrollTop + listaEl.clientHeight >= listaEl.scrollHeight - 40;
-    listaEl.innerHTML = visiveis.map(l => `
-      <div class="linha ${classeDa(l)}">
-        <span class="hora">${hora(l.em)}</span>${esc(l.texto)}
-      </div>
-    `).join('');
+    // Sem quebra de linha dentro da .linha: o CSS usa white-space: pre-wrap pra
+    // preservar as quebras da mensagem do TikTok, e a indentação do template
+    // virava linha em branco (cada item ficava com o triplo da altura).
+    listaEl.innerHTML = visiveis.map(l =>
+      `<div class="linha ${classeDa(l)}"><span class="hora">${hora(l.em)}</span>${esc(l.texto)}</div>`
+    ).join('');
     // só acompanha o fim se o usuário já estava no fim (não atrapalha a leitura)
     if (colado) listaEl.scrollTop = listaEl.scrollHeight;
   }
