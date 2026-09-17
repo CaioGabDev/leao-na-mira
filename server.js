@@ -122,16 +122,25 @@ const PK_CARTA_POR_MSGTYPE = {
 //   1. algum campo use*Card que tenha vindo preenchido junto (traz cardNameKey)
 //   2. displayContent.key            (chave de i18n, não muda com o idioma)
 //   3. defaultPattern / pieces       (texto em inglês, último recurso)
+// Vocabulário montado a partir de mensagens REAIS de live. Aprendizado
+// importante: o msgType é um balde grosso (msgType 6 = "special effect" cobre
+// martelo, raio, heart-me...) e o cardNameKey vem genérico ("pm_mt_boost_effect").
+// Quem diz a carta de verdade é o displayContent: "{0:user} sent 1 stun hammer".
+// Por isso a ordem embaixo importa: o específico antes do genérico.
 const PALAVRAS_DA_CARTA = [
-  [/glove|luva/i,                 'luva'    ],
-  [/smoke|fog|n[eé]voa|nevoa/i,   'nevoa'   ],
-  [/extra.?time|tempo/i,          'tempo'   ],
-  [/critical|cr[ií]tico|critico/i,'critico' ],
-  [/potion|po[cç][aã]o|pocao/i,   'pocao'   ],
-  [/wave|onda/i,                  'onda'    ],
-  [/top.?2/i,                     'top2'    ],
-  [/top.?3/i,                     'top3'    ],
-  [/special.?effect|efeito/i,     'efeito'  ]
+  [/stun.?hammer|hammer|martelo/i,          'martelo' ],
+  [/lightning|thunder|bolt|raio/i,          'raio'    ],
+  [/glove|luva/i,                           'luva'    ],
+  [/smoke|fog|n[eé]voa|nevoa/i,             'nevoa'   ],
+  [/extra.?time|tempo|timer/i,              'tempo'   ],
+  [/critical|cr[ií]tico|critico/i,          'critico' ],
+  [/potion|po[cç][aã]o|pocao/i,             'pocao'   ],
+  [/wave|onda/i,                            'onda'    ],
+  [/heart.?me|cora[cç][aã]o/i,              'coracao' ],
+  [/top.?2/i,                               'top2'    ],
+  [/top.?3/i,                               'top3'    ],
+  // genérico: só cai aqui se nada acima casou
+  [/special.?effect|boost.?effect|efeito/i, 'efeito'  ]
 ];
 
 function tipoPelasPalavras(texto) {
@@ -150,6 +159,16 @@ function textosDoDisplayContent(dc) {
     partes.push(pedaco?.stringValue, pedaco?.patternRefValue?.key, pedaco?.patternRefValue?.defaultPattern);
   });
   return partes.filter(Boolean).join(' | ');
+}
+
+// A carta USADA: o displayContent do próprio use*Card traz o nome específico
+// ("sent 1 stun hammer"); o msgType só entra como reserva.
+function descobrirCartaUsada(data, mapa) {
+  const carta = data?.[mapa.campo];
+  const info = carta?.cardInfo;
+  return tipoPelasPalavras(textosDoDisplayContent(carta?.displayContent))
+      || tipoPelasPalavras(info?.common?.cardNameKey || info?.cardNameKey)
+      || mapa.tipo;
 }
 
 function descobrirCartaGanha(data) {
@@ -816,7 +835,18 @@ function startTikTokConnection() {
 
     const rotulo = CARTAS_PK[d?.msgType] || `msgType desconhecido (${d?.msgType})`;
     registrarDiagnostico('powerup', `[${sondaPowerUp}/${LIMITE_SONDA}] CARTA DE PK → ${rotulo}`);
-    const dc = d?.awardCardNotice?.displayContent;
+    // displayContent de QUALQUER carta (uso ou prêmio) — é onde mora o nome real
+    let dc = d?.awardCardNotice?.displayContent;
+    for (const campo of Object.values(PK_CARTA_POR_MSGTYPE).map(m => m.campo)) {
+      const carta = d?.[campo];
+      if (!carta) continue;
+      if (carta.displayContent) dc = carta.displayContent;
+      const info = carta.cardInfo;
+      registrarDiagnostico('powerup',
+        `  cardNameKey="${info?.common?.cardNameKey || info?.cardNameKey || ''}"` +
+        (carta.effectType !== undefined ? ` effectType=${carta.effectType}` : ''));
+      break;
+    }
     if (dc) {
       registrarDiagnostico('powerup', `  key="${dc.key || ''}" pattern="${dc.defaultPattern || ''}"`);
       (dc.pieces || []).forEach((pc, i) => {
@@ -858,9 +888,10 @@ function startTikTokConnection() {
     const mapa = PK_CARTA_POR_MSGTYPE[msgType];
     if (mapa) {
       const p = dadosDoUsuarioPK(usuarioDaCarta(data?.[mapa.campo]));
-      if (p && db.registrarCartaUsada(p.uniqueId, p.nickname, p.avatar, mapa.tipo)) {
+      const tipoUsado = descobrirCartaUsada(data, mapa);
+      if (p && db.registrarCartaUsada(p.uniqueId, p.nickname, p.avatar, tipoUsado)) {
         mexeu = true;
-        console.log(`[POWERUP] ${p.nickname} USOU ${mapa.tipo}`);
+        console.log(`[POWERUP] ${p.nickname} USOU ${tipoUsado}`);
       }
     }
 
