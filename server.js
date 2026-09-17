@@ -109,8 +109,8 @@ const PK_CARTA_POR_MSGTYPE = {
   6:  { campo: 'useSpecialEffectCard',  tipo: 'efeito'  },
   7:  { campo: 'usePotionCard',         tipo: 'pocao'   },
   8:  { campo: 'useWaveCard',           tipo: 'onda'    },
-  10: { campo: 'useTop2Card',           tipo: 'top2'    },
-  11: { campo: 'useTop3Card',           tipo: 'top3'    },
+  10: { campo: 'useTop2Card',           tipo: 'booster2'},
+  11: { campo: 'useTop3Card',           tipo: 'booster3'},
   12: { campo: 'useVaultGloveCard',     tipo: 'luva'    }
 };
 
@@ -127,20 +127,35 @@ const PK_CARTA_POR_MSGTYPE = {
 // martelo, raio, heart-me...) e o cardNameKey vem genérico ("pm_mt_boost_effect").
 // Quem diz a carta de verdade é o displayContent: "{0:user} sent 1 stun hammer".
 // Por isso a ordem embaixo importa: o específico antes do genérico.
+// Vocabulário montado a partir de mensagens REAIS de live. Três aprendizados
+// que só apareceram com dado de verdade:
+//
+//  1. O msgType é um balde grosso: msgType 6 ("special effect") cobre martelo,
+//     coração e provavelmente mais. Quem diz a carta é o displayContent
+//     ("{0:user} sent 1 stun hammer").
+//  2. O cardNameKey às vezes é genérico ("pm_mt_boost_effect") e às vezes é
+//     específico ("ttlive_match_gotPowerUp_panel_no2_title"). Serve como 2ª
+//     opinião, nunca como 1ª.
+//  3. A imagem MENTE: a mensagem do martelo veio com card_effect_heartme_v4.png.
+//     Não usar a imagem pra decidir nada.
+//
+// Os nomes do TikTok não batem com os da tropa: o que a gente chama de "raio"
+// o TikTok chama de "no. 2 booster" (carta top2). Os ids aqui seguem o TikTok
+// pra casar com o protocolo; a tradução pro nome da tropa fica no front.
 const PALAVRAS_DA_CARTA = [
-  [/stun.?hammer|hammer|martelo/i,          'martelo' ],
-  [/lightning|thunder|bolt|raio/i,          'raio'    ],
-  [/glove|luva/i,                           'luva'    ],
-  [/smoke|fog|n[eé]voa|nevoa/i,             'nevoa'   ],
-  [/extra.?time|tempo|timer/i,              'tempo'   ],
-  [/critical|cr[ií]tico|critico/i,          'critico' ],
-  [/potion|po[cç][aã]o|pocao/i,             'pocao'   ],
-  [/wave|onda/i,                            'onda'    ],
-  [/heart.?me|cora[cç][aã]o/i,              'coracao' ],
-  [/top.?2/i,                               'top2'    ],
-  [/top.?3/i,                               'top3'    ],
+  // específicos primeiro
+  [/stun.?hammer|hammer|martelo/i,          'martelo'  ],
+  [/no[\s._-]*2(?!\d)|top.?2/i,             'booster2' ], // "no. 2 booster" = raio
+  [/no[\s._-]*3(?!\d)|top.?3/i,             'booster3' ],
+  [/glove|luva/i,                           'luva'     ],
+  [/smoke|fog|n[eé]voa|nevoa/i,             'nevoa'    ],
+  [/extra.?time|timer|tempo/i,              'tempo'    ],
+  [/critical|cr[ií]tico|critico/i,          'critico'  ],
+  [/potion|po[cç][aã]o|pocao/i,             'pocao'    ],
+  [/wave|onda/i,                            'onda'     ],
+  [/heart.?me|cora[cç][aã]o/i,              'coracao'  ],
   // genérico: só cai aqui se nada acima casou
-  [/special.?effect|boost.?effect|efeito/i, 'efeito'  ]
+  [/special.?effect|boost.?effect|efeito/i, 'efeito'   ]
 ];
 
 function tipoPelasPalavras(texto) {
@@ -191,13 +206,20 @@ function usuarioDaCarta(carta) {
   return info?.common?.sendUser?.user || info?.sendUser?.user || null;
 }
 
+// A chave aqui é o userId NUMÉRICO, de propósito — e isso é diferente do resto
+// do app, que usa o displayId (o @). O motivo: nas mensagens de carta do PK o
+// displayId pode vir vazio, e aí a mesma pessoa apareceria duas vezes na aba
+// (uma linha com @ e outra com o id). O userId vem sempre nesses eventos.
+// O `handle` fica guardado do lado pra, no dia que der, cruzar com o ranking
+// (que é indexado por @ — ver o comentário em processarBadges).
 function dadosDoUsuarioPK(u) {
   if (!u) return null;
-  const uniqueId = u.displayId || u.userId;
+  const uniqueId = u.userId || u.displayId;
   if (!uniqueId) return null;
   return {
     uniqueId,
-    nickname: u.nickName || uniqueId,
+    handle: u.displayId || null,
+    nickname: u.nickName || u.displayId || uniqueId,
     avatar: u.avatarThumb?.urlList?.[0] || null
   };
 }
@@ -847,6 +869,30 @@ function startTikTokConnection() {
         (carta.effectType !== undefined ? ` effectType=${carta.effectType}` : ''));
       break;
     }
+    // imprime os DOIS ids de cada pessoa: preciso saber se o @ (displayId) vem
+    const pessoas = [
+      ...(d?.awardCardNotice?.awardedUsers || []).map(b => ['ganhou', b?.user]),
+      ...Object.values(PK_CARTA_POR_MSGTYPE)
+        .map(mp => ['usou', usuarioDaCarta(d?.[mp.campo])]).filter(([, u]) => u)
+    ];
+    pessoas.forEach(([papel, u]) => {
+      if (!u) return;
+      registrarDiagnostico('powerup',
+        `  ${papel}: nick="${u.nickName || ''}" userId="${u.userId || ''}" displayId="${u.displayId || '(VAZIO)'}"`);
+    });
+    // TAGS de cada premiado: é aqui que pode estar o nome da carta ganha.
+    (d?.awardCardNotice?.awardedUsers || []).forEach((bu, i) => {
+      const tags = bu?.tags || [];
+      if (!tags.length) {
+        registrarDiagnostico('powerup', `  premiado[${i}] SEM TAGS`);
+        return;
+      }
+      tags.forEach((tg, j) => {
+        registrarDiagnostico('powerup',
+          `  premiado[${i}].tag[${j}] content="${tg?.content || ''}"` +
+          ` icone="${tg?.iconImage?.uri || tg?.iconImage?.urlList?.[0] || ''}"`);
+      });
+    });
     if (dc) {
       registrarDiagnostico('powerup', `  key="${dc.key || ''}" pattern="${dc.defaultPattern || ''}"`);
       (dc.pieces || []).forEach((pc, i) => {
@@ -856,6 +902,48 @@ function startTikTokConnection() {
     }
     registrarDiagnostico('powerup', (json || '').slice(0, 1800));
     console.log(`[POWERUP] ${rotulo} :: ${(json || '').slice(0, 1200)}`);
+  });
+
+  // ---------- SONDA 2: EFEITOS POR USUÁRIO (linkMicArmies) ----------
+  // O linkMicArmies traz effectInfos.effectInfoList = [{type, uidList, effectExtra}],
+  // ou seja, QUAL efeito está ativo em QUAIS usuários. Se isso vier preenchido,
+  // é a fonte certa pra saber o que cada um ganhou — melhor que adivinhar pelo
+  // texto do prêmio. Também loga o ranking de contribuidores, porque "no. 2
+  // booster" tem cara de ser POSIÇÃO (2º colocado) e não nome de carta.
+  //
+  // Este evento dispara a cada presente, então: só loga quando tem efeito,
+  // ignora repetição e tem teto próprio.
+  let sondaEfeitos = 0;
+  const LIMITE_EFEITOS = 30;
+  let ultimaAssinaturaEfeito = '';
+
+  connection.on('linkMicArmies', data => {
+    if (myId !== activeConnectionId) return;
+    if (sondaEfeitos >= LIMITE_EFEITOS) return;
+
+    const lista = data?.effectInfos?.effectInfoList || [];
+    const ranking = [];
+    Object.values(data?.armies || {}).forEach(exercito => {
+      (exercito?.userArmies || []).forEach((ua, pos) => {
+        ranking.push(`${pos + 1}º ${ua?.nickname || ''} (${ua?.userIdStr || ua?.userId || ''}) ${ua?.score || 0}`);
+      });
+    });
+
+    if (!lista.length && !ranking.length) return;
+
+    // não repete a mesma foto duas vezes seguidas
+    const assinatura = JSON.stringify([lista, ranking]);
+    if (assinatura === ultimaAssinaturaEfeito) return;
+    ultimaAssinaturaEfeito = assinatura;
+    sondaEfeitos++;
+
+    registrarDiagnostico('powerup', `[efeitos ${sondaEfeitos}/${LIMITE_EFEITOS}] versao=${data?.effectInfos?.effectListVersion || ''}`);
+    if (!lista.length) registrarDiagnostico('powerup', '  effectInfoList VAZIO');
+    lista.forEach((ef, i) => {
+      registrarDiagnostico('powerup',
+        `  efeito[${i}] type="${ef?.type || ''}" uids=[${(ef?.uidList || []).join(',')}] extra="${(ef?.effectExtra || '').slice(0, 200)}"`);
+    });
+    ranking.slice(0, 6).forEach(linha => registrarDiagnostico('powerup', `  contrib ${linha}`));
   });
 
   // ---------- POWER-UPS DO PK: QUEM GANHOU / QUEM USOU ----------
@@ -875,7 +963,7 @@ function startTikTokConnection() {
       premiados.forEach(bu => {
         const p = dadosDoUsuarioPK(bu?.user);
         if (!p) return;
-        if (db.registrarCartaGanha(p.uniqueId, p.nickname, p.avatar, tipoGanho)) {
+        if (db.registrarCartaGanha(p.uniqueId, p.nickname, p.avatar, tipoGanho, p.handle)) {
           mexeu = true;
           // Sem pushFeed de propósito: o feedLine() do front não conhece esses
           // tipos e renderizaria uma linha sem texto. O lugar deles é a aba.
@@ -889,7 +977,7 @@ function startTikTokConnection() {
     if (mapa) {
       const p = dadosDoUsuarioPK(usuarioDaCarta(data?.[mapa.campo]));
       const tipoUsado = descobrirCartaUsada(data, mapa);
-      if (p && db.registrarCartaUsada(p.uniqueId, p.nickname, p.avatar, tipoUsado)) {
+      if (p && db.registrarCartaUsada(p.uniqueId, p.nickname, p.avatar, tipoUsado, p.handle)) {
         mexeu = true;
         console.log(`[POWERUP] ${p.nickname} USOU ${tipoUsado}`);
       }

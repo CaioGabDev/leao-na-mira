@@ -121,6 +121,7 @@
   .linha.subida { border-left-color: var(--verde); background: rgba(110,231,135,.07); }
   .linha.nivel-entrou { border-left-color: var(--gold); background: rgba(255,176,58,.07); }
   .linha.banner { border-left-color: var(--blue); }
+  .linha.powerup { border-left-color: #c64ff2; background: rgba(198,79,242,.07); }
   .vazio { text-align: center; color: var(--ink-faint); padding: 46px 0; font-size: 14px; font-family: 'Rajdhani', sans-serif; }
 </style>
 </head>
@@ -153,6 +154,7 @@
         <span><i style="background:var(--verde)"></i> Possível subida de nível</span>
         <span><i style="background:var(--gold)"></i> Alguém entrou no mural</span>
         <span><i style="background:var(--blue)"></i> Banner</span>
+        <span><i style="background:#c64ff2"></i> Cartas de power-up do PK</span>
       </div>
     </div>
   </section>
@@ -163,6 +165,7 @@
       <button class="btn" data-filtro="subida">Possíveis subidas</button>
       <button class="btn" data-filtro="nivel">Decisões do mural</button>
       <button class="btn" data-filtro="farejador">Tipos de mensagem</button>
+      <button class="btn" data-filtro="powerup">🎴 Power-ups</button>
     </div>
     <span class="contador" id="contador">0 linhas</span>
     <button class="btn destaque" id="copiarBtn">📋 Copiar tudo</button>
@@ -196,6 +199,7 @@
   function classeDa(linha) {
     if (linha.canal === 'subida') return 'subida';
     if (linha.canal === 'banner') return 'banner';
+    if (linha.canal === 'powerup') return 'powerup';
     if (linha.canal === 'nivel' && /ENTROU no mural/.test(linha.texto)) return 'nivel-entrou';
     return '';
   }

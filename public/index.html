@@ -1414,10 +1414,20 @@
     const SEM_FOTO = 'data:image/svg+xml;utf8,' + encodeURIComponent(
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" fill="%232a1810"/><text x="32" y="40" font-size="28" text-anchor="middle" fill="%239c8b7d">?</text></svg>');
 
+    // Tradução do nome do TikTok pro nome que a tropa usa.
+    // booster2 = "no. 2 booster" no protocolo = o que a gente chama de raio.
     const NOME_DO_TIPO = {
-      martelo: '🔨 Martelo', raio: '⚡ Raio', luva: '🧤 Luva', nevoa: '🌫️ Névoa',
-      tempo: '⏱️ Tempo', critico: '💥 Crítico', pocao: '🧪 Poção', onda: '🌊 Onda',
-      coracao: '💗 Coração', top2: '2️⃣ Top 2', top3: '3️⃣ Top 3', efeito: '✨ Efeito',
+      martelo:  '🔨 Martelo',
+      booster2: '⚡ Raio',
+      booster3: '🔥 Nº 3',
+      luva:     '🧤 Luva',
+      nevoa:    '🌫️ Névoa',
+      tempo:    '⏱️ Tempo',
+      critico:  '💥 Crítico',
+      pocao:    '🧪 Poção',
+      onda:     '🌊 Onda',
+      coracao:  '💗 Coração',
+      efeito:   '✨ Efeito',
       // o prêmio não diz qual carta foi ganha — cai aqui até a pessoa usar
       desconhecido: '🎴 A definir'
     };
@@ -1476,7 +1486,7 @@
             <img class="row-avatar" src="${esc2(p.avatar || SEM_FOTO)}" onerror="this.src='${SEM_FOTO}'" alt="">
             <div>
               <div class="pu-nome">${esc2(p.nickname)}<span class="pu-tipos">${tipos}</span></div>
-              <div class="pu-sub">ganhou ${p.totalGanhas} no total · usou ${p.usadas} · expirou ${p.expiradas}</div>
+              <div class="pu-sub">${p.handle ? '@' + esc2(p.handle) + ' · ' : ''}ganhou ${p.totalGanhas} no total · usou ${p.usadas} · expirou ${p.expiradas}</div>
             </div>
             <div class="pu-dir">
               <span class="pu-mao ${p.emMaos ? '' : 'vazio'}">${p.emMaos}</span>

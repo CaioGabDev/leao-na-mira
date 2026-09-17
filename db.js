@@ -461,23 +461,24 @@ function expirarCartas(agora = Date.now()) {
   return mudou;
 }
 
-function garantirFichaDeCarta(uniqueId, nickname, avatar) {
+function garantirFichaDeCarta(uniqueId, nickname, avatar, handle) {
   if (!uniqueId) return null;
   let ficha = state.cartas[uniqueId];
   if (!ficha) {
     ficha = state.cartas[uniqueId] = {
-      uniqueId, nickname: nickname || uniqueId, avatar: avatar || null,
+      uniqueId, handle: handle || null, nickname: nickname || uniqueId, avatar: avatar || null,
       ganhas: [], usadas: 0, expiradas: 0, ultimaEm: Date.now()
     };
   }
   // mesmo cuidado do ensureUser: só sobrescreve com o que veio de verdade
   if (nickname) ficha.nickname = nickname;
   if (avatar) ficha.avatar = avatar;
+  if (handle) ficha.handle = handle; // pode chegar só em alguns eventos
   return ficha;
 }
 
-function registrarCartaGanha(uniqueId, nickname, avatar, tipo) {
-  const ficha = garantirFichaDeCarta(uniqueId, nickname, avatar);
+function registrarCartaGanha(uniqueId, nickname, avatar, tipo, handle) {
+  const ficha = garantirFichaDeCarta(uniqueId, nickname, avatar, handle);
   if (!ficha) return false;
   ficha.ganhas.push({ em: Date.now(), tipo: tipo || null });
   ficha.ultimaEm = Date.now();
@@ -485,8 +486,8 @@ function registrarCartaGanha(uniqueId, nickname, avatar, tipo) {
   return true;
 }
 
-function registrarCartaUsada(uniqueId, nickname, avatar, tipo) {
-  const ficha = garantirFichaDeCarta(uniqueId, nickname, avatar);
+function registrarCartaUsada(uniqueId, nickname, avatar, tipo, handle) {
+  const ficha = garantirFichaDeCarta(uniqueId, nickname, avatar, handle);
   if (!ficha) return false;
   expirarCartas();
   // tira a mais antiga do mesmo tipo; se o tipo não bater (ou a carta tiver
@@ -508,6 +509,7 @@ function getEstoqueCartas() {
       const maisAntiga = ficha.ganhas.length ? Math.min(...ficha.ganhas.map(c => c.em)) : null;
       return {
         uniqueId: ficha.uniqueId,
+        handle: ficha.handle || null,
         nickname: ficha.nickname,
         avatar: ficha.avatar,
         emMaos: ficha.ganhas.length,
