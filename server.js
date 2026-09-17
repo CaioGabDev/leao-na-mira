@@ -98,6 +98,95 @@ function broadcastLiveStatus() {
 
 const POWERUP_GIFTS = ['GG', 'Rocket', 'Universe'];
 
+// ---------- POWER-UPS DO PK ----------
+// O evento `linkMicBattleItemCard` usa msgType pra dizer o que aconteceu. Só um
+// dos campos irmãos vem preenchido, e é o msgType que diz qual ler.
+const PK_MSG_GANHOU = 4; // AWARD_CARD_NOTICE
+const PK_CARTA_POR_MSGTYPE = {
+  2:  { campo: 'useCriticalStrikeCard', tipo: 'critico' },
+  3:  { campo: 'useSmokeCard',          tipo: 'nevoa'   },
+  5:  { campo: 'useExtraTimeCard',      tipo: 'tempo'   },
+  6:  { campo: 'useSpecialEffectCard',  tipo: 'efeito'  },
+  7:  { campo: 'usePotionCard',         tipo: 'pocao'   },
+  8:  { campo: 'useWaveCard',           tipo: 'onda'    },
+  10: { campo: 'useTop2Card',           tipo: 'top2'    },
+  11: { campo: 'useTop3Card',           tipo: 'top3'    },
+  12: { campo: 'useVaultGloveCard',     tipo: 'luva'    }
+};
+
+// ---------- DESCOBRIR QUAL CARTA FOI GANHA ----------
+// No evento de "ganhou" (msgType 4) o protocolo NÃO tem campo de tipo de carta:
+// só `awardedUsers[]` e `displayContent`, que é o texto localizado que o app do
+// TikTok renderiza na tela ("X ganhou uma Luva"). Ou seja: a informação existe,
+// só não vem estruturada. Então a gente procura, em ordem de confiabilidade:
+//   1. algum campo use*Card que tenha vindo preenchido junto (traz cardNameKey)
+//   2. displayContent.key            (chave de i18n, não muda com o idioma)
+//   3. defaultPattern / pieces       (texto em inglês, último recurso)
+const PALAVRAS_DA_CARTA = [
+  [/glove|luva/i,                 'luva'    ],
+  [/smoke|fog|n[eé]voa|nevoa/i,   'nevoa'   ],
+  [/extra.?time|tempo/i,          'tempo'   ],
+  [/critical|cr[ií]tico|critico/i,'critico' ],
+  [/potion|po[cç][aã]o|pocao/i,   'pocao'   ],
+  [/wave|onda/i,                  'onda'    ],
+  [/top.?2/i,                     'top2'    ],
+  [/top.?3/i,                     'top3'    ],
+  [/special.?effect|efeito/i,     'efeito'  ]
+];
+
+function tipoPelasPalavras(texto) {
+  if (!texto) return null;
+  for (const [padrao, tipo] of PALAVRAS_DA_CARTA) {
+    if (padrao.test(texto)) return tipo;
+  }
+  return null;
+}
+
+// Junta tudo que é texto dentro de um Text do protocolo (key, pattern e pedaços).
+function textosDoDisplayContent(dc) {
+  if (!dc) return '';
+  const partes = [dc.key, dc.defaultPattern];
+  (dc.pieces || []).forEach(pedaco => {
+    partes.push(pedaco?.stringValue, pedaco?.patternRefValue?.key, pedaco?.patternRefValue?.defaultPattern);
+  });
+  return partes.filter(Boolean).join(' | ');
+}
+
+function descobrirCartaGanha(data) {
+  // 1) algum use*Card veio preenchido de carona? aí o cardNameKey resolve
+  for (const { campo, tipo } of Object.values(PK_CARTA_POR_MSGTYPE)) {
+    const info = data?.[campo]?.cardInfo;
+    if (!info) continue;
+    const chave = info.common?.cardNameKey || info.cardNameKey;
+    return tipoPelasPalavras(chave) || tipo;
+  }
+  // 2) e 3) a chave de i18n e depois o texto
+  const dc = data?.awardCardNotice?.displayContent;
+  return tipoPelasPalavras(dc?.key) || tipoPelasPalavras(textosDoDisplayContent(dc));
+}
+
+// Luva/Top2/Top3 aninham o sendUser dentro de cardInfo.common; névoa, tempo e
+// os outros põem direto em cardInfo.sendUser. Essa diferença é do protocolo.
+function usuarioDaCarta(carta) {
+  const info = carta?.cardInfo;
+  return info?.common?.sendUser?.user || info?.sendUser?.user || null;
+}
+
+function dadosDoUsuarioPK(u) {
+  if (!u) return null;
+  const uniqueId = u.displayId || u.userId;
+  if (!uniqueId) return null;
+  return {
+    uniqueId,
+    nickname: u.nickName || uniqueId,
+    avatar: u.avatarThumb?.urlList?.[0] || null
+  };
+}
+
+function broadcastPowerUps() {
+  io.emit('powerup_estoque', db.getEstoqueCartas());
+}
+
 function broadcastRanking() {
   io.emit('ranking', db.getRanking());
 }
@@ -696,6 +785,88 @@ function startTikTokConnection() {
     }
   });
 
+  // ---------- SONDA DOS POWER-UPS DO PK ----------
+  // Listener próprio, separado do farejador de propósito: o farejador só mostra
+  // UMA linha por tipo de mensagem, e aqui eu preciso do JSON inteiro de TODA
+  // carta pra descobrir uma coisa que o schema não responde: qual power-up foi
+  // GANHO. O `awardCardNotice` traz `awardedUsers[]` (quem ganhou) mas nenhum
+  // campo dizendo qual carta — só o texto traduzido. Esta sonda existe pra
+  // confirmar isso numa live real antes de construir qualquer estoque em cima.
+  // Some sozinha depois de LIMITE_SONDA dumps, pra não inundar a página.
+  let sondaPowerUp = 0;
+  const LIMITE_SONDA = 40;
+  const CARTAS_PK = {
+    2: 'critical_strike', 3: 'smoke/nevoa', 4: 'AWARD (ganhou)', 5: 'extra_time/tempo',
+    6: 'special_effect', 7: 'potion', 8: 'wave', 9: 'special_effect_notice',
+    10: 'top2', 11: 'top3', 12: 'vault_glove/luva', 1: 'card_obtain_guide'
+  };
+
+  connection.on('decodedData', (metodo, decodificada) => {
+    if (myId !== activeConnectionId) return;
+    const tipo = decodificada?.type || metodo;
+    if (tipo !== 'WebcastLinkMicBattleItemCard') return;
+    if (sondaPowerUp >= LIMITE_SONDA) return;
+    sondaPowerUp++;
+
+    const d = decodificada?.data ?? decodificada;
+    let json;
+    try {
+      json = JSON.stringify(d, (k, v) => (typeof v === 'bigint' ? String(v) : v));
+    } catch (e) { return; }
+
+    const rotulo = CARTAS_PK[d?.msgType] || `msgType desconhecido (${d?.msgType})`;
+    registrarDiagnostico('powerup', `[${sondaPowerUp}/${LIMITE_SONDA}] CARTA DE PK → ${rotulo}`);
+    const dc = d?.awardCardNotice?.displayContent;
+    if (dc) {
+      registrarDiagnostico('powerup', `  key="${dc.key || ''}" pattern="${dc.defaultPattern || ''}"`);
+      (dc.pieces || []).forEach((pc, i) => {
+        const txt = pc?.stringValue || pc?.patternRefValue?.key || pc?.patternRefValue?.defaultPattern;
+        if (txt) registrarDiagnostico('powerup', `  pedaco[${i}] "${txt}"`);
+      });
+    }
+    registrarDiagnostico('powerup', (json || '').slice(0, 1800));
+    console.log(`[POWERUP] ${rotulo} :: ${(json || '').slice(0, 1200)}`);
+  });
+
+  // ---------- POWER-UPS DO PK: QUEM GANHOU / QUEM USOU ----------
+  connection.on('linkMicBattleItemCard', data => {
+    if (myId !== activeConnectionId) return;
+    lastEventAt = Date.now();
+
+    const msgType = Number(data?.msgType);
+    let mexeu = false;
+
+    // GANHOU: awardedUsers[] diz quem, mas o protocolo NÃO tem campo dizendo
+    // qual carta foi ganha (só o texto traduzido em displayContent). Então a
+    // carta entra na fila com tipo null e o abatimento cai pra "mais antiga".
+    if (msgType === PK_MSG_GANHOU) {
+      const premiados = data?.awardCardNotice?.awardedUsers || [];
+      const tipoGanho = descobrirCartaGanha(data); // pode vir null
+      premiados.forEach(bu => {
+        const p = dadosDoUsuarioPK(bu?.user);
+        if (!p) return;
+        if (db.registrarCartaGanha(p.uniqueId, p.nickname, p.avatar, tipoGanho)) {
+          mexeu = true;
+          // Sem pushFeed de propósito: o feedLine() do front não conhece esses
+          // tipos e renderizaria uma linha sem texto. O lugar deles é a aba.
+          console.log(`[POWERUP] ${p.nickname} GANHOU ${tipoGanho || 'um power-up (tipo nao identificado)'}`);
+        }
+      });
+    }
+
+    // USOU: aqui o protocolo é completo — sabe a carta (pelo msgType) e quem.
+    const mapa = PK_CARTA_POR_MSGTYPE[msgType];
+    if (mapa) {
+      const p = dadosDoUsuarioPK(usuarioDaCarta(data?.[mapa.campo]));
+      if (p && db.registrarCartaUsada(p.uniqueId, p.nickname, p.avatar, mapa.tipo)) {
+        mexeu = true;
+        console.log(`[POWERUP] ${p.nickname} USOU ${mapa.tipo}`);
+      }
+    }
+
+    if (mexeu) broadcastPowerUps();
+  });
+
   connection.on('member', data => {
     processarBadges(data);
     if (myId !== activeConnectionId) return;
@@ -767,6 +938,11 @@ function startTikTokConnection() {
   });
 }
 
+// Uma carta vence 5 dias depois de ganha, possivelmente sem live rolando. Este
+// tick só reavalia o estoque (getEstoqueCartas já expira o que passou do prazo)
+// e reemite pra quem estiver com a aba aberta.
+setInterval(broadcastPowerUps, 5 * 60 * 1000);
+
 const WATCHDOG_TIMEOUT_MS = 5 * 60 * 1000;
 setInterval(() => {
   // marca que a live seguia no ar; se o servidor reiniciar logo em seguida,
@@ -835,6 +1011,7 @@ io.on('connection', socket => {
   socket.emit('global_stats', db.getGlobalStats());
   socket.emit('tropa_init', db.getTropa());
   socket.emit('battle_stats', db.getBattleStats());
+  socket.emit('powerup_estoque', db.getEstoqueCartas());
   socket.emit('diagnostico_init', diagnostico);
 });
 

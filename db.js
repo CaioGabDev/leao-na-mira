@@ -19,6 +19,7 @@ state.tropa = state.tropa || [];
 state.sessions = state.sessions || []; // histórico de lives já finalizadas
 state.battles = state.battles || [];   // batalhas (PK) já encerradas
 state.currentBattle = state.currentBattle || null; // batalha rolando agora
+state.cartas = state.cartas || {};      // estoque de power-ups do PK por pessoa
 
 state.global = state.global || {
   totalDiamonds: 0,
@@ -434,6 +435,101 @@ const MAX_ACTIONS = 5000; // limite de segurança: nunca deixa o histórico cres
 // (com a consolidação acima, cada usuário só ocupa 1 linha por like + 1 por tipo de presente/power-up,
 // então isso raramente vai bater nesse teto mesmo em lives longas)
 
+// ============================================================================
+// ESTOQUE DE POWER-UPS DO PK (luva, névoa, tempo, ...)
+//
+// Cada carta GANHA entra numa fila com a hora. Usar tira uma da fila (a mais
+// antiga do mesmo tipo, senão a mais antiga de todas). Passados 5 dias a carta
+// cai sozinha.
+//
+// LIMITE IMPORTANTE: este é o estoque DO QUE ESTA LIVE VIU. O servidor só está
+// conectado a uma sala, e a carta pertence à conta da pessoa — ela pode gastar
+// no PK de outro streamer e o evento nunca chega aqui. Quando isso acontece o
+// número fica ALTO demais (nunca baixo). Por isso o front mostra "estimativa".
+// ============================================================================
+const VALIDADE_CARTA_MS = 5 * 24 * 60 * 60 * 1000; // 5 dias
+
+function expirarCartas(agora = Date.now()) {
+  let mudou = false;
+  Object.values(state.cartas).forEach(ficha => {
+    const antes = ficha.ganhas.length;
+    ficha.ganhas = ficha.ganhas.filter(c => agora - c.em < VALIDADE_CARTA_MS);
+    const caiu = antes - ficha.ganhas.length;
+    if (caiu > 0) { ficha.expiradas += caiu; mudou = true; }
+  });
+  if (mudou) dirty = true;
+  return mudou;
+}
+
+function garantirFichaDeCarta(uniqueId, nickname, avatar) {
+  if (!uniqueId) return null;
+  let ficha = state.cartas[uniqueId];
+  if (!ficha) {
+    ficha = state.cartas[uniqueId] = {
+      uniqueId, nickname: nickname || uniqueId, avatar: avatar || null,
+      ganhas: [], usadas: 0, expiradas: 0, ultimaEm: Date.now()
+    };
+  }
+  // mesmo cuidado do ensureUser: só sobrescreve com o que veio de verdade
+  if (nickname) ficha.nickname = nickname;
+  if (avatar) ficha.avatar = avatar;
+  return ficha;
+}
+
+function registrarCartaGanha(uniqueId, nickname, avatar, tipo) {
+  const ficha = garantirFichaDeCarta(uniqueId, nickname, avatar);
+  if (!ficha) return false;
+  ficha.ganhas.push({ em: Date.now(), tipo: tipo || null });
+  ficha.ultimaEm = Date.now();
+  dirty = true;
+  return true;
+}
+
+function registrarCartaUsada(uniqueId, nickname, avatar, tipo) {
+  const ficha = garantirFichaDeCarta(uniqueId, nickname, avatar);
+  if (!ficha) return false;
+  expirarCartas();
+  // tira a mais antiga do mesmo tipo; se o tipo não bater (ou a carta tiver
+  // sido ganha antes da gente estar ouvindo), tira a mais antiga da fila
+  let i = tipo ? ficha.ganhas.findIndex(c => c.tipo === tipo) : -1;
+  if (i < 0 && ficha.ganhas.length) i = 0;
+  if (i >= 0) ficha.ganhas.splice(i, 1);
+  ficha.usadas += 1;
+  ficha.ultimaEm = Date.now();
+  dirty = true;
+  return true;
+}
+
+function getEstoqueCartas() {
+  expirarCartas();
+  const agora = Date.now();
+  return Object.values(state.cartas)
+    .map(ficha => {
+      const maisAntiga = ficha.ganhas.length ? Math.min(...ficha.ganhas.map(c => c.em)) : null;
+      return {
+        uniqueId: ficha.uniqueId,
+        nickname: ficha.nickname,
+        avatar: ficha.avatar,
+        emMaos: ficha.ganhas.length,
+        usadas: ficha.usadas,
+        expiradas: ficha.expiradas,
+        totalGanhas: ficha.ganhas.length + ficha.usadas + ficha.expiradas,
+        // quanto falta pra próxima vencer, em ms (null = não tem carta na mão)
+        proximaExpiraEmMs: maisAntiga === null
+          ? null
+          : Math.max(0, VALIDADE_CARTA_MS - (agora - maisAntiga)),
+        porTipo: ficha.ganhas.reduce((acc, c) => {
+          const k = c.tipo || 'desconhecido';
+          acc[k] = (acc[k] || 0) + 1;
+          return acc;
+        }, {}),
+        ultimaEm: ficha.ultimaEm
+      };
+    })
+    .filter(f => f.totalGanhas > 0)
+    .sort((a, b) => b.emMaos - a.emMaos || b.totalGanhas - a.totalGanhas || a.nickname.localeCompare(b.nickname));
+}
+
 function getRanking() {
   return Object.values(state.users)
     .map(u => ({ ...u, score: u.likes + u.gifts_value * 10 }))
@@ -459,6 +555,7 @@ function resetAll() {
   state.battles = [];
   state.currentBattle = null;
   state.currentSessionSnapshot = null;
+  state.cartas = {};
   state.global = {
     totalDiamonds: 0, totalLikes: 0, totalComments: 0, totalFollows: 0, totalShares: 0,
     peakViewers: 0, currentViewers: 0, uniqueViewers: 0, startedAt: Date.now(),
@@ -817,6 +914,7 @@ function getSessions() {
 
 module.exports = {
   addLikes, addGift, addPowerUp, getRanking, getUserProfile, resetAll,
+  registrarCartaGanha, registrarCartaUsada, getEstoqueCartas, VALIDADE_CARTA_MS,
   getGlobalStats, updateViewerCount, addComment, addFollow, addShare,
   markLiveOnline, markLiveOffline, checkLevelUp, getTropa, limparTropa, getSessions,
   heartbeat,

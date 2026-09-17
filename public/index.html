@@ -127,6 +127,40 @@
   .panel-meta { font-size: 12px; font-weight: 700; color: var(--ink-faint); letter-spacing: .04em; }
 
   /* ========================================================================
+     POWER-UPS
+     ===================================================================== */
+  .aviso-estimativa {
+    background: rgba(255,176,58,.07); border: 1px solid rgba(255,176,58,.28);
+    border-left: 3px solid var(--gold); border-radius: var(--r-md);
+    padding: 12px 16px; margin-bottom: 16px;
+    font-size: 13px; line-height: 1.55; color: var(--ink-dim);
+  }
+  .aviso-estimativa strong { color: var(--gold); }
+  .aviso-estimativa em { color: var(--ink); font-style: normal; font-weight: 700; }
+
+  .pu-row {
+    display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 12px;
+    background: var(--card-2); border: 1px solid var(--line);
+    border-left: 3px solid transparent; border-radius: var(--r-md); padding: 10px 16px;
+  }
+  .pu-row.tem { border-left-color: var(--gold); }
+  .pu-row.zerado { opacity: .62; }
+  .pu-nome { display: flex; align-items: center; gap: 8px; min-width: 0;
+             font-weight: 700; font-size: 14.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pu-sub { font-size: 11.5px; color: var(--ink-faint); font-weight: 600; margin-top: 2px; }
+  .pu-dir { text-align: right; white-space: nowrap; }
+  .pu-mao { font-family: 'Bungee', sans-serif; font-size: 17px; color: var(--gold); }
+  .pu-mao.vazio { color: var(--ink-faint); }
+  .pu-prazo { display: block; font-size: 11px; font-weight: 700; color: var(--ink-faint); margin-top: 2px; }
+  .pu-prazo.urgente { color: var(--red); }
+  .pu-tipos { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: 4px; }
+
+  @media (max-width: 480px) {
+    .pu-row { grid-template-columns: 28px minmax(0, 1fr) auto; gap: 8px; padding: 9px 12px; }
+    .pu-nome { font-size: 13.5px; }
+  }
+
+  /* ========================================================================
      ABAS (Ranking / Batalhas / Histórico)
      Cada .tab-panel é só um invólucro. As seções lá dentro continuam mandando
      no próprio display (o script original faz style.display = 'block'/'none'),
@@ -583,6 +617,7 @@
       <nav class="tabs">
         <button class="tab-btn is-active" data-tab="ranking">🏆 Ranking</button>
         <button class="tab-btn" data-tab="batalhas">⚔️ Batalhas</button>
+        <button class="tab-btn" data-tab="powerups">🎴 Power-ups</button>
         <!-- este é o #toggleHistoryBtn original: o handler dele (abrir + carregar
              o histórico) continua valendo, só mudou de lugar e virou aba -->
         <button class="tab-btn" id="toggleHistoryBtn" data-tab="historico"><span>📜 Histórico</span></button>
@@ -645,6 +680,38 @@
           <div class="history-list" id="battleHistory"></div>
         </section>
         <div class="panel tab-empty">Nenhuma batalha registrada ainda. Quando rolar um PK, ele aparece aqui.</div>
+
+      </div>
+
+      <!-- ===== TELA: POWER-UPS ===== -->
+      <div class="tab-panel" data-panel="powerups" hidden>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2 class="panel-title">🎴 Estoque de power-ups</h2>
+            <span class="panel-meta">Validade de 5 dias</span>
+          </div>
+
+          <div class="aviso-estimativa">
+            <strong>É estimativa, não o estoque real do TikTok.</strong>
+            A conta sobe quando alguém ganha uma carta aqui e desce quando usa aqui
+            ou quando passam 5 dias. Se a pessoa gastar a carta na live de outro
+            streamer, este servidor não recebe o evento — então o número pode ficar
+            <em>maior</em> que o de verdade, nunca menor.
+          </div>
+
+          <div class="stats-grid" id="powerupResumo"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2 class="panel-title">Quem tem carta</h2>
+            <span class="panel-meta" id="powerupContagem"></span>
+          </div>
+          <div class="list" id="powerupList">
+            <div class="empty">Esperando alguém ganhar um power-up...</div>
+          </div>
+        </section>
 
       </div>
 
@@ -1331,6 +1398,101 @@
     const alvo = (location.hash || '').replace('#aba-', '');
     const existe = [...telas].some(t => t.dataset.panel === alvo);
     abrir(existe ? alvo : 'ranking');
+  })();
+</script>
+<script>
+  // ---------- ESTOQUE DE POWER-UPS ----------
+  // Bloco próprio, sem tocar no script principal. Reaproveita só o `socket`
+  // (const de topo de script clássico é visível pros scripts seguintes) e
+  // escapa o texto por conta própria pra não depender de nada de lá.
+  (function () {
+    const listaEl  = document.getElementById('powerupList');
+    const resumoEl = document.getElementById('powerupResumo');
+    const contagemEl = document.getElementById('powerupContagem');
+    if (!listaEl) return;
+
+    const SEM_FOTO = 'data:image/svg+xml;utf8,' + encodeURIComponent(
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" fill="%232a1810"/><text x="32" y="40" font-size="28" text-anchor="middle" fill="%239c8b7d">?</text></svg>');
+
+    const NOME_DO_TIPO = {
+      luva: '🧤 Luva', nevoa: '🌫️ Névoa', tempo: '⏱️ Tempo', critico: '💥 Crítico',
+      pocao: '🧪 Poção', onda: '🌊 Onda', top2: '2️⃣ Top 2', top3: '3️⃣ Top 3',
+      efeito: '✨ Efeito', desconhecido: '🎴 Carta'
+    };
+
+    function esc2(t) {
+      return String(t ?? '').replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[c]));
+    }
+
+    function prazo(ms) {
+      if (ms === null || ms === undefined) return '';
+      const h = Math.floor(ms / 3600000);
+      const d = Math.floor(h / 24);
+      if (d >= 1) return `expira em ${d}d ${h % 24}h`;
+      if (h >= 1) return `expira em ${h}h`;
+      return `expira em menos de 1h`;
+    }
+
+    let ultimo = [];
+    let recebidoEm = Date.now();
+
+    function render() {
+      // desconta o tempo que passou desde que o servidor mandou, pro prazo não
+      // ficar congelado com a aba aberta
+      const decorrido = Date.now() - recebidoEm;
+
+      const pessoas = ultimo.length;
+      const emMaos = ultimo.reduce((t, p) => t + p.emMaos, 0);
+      const usadas = ultimo.reduce((t, p) => t + p.usadas, 0);
+      const expiradas = ultimo.reduce((t, p) => t + p.expiradas, 0);
+
+      resumoEl.innerHTML = `
+        <div class="stats-card"><div class="num">${emMaos}</div><div class="lbl">🎴 Em mãos</div></div>
+        <div class="stats-card"><div class="num">${pessoas}</div><div class="lbl">Pessoas</div></div>
+        <div class="stats-card"><div class="num">${usadas}</div><div class="lbl">Já usadas</div></div>
+        <div class="stats-card"><div class="num">${expiradas}</div><div class="lbl">Expiradas</div></div>
+      `;
+
+      const comCarta = ultimo.filter(p => p.emMaos > 0).length;
+      contagemEl.textContent = pessoas ? `${comCarta} com carta · ${pessoas} no total` : '';
+
+      if (!ultimo.length) {
+        listaEl.innerHTML = '<div class="empty">Ninguém ganhou power-up ainda.</div>';
+        return;
+      }
+
+      listaEl.innerHTML = ultimo.map(p => {
+        const restante = p.proximaExpiraEmMs === null ? null : Math.max(0, p.proximaExpiraEmMs - decorrido);
+        const urgente = restante !== null && restante < 24 * 3600000;
+        const tipos = Object.entries(p.porTipo)
+          .map(([t, n]) => `<span class="badge-tag">${NOME_DO_TIPO[t] || t}${n > 1 ? ' ×' + n : ''}</span>`)
+          .join('');
+        return `
+          <div class="pu-row ${p.emMaos > 0 ? 'tem' : 'zerado'}">
+            <img class="row-avatar" src="${esc2(p.avatar || SEM_FOTO)}" onerror="this.src='${SEM_FOTO}'" alt="">
+            <div>
+              <div class="pu-nome">${esc2(p.nickname)}<span class="pu-tipos">${tipos}</span></div>
+              <div class="pu-sub">ganhou ${p.totalGanhas} no total · usou ${p.usadas} · expirou ${p.expiradas}</div>
+            </div>
+            <div class="pu-dir">
+              <span class="pu-mao ${p.emMaos ? '' : 'vazio'}">${p.emMaos}</span>
+              <span class="pu-prazo ${urgente ? 'urgente' : ''}">${p.emMaos ? prazo(restante) : 'sem carta'}</span>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    socket.on('powerup_estoque', dados => {
+      ultimo = Array.isArray(dados) ? dados : [];
+      recebidoEm = Date.now();
+      render();
+    });
+
+    // o prazo anda sozinho sem precisar de evento do servidor
+    setInterval(() => { if (ultimo.length) render(); }, 60000);
   })();
 </script>
 </body>
