@@ -224,6 +224,36 @@ function dadosDoUsuarioPK(u) {
   };
 }
 
+// ---------- DE QUEM É A CARTA ----------
+// As mensagens de carta chegam pelos DOIS lados do PK: o suporte do adversário
+// também aparece. Contar todo mundo estava errado — o objetivo é saber quem da
+// NOSSA live tem carta pra jogar.
+//
+// Pro USO é direto: a carta diz o anfitrião beneficiado (anchorId/toAnchorId),
+// então basta comparar com o meuUserId.
+//
+// Pro PRÊMIO não tem campo de lado nenhum ("Contributors got match power-ups").
+// A saída é o linkMicArmies, que traz os contribuidores INDEXADOS POR ANFITRIÃO
+// — daí sai a lista de quem é do nosso lado.
+let meusContribuintes = new Set();
+let batalhaDosContribuintes = null;
+
+function anfitriaoBeneficiado(carta) {
+  const info = carta?.cardInfo;
+  return String(
+    carta?.anchorId ||
+    info?.common?.toAnchorIdStr || info?.common?.toAnchorId ||
+    info?.toAnchorIdStr || info?.toAnchorId || ''
+  );
+}
+
+function ehDoNossoLado(carta) {
+  if (!meuUserId) return null;               // não sei ainda: quem chama decide
+  const alvo = anfitriaoBeneficiado(carta);
+  if (!alvo) return null;                    // carta sem anfitrião: idem
+  return alvo === String(meuUserId);
+}
+
 function broadcastPowerUps() {
   io.emit('powerup_estoque', db.getEstoqueCartas());
 }
@@ -904,6 +934,25 @@ function startTikTokConnection() {
     console.log(`[POWERUP] ${rotulo} :: ${(json || '').slice(0, 1200)}`);
   });
 
+  // Mantém a lista de contribuintes do nosso lado. Fica separado da sonda de
+  // baixo porque a sonda tem teto de logs e isto precisa rodar sempre.
+  connection.on('linkMicArmies', data => {
+    if (myId !== activeConnectionId) return;
+    if (!meuUserId) return;
+
+    const battleId = String(data?.battleId || '');
+    if (battleId && battleId !== batalhaDosContribuintes) {
+      batalhaDosContribuintes = battleId;
+      meusContribuintes = new Set();          // batalha nova, lista nova
+    }
+    // armies é um mapa anfitrião -> exército. O nosso é o do meuUserId.
+    const meu = (data?.armies || {})[String(meuUserId)];
+    (meu?.userArmies || []).forEach(ua => {
+      const id = String(ua?.userIdStr || ua?.userId || '');
+      if (id) meusContribuintes.add(id);
+    });
+  });
+
   // ---------- SONDA 2: EFEITOS POR USUÁRIO (linkMicArmies) ----------
   // O linkMicArmies traz effectInfos.effectInfoList = [{type, uidList, effectExtra}],
   // ou seja, QUAL efeito está ativo em QUAIS usuários. Se isso vier preenchido,
@@ -963,6 +1012,16 @@ function startTikTokConnection() {
       premiados.forEach(bu => {
         const p = dadosDoUsuarioPK(bu?.user);
         if (!p) return;
+        // O prêmio não diz de que lado a pessoa é. Só conta quem apareceu como
+        // contribuinte NOSSO no linkMicArmies — senão entra o suporte do
+        // adversário. Sem essa lista ainda, não conta (melhor faltar do que
+        // contar o inimigo).
+        if (!meusContribuintes.has(String(p.uniqueId))) {
+          registrarDiagnostico('powerup',
+            `  PULOU prêmio de "${p.nickname}" (${p.uniqueId}): ` +
+            (meusContribuintes.size ? 'não está nos nossos contribuintes' : 'lista de contribuintes ainda vazia'));
+          return;
+        }
         if (db.registrarCartaGanha(p.uniqueId, p.nickname, p.avatar, tipoGanho, p.handle)) {
           mexeu = true;
           // Sem pushFeed de propósito: o feedLine() do front não conhece esses
@@ -975,7 +1034,21 @@ function startTikTokConnection() {
     // USOU: aqui o protocolo é completo — sabe a carta (pelo msgType) e quem.
     const mapa = PK_CARTA_POR_MSGTYPE[msgType];
     if (mapa) {
-      const p = dadosDoUsuarioPK(usuarioDaCarta(data?.[mapa.campo]));
+      const carta = data?.[mapa.campo];
+      // A carta diz pra qual anfitrião foi jogada. Se foi contra a gente, não
+      // entra no estoque — era esse o bug: contava o suporte do adversário.
+      const nosso = ehDoNossoLado(carta);
+      if (nosso === false) {
+        registrarDiagnostico('powerup',
+          `  IGNORADO: carta jogada pro anfitrião ${anfitriaoBeneficiado(carta)} (não é o nosso ${meuUserId})`);
+        return;
+      }
+      if (nosso === null) {
+        registrarDiagnostico('powerup',
+          `  ATENÇÃO: não deu pra saber o lado da carta (meuUserId=${meuUserId || 'null'}, ` +
+          `anfitrião="${anfitriaoBeneficiado(carta)}") — contando como nosso`);
+      }
+      const p = dadosDoUsuarioPK(usuarioDaCarta(carta));
       const tipoUsado = descobrirCartaUsada(data, mapa);
       if (p && db.registrarCartaUsada(p.uniqueId, p.nickname, p.avatar, tipoUsado, p.handle)) {
         mexeu = true;

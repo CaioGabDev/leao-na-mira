@@ -525,6 +525,15 @@ function getEstoqueCartas() {
           acc[k] = (acc[k] || 0) + 1;
           return acc;
         }, {}),
+        // Cada carta tem o SEU prazo: um martelo ganho anteontem vence em 3
+        // dias e uma luva ganha hoje vence em 5. Vai ordenado do mais urgente.
+        cartas: ficha.ganhas
+          .map(c => ({
+            tipo: c.tipo || 'desconhecido',
+            ganhaEm: c.em,
+            expiraEmMs: Math.max(0, VALIDADE_CARTA_MS - (agora - c.em))
+          }))
+          .sort((a, b) => a.expiraEmMs - b.expiraEmMs),
         ultimaEm: ficha.ultimaEm
       };
     })

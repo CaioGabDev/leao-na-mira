@@ -154,6 +154,16 @@
   .pu-prazo { display: block; font-size: 11px; font-weight: 700; color: var(--ink-faint); margin-top: 2px; }
   .pu-prazo.urgente { color: var(--red); }
   .pu-tipos { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: 4px; }
+  .pu-cartas { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+  .pu-carta {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(255,122,26,.10); border: 1px solid rgba(255,122,26,.28);
+    border-radius: var(--r-pill); padding: 3px 9px;
+    font-size: 11.5px; font-weight: 700; color: var(--ink-dim); white-space: nowrap;
+  }
+  .pu-carta b { color: var(--gold); font-weight: 700; }
+  .pu-carta.urgente { border-color: rgba(255,107,107,.45); background: rgba(255,107,107,.10); }
+  .pu-carta.urgente b { color: var(--red); }
 
   @media (max-width: 480px) {
     .pu-row { grid-template-columns: 28px minmax(0, 1fr) auto; gap: 8px; padding: 9px 12px; }
@@ -694,10 +704,12 @@
 
           <div class="aviso-estimativa">
             <strong>É estimativa, não o estoque real do TikTok.</strong>
-            A conta sobe quando alguém ganha uma carta aqui e desce quando usa aqui
-            ou quando passam 5 dias. Se a pessoa gastar a carta na live de outro
-            streamer, este servidor não recebe o evento — então o número pode ficar
-            <em>maior</em> que o de verdade, nunca menor.
+            Conta só o pessoal do <em>nosso</em> lado: carta jogada pro adversário é
+            ignorada, e no prêmio entra quem aparece como nosso contribuinte no PK.
+            Cada carta tem o próprio prazo de 5 dias. Duas coisas ainda escapam — se
+            a pessoa gastar a carta na live de outro streamer o número fica
+            <em>maior</em> que o real; se o prêmio chegar antes da lista de
+            contribuintes, fica <em>menor</em>.
           </div>
 
           <div class="stats-grid" id="powerupResumo"></div>
@@ -1438,6 +1450,16 @@
       }[c]));
     }
 
+    // prazo compacto pra caber na etiqueta de cada carta: "3d 4h", "14h", "40m"
+    function curto(ms) {
+      const min = Math.floor(ms / 60000);
+      const h = Math.floor(min / 60);
+      const d = Math.floor(h / 24);
+      if (d >= 1) return `${d}d ${h % 24}h`;
+      if (h >= 1) return `${h}h`;
+      return `${min}m`;
+    }
+
     function prazo(ms) {
       if (ms === null || ms === undefined) return '';
       const h = Math.floor(ms / 3600000);
@@ -1478,15 +1500,22 @@
       listaEl.innerHTML = ultimo.map(p => {
         const restante = p.proximaExpiraEmMs === null ? null : Math.max(0, p.proximaExpiraEmMs - decorrido);
         const urgente = restante !== null && restante < 24 * 3600000;
-        const tipos = Object.entries(p.porTipo)
-          .map(([t, n]) => `<span class="badge-tag">${NOME_DO_TIPO[t] || t}${n > 1 ? ' ×' + n : ''}</span>`)
-          .join('');
+        // uma etiqueta por carta, cada uma com o próprio prazo
+        const cartas = (p.cartas || []).map(c => {
+          const falta = Math.max(0, c.expiraEmMs - decorrido);
+          const urge = falta < 24 * 3600000;
+          return `<span class="pu-carta ${urge ? 'urgente' : ''}">
+                    ${NOME_DO_TIPO[c.tipo] || c.tipo}
+                    <b>${curto(falta)}</b>
+                  </span>`;
+        }).join('');
         return `
           <div class="pu-row ${p.emMaos > 0 ? 'tem' : 'zerado'}">
             <img class="row-avatar" src="${esc2(p.avatar || SEM_FOTO)}" onerror="this.src='${SEM_FOTO}'" alt="">
             <div>
-              <div class="pu-nome">${esc2(p.nickname)}<span class="pu-tipos">${tipos}</span></div>
+              <div class="pu-nome">${esc2(p.nickname)}</div>
               <div class="pu-sub">${p.handle ? '@' + esc2(p.handle) + ' · ' : ''}ganhou ${p.totalGanhas} no total · usou ${p.usadas} · expirou ${p.expiradas}</div>
+              ${cartas ? `<div class="pu-cartas">${cartas}</div>` : ''}
             </div>
             <div class="pu-dir">
               <span class="pu-mao ${p.emMaos ? '' : 'vazio'}">${p.emMaos}</span>
