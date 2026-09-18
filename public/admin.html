@@ -126,7 +126,41 @@
   .assinatura.sem-chave { border-color: rgba(255,176,58,.35); background: rgba(255,176,58,.06); }
   .assinatura .quem { color: var(--ink-dim); }
 
+  /* visão geral */
+  .painel-lives { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+  .live-card {
+    padding: 14px; border-radius: var(--r-md);
+    background: var(--card-2); border: 1px solid var(--line-soft);
+    display: grid; gap: 8px; align-content: start;
+  }
+  .live-card.parada { opacity: .6; }
+  .live-card.no-ar { border-color: rgba(110,231,135,.35); }
+  /* uma linha só: com a etiqueta "casa" junto, o estado caía pra linha de
+     baixo e os cards ficavam de alturas diferentes */
+  .live-card .topo { display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; }
+  .live-card .arroba {
+    font-weight: 700; color: var(--gold); font-size: 14px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+  }
+  .live-card .etiqueta { white-space: nowrap; }
+  .live-card .grande {
+    font-family: Bungee, system-ui, sans-serif; font-size: 22px; line-height: 1;
+    color: var(--ink); font-variant-numeric: tabular-nums;
+  }
+  .live-card .grande small { font-size: 11px; font-family: inherit; color: var(--ink-faint); }
+  .live-card .linhas { display: grid; gap: 3px; font-size: 12.5px; color: var(--ink-dim); }
+  .live-card .quem { font-size: 12px; color: var(--ink-faint); }
+  .ponto {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--ink-faint); flex-shrink: 0;
+  }
+  .ponto.vivo { background: var(--green); box-shadow: 0 0 8px var(--green); }
+
   .novo-cliente { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; align-items: end; }
+  .novo-cliente label.caixa {
+    display: flex; align-items: center; gap: 8px; text-transform: none;
+    letter-spacing: 0; font-size: 13px; color: var(--ink-dim); cursor: pointer;
+  }
+  .novo-cliente input[type="checkbox"] { accent-color: var(--gold); width: 16px; height: 16px; }
   .novo-cliente .campo { margin: 0; }
 
   @media (max-width: 560px) {
@@ -158,6 +192,15 @@
     Isto muda só a <b>aparência e os textos</b>. Nada aqui mexe na contagem da live,
     no ranking, nas batalhas ou nos power-ups — esses continuam funcionando igual.
   </div>
+
+  <!-- ---------- VISÃO GERAL ---------- -->
+  <section class="app-panel">
+    <div class="app-panel-head">
+      <h2 class="app-panel-title">Visão geral</h2>
+      <span class="app-panel-meta" id="visaoMeta"></span>
+    </div>
+    <div class="painel-lives" id="painelLives"></div>
+  </section>
 
   <!-- ---------- DE QUEM É A CARA QUE EU ESTOU MEXENDO ---------- -->
   <section class="app-panel">
@@ -312,19 +355,35 @@
           <label for="novaSenha">Senha</label>
           <input class="app-input" type="text" id="novaSenha" maxlength="60" placeholder="mínimo 6">
         </div>
-        <div class="campo">
+        <div class="campo" id="campoDono">
           <label for="novoDono">@ da live</label>
           <input class="app-input" type="text" id="novoDono" maxlength="32" placeholder="sem o @">
         </div>
         <div class="campo">
-          <button class="app-btn app-btn--primary" id="criarClienteBtn">➕ Criar cliente</button>
+          <label class="caixa" for="novoAdmin">
+            <input type="checkbox" id="novoAdmin"> é administrador
+          </label>
+          <button class="app-btn app-btn--primary" id="criarClienteBtn">➕ Criar</button>
         </div>
       </div>
       <span class="dica" id="criarAviso">
-        Criar já liga a live desse cliente — não precisa reiniciar. Ele entra com esse
+        Criar cliente já liga a live dele — não precisa reiniciar. Ele entra com esse
         login e vê só a live dele.
       </span>
     </div>
+  </section>
+
+  <!-- ---------- ADMINISTRADORES ---------- -->
+  <section class="app-panel">
+    <div class="app-panel-head">
+      <h2 class="app-panel-title">Administradores</h2>
+      <span class="app-panel-meta">quem enxerga esta página</span>
+    </div>
+    <div class="lista-clientes" id="listaAdmins"></div>
+    <span class="dica" style="margin-top:12px; display:block">
+      Administrador não pertence a live nenhuma: ele vê todos os clientes e esta
+      configuração. Marque <b>é administrador</b> no formulário acima para criar um.
+    </span>
   </section>
 
 </div>
@@ -422,10 +481,108 @@
     }[c]));
   }
 
+  // ---------- visão geral ----------
+  function numero(n) {
+    return Number(n || 0).toLocaleString('pt-BR');
+  }
+
+  function duracao(seg) {
+    const s = Math.max(0, Math.floor(seg || 0));
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+    if (h) return h + 'h' + String(m).padStart(2, '0') + 'm';
+    return m + 'm';
+  }
+
+  function desenharVisaoGeral(dados) {
+    const lives = dados.clientes || [];
+    const noAr = lives.filter(c => c.aoVivo).length;
+    $('visaoMeta').textContent = lives.length === 1
+      ? (noAr ? '1 live, no ar' : '1 live, parada')
+      : `${lives.length} lives · ${noAr} no ar`;
+
+    $('painelLives').innerHTML = lives.map(c => {
+      const n = c.numeros;
+      const classe = c.aoVivo ? 'no-ar' : (c.ligado ? '' : 'parada');
+      const estado = c.aoVivo ? 'ao vivo' : (c.ligado ? 'aguardando' : 'parada');
+      const corpo = n ? `
+        <div class="grande">${numero(n.espectadores)} <small>assistindo</small></div>
+        <div class="linhas">
+          <span>💎 ${numero(n.diamantes)} · 👥 ${numero(n.pessoas)} no ranking</span>
+          <span>👀 pico ${numero(n.pico)} · ⏱️ ${duracao(n.duracaoSegundos)}</span>
+          <span>💬 ${numero(n.comentarios)} · ➕ ${numero(n.seguiram)}</span>
+        </div>`
+        : `<div class="linhas"><span>${c.erro ? 'erro: ' + esc(c.erro) : 'motor não está de pé'}</span></div>`;
+
+      return `
+        <div class="live-card ${classe}">
+          <div class="topo">
+            <span class="ponto ${c.aoVivo ? 'vivo' : ''}"></span>
+            <span class="arroba">@${esc(c.dono)}</span>
+            ${c.daCasa ? '<span class="etiqueta casa">casa</span>' : ''}
+            <span class="spacer"></span>
+            <span class="etiqueta ${c.aoVivo ? 'ligado' : ''}">${estado}</span>
+          </div>
+          ${corpo}
+          <div class="quem">${c.usuarios.length ? esc(c.usuarios.join(', ')) : 'sem login ainda'}</div>
+        </div>`;
+    }).join('');
+  }
+
+  function desenharAdmins(dados) {
+    const admins = dados.admins || [];
+    $('listaAdmins').innerHTML = admins.length
+      ? admins.map(u => `
+          <div class="cliente">
+            <span class="arroba">👤 ${esc(u)}</span>
+            ${u === dados.eu ? '<span class="etiqueta casa">você</span>' : ''}
+            <span class="spacer"></span>
+            ${u === dados.eu || admins.length <= 1
+              ? ''
+              : `<button class="app-btn" data-rebaixar="${esc(u)}">⬇️ Tirar admin</button>`}
+            ${u === dados.eu || admins.length <= 1
+              ? ''
+              : `<button class="app-btn app-btn--danger" data-remover="${esc(u)}">🗑️ Apagar</button>`}
+          </div>`).join('')
+      : '<div class="cliente"><span class="quem">Nenhum administrador marcado.</span></div>';
+  }
+
+  $('listaAdmins').addEventListener('click', async e => {
+    const btn = e.target.closest('[data-rebaixar]');
+    if (!btn) return;
+    const quem = btn.dataset.rebaixar;
+    if (!confirm(`Tirar o acesso de administrador de "${quem}"? Ele continua logando, mas não vê mais esta página.`)) return;
+    btn.disabled = true;
+    try {
+      const res = await fetch('/api/clientes/admin', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ usuario: quem, administrador: false })
+      });
+      const dados = await res.json();
+      if (!res.ok) throw new Error(dados.error || 'falhou');
+      await carregarClientes();
+      aviso(quem + ' não é mais administrador.', 'ok');
+    } catch (err) {
+      btn.disabled = false;
+      aviso(err.message, 'err');
+    }
+  });
+
+  // o campo do @ não faz sentido pra administrador: ele não é de live nenhuma
+  $('novoAdmin').addEventListener('change', () => {
+    const ehAdmin = $('novoAdmin').checked;
+    $('campoDono').style.display = ehAdmin ? 'none' : '';
+    $('criarClienteBtn').textContent = ehAdmin ? '➕ Criar administrador' : '➕ Criar';
+    $('criarAviso').textContent = ehAdmin
+      ? 'Administrador não pertence a live nenhuma: ele vê todos os clientes e esta configuração.'
+      : 'Criar cliente já liga a live dele — não precisa reiniciar. Ele entra com esse login e vê só a live dele.';
+  });
+
   async function carregarClientes() {
     const res = await fetch('/api/clientes');
     if (!res.ok) throw new Error('falhou');
     const dados = await res.json();
+    desenharVisaoGeral(dados);
+    desenharAdmins(dados);
 
     // o seletor de alvo acompanha a lista
     const antes = alvoAtual;
@@ -474,13 +631,18 @@
 
   $('criarClienteBtn').addEventListener('click', async () => {
     const btn = $('criarClienteBtn');
+    const ehAdmin = $('novoAdmin').checked;
     const corpo = {
       usuario: $('novoUsuario').value.trim(),
       senha: $('novaSenha').value,
-      dono: $('novoDono').value.trim()
+      dono: ehAdmin ? '' : $('novoDono').value.trim(),
+      administrador: ehAdmin
     };
-    if (!corpo.usuario || !corpo.senha || !corpo.dono) {
-      return aviso('Preencha usuário, senha e o @ da live.', 'err');
+    if (!corpo.usuario || !corpo.senha) {
+      return aviso('Preencha usuário e senha.', 'err');
+    }
+    if (!ehAdmin && !corpo.dono) {
+      return aviso('Falta o @ da live do cliente.', 'err');
     }
     btn.disabled = true;
     aviso('Criando...');
@@ -493,10 +655,14 @@
       if (!res.ok) throw new Error(dados.error || 'falhou');
       $('novoUsuario').value = ''; $('novaSenha').value = ''; $('novoDono').value = '';
       await carregarClientes();
-      aviso(dados.ligado
-        ? 'Cliente criado e a live @' + dados.dono + ' já está de pé.'
-        : 'Cliente criado, mas a live @' + dados.dono + ' não subiu — veja o log do servidor.',
-        dados.ligado ? 'ok' : 'err');
+      if (dados.administrador) {
+        aviso('Administrador "' + dados.usuario + '" criado. Ele já pode entrar aqui.', 'ok');
+      } else {
+        aviso(dados.ligado
+          ? 'Cliente criado e a live @' + dados.dono + ' já está de pé.'
+          : 'Cliente criado, mas a live @' + dados.dono + ' não subiu — veja o log do servidor.',
+          dados.ligado ? 'ok' : 'err');
+      }
     } catch (err) {
       aviso(err.message, 'err');
     } finally {
@@ -574,6 +740,15 @@
       aviso('Não deu pra listar os clientes.', 'err');
     }
     await carregar();
+
+    // A visão geral é um painel de acompanhamento: se atualiza sozinha, mas
+    // devagar — não é tela de tempo real, e cada atualização lê o estado de
+    // todas as lives.
+    setInterval(() => {
+      // não atrapalha quem está no meio de um formulário
+      if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
+      carregarClientes().catch(() => {});
+    }, 20000);
   })();
 })();
 </script>

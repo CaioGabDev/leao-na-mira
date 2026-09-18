@@ -59,25 +59,52 @@ function setAdmin(username, admin) {
   return true;
 }
 
-// Quem pode abrir a página de configuração.
+// Quem pode abrir a página de configuração: quem tem `admin: true`. Só isso.
 //
-// A regra tem duas saídas de emergência porque o users.json que já está
-// rodando em produção não tem campo `admin` nenhum — sem elas, ninguém
-// conseguiria entrar na config da própria instalação:
-//   1. alguém marcado explicitamente com admin: true
-//   2. se NINGUÉM está marcado, vale o ADMIN_USER das env vars
-//   3. se ainda assim ninguém, e só existe um usuário, é ele (instalação de
-//      um dono só, que é o caso de toda instância hoje)
+// Já foi mais esperto que isso e deu errado: a regra antiga dizia "se só
+// existe um usuário, é ele", e aí criar o primeiro cliente tirava o acesso do
+// dono — porque passavam a existir dois. Permissão não pode depender de
+// quantas contas existem. Quem decide quem é dono é o garantirDono(), uma vez,
+// na subida do servidor, e a marca fica gravada no users.json.
 function ehAdmin(username) {
   if (!username) return false;
-  const users = loadUsers();
-  const eu = users.find(u => u.username === username);
-  if (!eu) return false;
-  if (eu.admin === true) return true;
+  const eu = loadUsers().find(u => u.username === username);
+  return !!(eu && eu.admin === true);
+}
 
-  if (users.some(u => u.admin === true)) return false;   // já tem dono definido
-  if (process.env.ADMIN_USER) return username === process.env.ADMIN_USER;
-  return users.length === 1;
+// Garante que a instalação tenha um dono marcado. Roda na subida.
+//
+// Se ninguém está marcado (o caso de quem vem da versão antiga, onde o campo
+// nem existia), escolhe nesta ordem:
+//   1. o ADMIN_USER das env vars, se ele existir no cadastro
+//   2. o único usuário, se só houver um
+//   3. a conta mais antiga SEM `dono` — cliente sempre tem `dono`, então a
+//      conta sem ele é a da casa
+// Não achando ninguém, avisa alto: é melhor gritar do que deixar a
+// configuração aberta ou trancada em silêncio.
+function garantirDono() {
+  const users = loadUsers();
+  if (!users.length) return null;
+  if (users.some(u => u.admin === true)) return null;   // já tem dono
+
+  let escolhido = null;
+  if (process.env.ADMIN_USER) {
+    escolhido = users.find(u => u.username === process.env.ADMIN_USER) || null;
+  }
+  if (!escolhido && users.length === 1) escolhido = users[0];
+  if (!escolhido) escolhido = users.find(u => !u.dono) || null;
+
+  if (!escolhido) {
+    console.warn(
+      'AVISO: nenhuma conta é dona desta instalação, então a página de ' +
+      'configuração fica inacessível. Rode: node create-user.js <usuario> <senha> --admin'
+    );
+    return null;
+  }
+
+  setAdmin(escolhido.username, true);
+  console.log(`Conta "${escolhido.username}" marcada como dona da instalação.`);
+  return escolhido.username;
 }
 
 function verifyCredentials(username, password) {
@@ -131,5 +158,5 @@ function setDono(username, dono) {
   return true;
 }
 
-module.exports = { USERS_FILE, loadUsers, saveUsers, hashPassword, upsertUser, setAdmin, ehAdmin,
+module.exports = { USERS_FILE, loadUsers, saveUsers, hashPassword, upsertUser, setAdmin, ehAdmin, garantirDono,
                    donoDoUsuario, setDono, verifyCredentials, seedFromEnv };

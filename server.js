@@ -31,6 +31,9 @@ const clientes = criarRegistro({ io, donoPadrao: TIKTOK_USERNAME });
 if (process.env.NODE_ENV === 'production') app.set('trust proxy', 1);
 
 auth.seedFromEnv();
+// Quem vem da versão antiga não tem `admin` em ninguém. Isto resolve uma vez,
+// antes de qualquer requisição, pra ninguém ficar trancado pra fora.
+auth.garantirDono();
 
 const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-only-secret-troque-em-producao';
 if (!process.env.SESSION_SECRET) {
@@ -177,28 +180,67 @@ app.get('/api/clientes', (req, res) => {
   usuarios.forEach(u => { if (u.dono) donos.add(u.dono); });
   donos.add(TIKTOK_USERNAME);
 
-  const dePe = new Set(clientes.listar().map(c => c.dono));
+  const abertos = new Map(clientes.listar().map(c => [c.dono, c]));
+  const comConfig = config.listarClientes();
+
   res.json({
     padrao: TIKTOK_USERNAME,
-    clientes: [...donos].sort().map(dono => ({
-      dono,
-      daCasa: dono === TIKTOK_USERNAME,
-      ligado: dePe.has(dono),
-      temConfig: config.listarClientes().includes(dono),
-      usuarios: usuarios.filter(u => (u.dono || TIKTOK_USERNAME) === dono).map(u => u.username)
-    }))
+    // administradores não pertencem a live nenhuma: são as contas da casa
+    admins: usuarios.filter(u => u.admin === true).map(u => u.username),
+    eu: (req.session && req.session.user) || null,
+    clientes: [...donos].sort().map(dono => {
+      const c = abertos.get(dono);
+      const ficha = {
+        dono,
+        daCasa: dono === TIKTOK_USERNAME,
+        ligado: !!c,
+        temConfig: comConfig.includes(dono),
+        // só quem está amarrado ÀQUELA live; admin não entra na conta de ninguém
+        usuarios: usuarios.filter(u => !u.admin && (u.dono || TIKTOK_USERNAME) === dono)
+                          .map(u => u.username)
+      };
+
+      // Os números de cada live, pro painel mostrar tudo de uma vez sem o
+      // administrador ter que entrar em cada uma.
+      if (c) {
+        try {
+          const g = c.db.getGlobalStats();
+          ficha.aoVivo = c.live.estaOnline();
+          ficha.numeros = {
+            espectadores: g.currentViewers || 0,
+            pico: g.peakViewers || 0,
+            diamantes: g.totalDiamonds || 0,
+            comentarios: g.totalComments || 0,
+            seguiram: g.totalFollows || 0,
+            pessoas: c.db.getRanking().length,
+            duracaoSegundos: g.uptimeSeconds || 0
+          };
+        } catch (e) {
+          // uma live com problema não pode derrubar a listagem inteira
+          ficha.erro = e.message;
+        }
+      }
+      return ficha;
+    })
   });
 });
 
 app.post('/api/clientes', (req, res) => {
   const { usuario, senha } = req.body || {};
+  const ehAdministrador = !!(req.body && req.body.administrador);
   const dono = config.usuarioTikTok((req.body && req.body.dono) || '');
 
   if (!usuario || !senha) return res.status(400).json({ error: 'Usuário e senha são obrigatórios.' });
-  if (!dono) return res.status(400).json({ error: 'O @ da live do cliente é obrigatório.' });
+  // administrador é conta da casa: não pertence a live nenhuma
+  if (!ehAdministrador && !dono) return res.status(400).json({ error: 'O @ da live do cliente é obrigatório.' });
   if (String(senha).length < 6) return res.status(400).json({ error: 'A senha precisa de pelo menos 6 caracteres.' });
   if (auth.loadUsers().some(u => u.username === usuario)) {
     return res.status(409).json({ error: 'Já existe alguém com esse nome de usuário.' });
+  }
+
+  if (ehAdministrador) {
+    auth.upsertUser(String(usuario).trim(), String(senha), { admin: true, dono: '' });
+    return res.json({ ok: true, administrador: true, usuario: String(usuario).trim() });
   }
 
   auth.upsertUser(String(usuario).trim(), String(senha), { dono });
@@ -215,6 +257,37 @@ app.post('/api/clientes', (req, res) => {
   res.json({ ok: true, dono, ligado });
 });
 
+// Promove ou rebaixa um administrador.
+//
+// Duas travas: ninguém se rebaixa sozinho (evita o clique que tranca a pessoa
+// pra fora da própria configuração) e a instalação nunca fica sem nenhum dono.
+app.post('/api/clientes/admin', (req, res) => {
+  const { usuario } = req.body || {};
+  const virar = !!(req.body && req.body.administrador);
+  const eu = (req.session && req.session.user) || null;
+
+  if (!usuario) return res.status(400).json({ error: 'Qual usuário?' });
+  if (!auth.loadUsers().some(u => u.username === usuario)) {
+    return res.status(404).json({ error: 'Usuário não encontrado.' });
+  }
+  if (!virar) {
+    if (usuario === eu) {
+      return res.status(400).json({ error: 'Não dá pra tirar o seu próprio acesso de administrador.' });
+    }
+    const admins = auth.loadUsers().filter(u => u.admin === true).map(u => u.username);
+    if (admins.length <= 1 && admins.includes(usuario)) {
+      return res.status(400).json({ error: 'Esse é o único administrador — a configuração ficaria inacessível.' });
+    }
+  }
+
+  auth.setAdmin(usuario, virar);
+  // administrador não fica preso a uma live; ao rebaixar, a conta volta a ser
+  // da live da casa até alguém amarrar noutra
+  if (virar) auth.setDono(usuario, '');
+
+  res.json({ ok: true, usuario, administrador: virar });
+});
+
 // Tira o ACESSO de alguém. Os dados da live não são apagados aqui de
 // propósito: apagar é irreversível e não pode sair de um clique na lista.
 app.post('/api/clientes/remover-acesso', (req, res) => {
@@ -224,10 +297,14 @@ app.post('/api/clientes/remover-acesso', (req, res) => {
     return res.status(400).json({ error: 'Não dá pra remover o seu próprio acesso.' });
   }
   const users = auth.loadUsers();
-  const restante = users.filter(u => u.username !== usuario);
-  if (restante.length === users.length) return res.status(404).json({ error: 'Usuário não encontrado.' });
+  const alvo = users.find(u => u.username === usuario);
+  if (!alvo) return res.status(404).json({ error: 'Usuário não encontrado.' });
 
-  auth.saveUsers(restante);
+  if (alvo.admin === true && users.filter(u => u.admin === true).length <= 1) {
+    return res.status(400).json({ error: 'Esse é o único administrador — apagar deixaria a configuração inacessível.' });
+  }
+
+  auth.saveUsers(users.filter(u => u.username !== usuario));
   res.json({ ok: true });
 });
 
