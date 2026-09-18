@@ -500,14 +500,36 @@ function registrarCartaGanha(uniqueId, nickname, avatar, tipo, handle, qtd = 1) 
 // usou 1, abater a premiação inteira zerava um estoque que ainda existe.
 //
 // O uso, ao contrário, é exato: sabe a carta, a pessoa e a quantidade.
+// O uso é exato (carta + quantidade) e serve pra DUAS coisas:
+//
+//  1. somar em ficha.usos, que é o histórico confiável do que a pessoa joga;
+//  2. descobrir de que item era uma premiação antiga. O prêmio não diz a carta,
+//     mas se a pessoa foi premiada terça e jogou uma luva na quarta, aquela luva
+//     saiu de alguma premiação válida — então registramos o item na premiação
+//     mais antiga que ainda estava no prazo. É a única forma de nomear as
+//     cartas antigas, e ela vem do próprio dado, sem chute.
 function registrarCartaUsada(uniqueId, nickname, avatar, tipo, handle, qtd = 1) {
   const ficha = garantirFichaDeCarta(uniqueId, nickname, avatar, handle);
   if (!ficha) return false;
   const n = Math.max(1, qtd);
   const chave = tipo || 'desconhecido';
+
   ficha.usos = ficha.usos || {};
   ficha.usos[chave] = (ficha.usos[chave] || 0) + n;
   ficha.usadas += n;
+
+  // atribui o item às premiações válidas, da mais antiga pra mais nova
+  if (tipo) {
+    expirarCartas();
+    let restantes = n;
+    for (const premio of ficha.ganhas) {
+      if (restantes <= 0) break;
+      premio.itens = premio.itens || {};
+      premio.itens[tipo] = (premio.itens[tipo] || 0) + 1;
+      restantes--;
+    }
+  }
+
   ficha.ultimaEm = Date.now();
   dirty = true;
   return true;
@@ -541,7 +563,9 @@ function getEstoqueCartas() {
           .map(c => ({
             tipo: c.tipo || 'desconhecido',
             ganhaEm: c.em,
-            expiraEmMs: Math.max(0, VALIDADE_CARTA_MS - (agora - c.em))
+            expiraEmMs: Math.max(0, VALIDADE_CARTA_MS - (agora - c.em)),
+            // itens descobertos depois, pelo que a pessoa usou
+            itens: c.itens || {}
           }))
           .sort((a, b) => a.expiraEmMs - b.expiraEmMs),
         ultimaEm: ficha.ultimaEm

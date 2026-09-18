@@ -161,7 +161,12 @@
     border-radius: var(--r-pill); padding: 3px 9px;
     font-size: 11.5px; font-weight: 700; color: var(--ink-dim); white-space: nowrap;
   }
-  .pu-carta b { color: var(--gold); font-weight: 700; }
+  .pu-carta b { color: var(--gold); font-weight: 700; font-variant-numeric: tabular-nums; }
+  .pu-itens { font-style: normal; letter-spacing: -1px; }
+  .pu-itens.pu-aberto {
+    letter-spacing: .04em; font-size: 10px; text-transform: uppercase;
+    color: var(--ink-faint); font-weight: 700;
+  }
   .pu-carta.urgente { border-color: rgba(255,107,107,.45); background: rgba(255,107,107,.10); }
   .pu-carta.urgente b { color: var(--red); }
   .pu-usados { margin-top: 4px; align-items: center; }
@@ -714,12 +719,11 @@
           </div>
 
           <div class="aviso-estimativa">
-            <strong>Por que aparece "≥" e não um número exato.</strong>
-            O TikTok manda <em>uma</em> mensagem por premiação, mesmo quando ela vale
-            várias cartas — e não diz quantas nem quais. Então o que é exato é
-            <em>quando</em> a pessoa foi premiada (e o prazo de 5 dias daquela
-            premiação) e <em>o que ela usou</em>. O total na mão é um mínimo.
-            Só conta o nosso lado: carta jogada pro adversário fica de fora.
+            <strong>Como ler esta tela.</strong>
+            O TikTok avisa <em>quando</em> alguém é premiado e o prazo de 5 dias de
+            cada premiação — isso é exato. O que ele não manda é quantas cartas vêm
+            em cada uma. Os itens aparecem quando a pessoa joga: aí a gente sabe o
+            que ela tinha. Carta jogada pro adversário não entra.
           </div>
 
           <div class="stats-grid" id="powerupResumo"></div>
@@ -1455,6 +1459,13 @@
       desconhecido: '🎴 A definir'
     };
 
+    // só o emoji, pra caber na etiqueta da premiação
+    const ICONE_DO_TIPO = {
+      martelo: '🔨', booster2: '⚡', booster3: '🔥', luva: '🧤', luva_cofre: '🧰',
+      nevoa: '🌫️', tempo: '⏱️', critico: '💥', pocao: '🧪', onda: '🌊',
+      coracao: '💗', efeito: '✨', desconhecido: '🎴'
+    };
+
     function esc2(t) {
       return String(t ?? '').replace(/[&<>"']/g, c => ({
         '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -1495,9 +1506,9 @@
       const podemJogar = ultimo.filter(p => p.premiacoes > 0).length;
 
       resumoEl.innerHTML = `
-        <div class="stats-card"><div class="num">≥${premiacoes}</div><div class="lbl">🎴 Cartas na mão</div></div>
-        <div class="stats-card"><div class="num">${podemJogar}</div><div class="lbl">Podem jogar</div></div>
-        <div class="stats-card"><div class="num">${usadas}</div><div class="lbl">Usadas (exato)</div></div>
+        <div class="stats-card"><div class="num">${podemJogar}</div><div class="lbl">🎴 Podem jogar</div></div>
+        <div class="stats-card"><div class="num">${premiacoes}</div><div class="lbl">Premiações no prazo</div></div>
+        <div class="stats-card"><div class="num">${usadas}</div><div class="lbl">Cartas jogadas</div></div>
         <div class="stats-card"><div class="num">${expiradas}</div><div class="lbl">Premiações vencidas</div></div>
       `;
 
@@ -1512,16 +1523,21 @@
         const restante = p.proximaExpiraEmMs === null ? null : Math.max(0, p.proximaExpiraEmMs - decorrido);
         const urgente = restante !== null && restante < 24 * 3600000;
 
-        // uma etiqueta por PREMIAÇÃO com o prazo dela. A hora é exata; quantas
-        // cartas vieram dentro, não — daí o "≥1 carta" quando não sabemos.
+        // Uma etiqueta por premiação: o prazo dela (exato) e os itens que a
+        // gente já descobriu que estavam dentro, pelo que a pessoa jogou.
         const premios = (p.cartas || []).map(c => {
           const falta = Math.max(0, c.expiraEmMs - decorrido);
           const urge = falta < 24 * 3600000;
-          const nome = c.tipo === 'desconhecido' ? '🎴 ≥1 carta' : (NOME_DO_TIPO[c.tipo] || c.tipo);
-          return `<span class="pu-carta ${urge ? 'urgente' : ''}">${nome} <b>${curto(falta)}</b></span>`;
+          const itens = Object.entries(c.itens || {})
+            .map(([t, n]) => (ICONE_DO_TIPO[t] || '🎴').repeat(Math.min(n, 3)))
+            .join('');
+          return `<span class="pu-carta ${urge ? 'urgente' : ''}">
+                    <b>${curto(falta)}</b>
+                    ${itens ? `<i class="pu-itens">${itens}</i>` : '<i class="pu-itens pu-aberto">a descobrir</i>'}
+                  </span>`;
         }).join('');
 
-        // o que a pessoa USOU é exato: sabe a carta e a quantidade
+        // o que a pessoa jogou: exato, com carta e quantidade
         const usos = Object.entries(p.usos || {})
           .sort((a, b) => b[1] - a[1])
           .map(([t, n]) => `<span class="pu-uso">${NOME_DO_TIPO[t] || t}${n > 1 ? ' ×' + n : ''}</span>`)
@@ -1532,13 +1548,13 @@
             <img class="row-avatar" src="${esc2(p.avatar || SEM_FOTO)}" onerror="this.src='${SEM_FOTO}'" alt="">
             <div>
               <div class="pu-nome">${esc2(p.nickname)}</div>
-              <div class="pu-sub">${p.handle ? '@' + esc2(p.handle) + ' · ' : ''}premiado ${p.totalPremiacoes}x · usou ${p.usadas} carta(s) · ${p.expiradas} vencida(s)</div>
-              ${premios ? `<div class="pu-cartas">${premios}</div>` : ''}
-              ${usos ? `<div class="pu-cartas pu-usados"><span class="pu-rotulo">usou</span>${usos}</div>` : ''}
+              <div class="pu-sub">${p.handle ? '@' + esc2(p.handle) + ' · ' : ''}premiado ${p.totalPremiacoes}x · jogou ${p.usadas} carta(s)${p.expiradas ? ' · ' + p.expiradas + ' vencida(s)' : ''}</div>
+              ${premios ? `<div class="pu-cartas"><span class="pu-rotulo">no prazo</span>${premios}</div>` : ''}
+              ${usos ? `<div class="pu-cartas pu-usados"><span class="pu-rotulo">jogou</span>${usos}</div>` : ''}
             </div>
             <div class="pu-dir">
-              <span class="pu-mao ${p.premiacoes ? '' : 'vazio'}">${p.premiacoes ? '≥' + p.premiacoes : '0'}</span>
-              <span class="pu-prazo ${urgente ? 'urgente' : ''}">${p.premiacoes ? prazo(restante) : 'nada válido'}</span>
+              <span class="pu-mao ${p.premiacoes ? '' : 'vazio'}">${p.premiacoes}</span>
+              <span class="pu-prazo ${urgente ? 'urgente' : ''}">${p.premiacoes ? prazo(restante) : 'nada no prazo'}</span>
             </div>
           </div>
         `;
