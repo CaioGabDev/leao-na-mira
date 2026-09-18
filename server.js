@@ -281,8 +281,9 @@ app.post('/api/clientes/admin', (req, res) => {
   }
 
   auth.setAdmin(usuario, virar);
-  // administrador não fica preso a uma live; ao rebaixar, a conta volta a ser
-  // da live da casa até alguém amarrar noutra
+  // Promover solta a pessoa da live dela: administrador não é de live nenhuma.
+  // O caminho de volta NÃO devolve o @ antigo — quem é rebaixado cai na live da
+  // casa até alguém amarrar noutra. Por isso a tela avisa disso antes de promover.
   if (virar) auth.setDono(usuario, '');
 
   res.json({ ok: true, usuario, administrador: virar });

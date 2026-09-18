@@ -110,6 +110,15 @@
   .cliente .arroba { font-weight: 700; color: var(--gold); }
   .cliente .quem { font-size: 13px; color: var(--ink-dim); }
   .cliente .spacer { flex: 1 1 auto; }
+  /* as duas acoes de uma pessoa andam juntas: soltas, o "promover" de uma
+     ficava colado no nome da vizinha e dava pra clicar achando que era dela */
+  .cliente .pessoa {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 4px 3px 10px; border-radius: 999px;
+    background: var(--card); border: 1px solid var(--line-soft);
+  }
+  .cliente .pessoa b { font-size: 13px; font-weight: 600; color: var(--ink-dim); }
+  .cliente .pessoa .app-btn { padding: 3px 8px; font-size: 12px; }
   .etiqueta {
     font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
     padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line);
@@ -546,25 +555,56 @@
       : '<div class="cliente"><span class="quem">Nenhum administrador marcado.</span></div>';
   }
 
-  $('listaAdmins').addEventListener('click', async e => {
-    const btn = e.target.closest('[data-rebaixar]');
-    if (!btn) return;
-    const quem = btn.dataset.rebaixar;
-    if (!confirm(`Tirar o acesso de administrador de "${quem}"? Ele continua logando, mas não vê mais esta página.`)) return;
+  // Promover e rebaixar são a mesma chamada. As travas (ninguém se rebaixa
+  // sozinho, nunca ficar sem administrador) são do servidor: a tela só mostra
+  // o recado que ele devolver.
+  async function mudarAdmin(btn, quem, virar) {
     btn.disabled = true;
     try {
       const res = await fetch('/api/clientes/admin', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ usuario: quem, administrador: false })
+        body: JSON.stringify({ usuario: quem, administrador: virar })
       });
       const dados = await res.json();
       if (!res.ok) throw new Error(dados.error || 'falhou');
       await carregarClientes();
-      aviso(quem + ' não é mais administrador.', 'ok');
+      aviso(virar ? quem + ' agora é administrador.' : quem + ' não é mais administrador.', 'ok');
     } catch (err) {
       btn.disabled = false;
       aviso(err.message, 'err');
     }
+  }
+
+  // Tirar o acesso vale nos dois painéis — o do cliente e o do administrador.
+  async function removerAcesso(btn, quem) {
+    if (!confirm(`Tirar o acesso de "${quem}"? Os dados da live dele NÃO são apagados.`)) return;
+    btn.disabled = true;
+    try {
+      const res = await fetch('/api/clientes/remover-acesso', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ usuario: quem })
+      });
+      const dados = await res.json();
+      if (!res.ok) throw new Error(dados.error || 'falhou');
+      await carregarClientes();
+      aviso('Acesso de ' + quem + ' removido.', 'ok');
+    } catch (err) {
+      btn.disabled = false;
+      aviso(err.message, 'err');
+    }
+  }
+
+  $('listaAdmins').addEventListener('click', async e => {
+    const baixar = e.target.closest('[data-rebaixar]');
+    if (baixar) {
+      const quem = baixar.dataset.rebaixar;
+      if (!confirm(`Tirar o acesso de administrador de "${quem}"? Ele continua logando, mas não vê mais esta página — e cai na live da casa até alguém amarrar ele noutra.`)) return;
+      return mudarAdmin(baixar, quem, false);
+    }
+    // este botão existia mas não fazia nada: quem ouvia o clique era só o
+    // painel dos clientes, e ele é outro elemento
+    const apagar = e.target.closest('[data-remover]');
+    if (apagar) return removerAcesso(apagar, apagar.dataset.remover);
   });
 
   // o campo do @ não faz sentido pra administrador: ele não é de live nenhuma
@@ -601,32 +641,29 @@
         <span class="arroba">@${esc(c.dono)}</span>
         ${c.daCasa ? '<span class="etiqueta casa">da casa</span>' : ''}
         <span class="etiqueta ${c.ligado ? 'ligado' : ''}">${c.ligado ? 'ligada' : 'parada'}</span>
-        <span class="quem">${c.usuarios.length ? esc(c.usuarios.join(', ')) : 'ninguém entra nela ainda'}</span>
+        ${c.usuarios.length ? '' : '<span class="quem">ninguém entra nela ainda</span>'}
         <span class="spacer"></span>
-        ${c.usuarios.map(u => `<button class="app-btn" data-remover="${esc(u)}">🚫 ${esc(u)}</button>`).join('')}
+        ${c.usuarios.map(u => `
+          <span class="pessoa">
+            <b>${esc(u)}</b>
+            <button class="app-btn" data-promover="${esc(u)}" title="Tornar ${esc(u)} administrador">⬆️ admin</button>
+            <button class="app-btn app-btn--danger" data-remover="${esc(u)}" title="Tirar o acesso de ${esc(u)}">🚫</button>
+          </span>`).join('')}
       </div>
     `).join('');
   }
 
   $('listaClientes').addEventListener('click', async e => {
-    const btn = e.target.closest('[data-remover]');
-    if (!btn) return;
-    const quem = btn.dataset.remover;
-    if (!confirm(`Tirar o acesso de "${quem}"? Os dados da live dele NÃO são apagados.`)) return;
-    btn.disabled = true;
-    try {
-      const res = await fetch('/api/clientes/remover-acesso', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ usuario: quem })
-      });
-      const dados = await res.json();
-      if (!res.ok) throw new Error(dados.error || 'falhou');
-      await carregarClientes();
-      aviso('Acesso de ' + quem + ' removido.', 'ok');
-    } catch (err) {
-      btn.disabled = false;
-      aviso(err.message, 'err');
+    // Promover é o caminho pra quem JÁ tem conta: o administrador não precisa
+    // ser criado do zero pra deixar de ser a conta que assiste a live.
+    const subir = e.target.closest('[data-promover]');
+    if (subir) {
+      const quem = subir.dataset.promover;
+      if (!confirm(`Tornar "${quem}" administrador? Ele passa a ver todos os clientes e esta configuração, e deixa de ficar preso à live dele.`)) return;
+      return mudarAdmin(subir, quem, true);
     }
+    const apagar = e.target.closest('[data-remover]');
+    if (apagar) return removerAcesso(apagar, apagar.dataset.remover);
   });
 
   $('criarClienteBtn').addEventListener('click', async () => {
