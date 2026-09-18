@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Configuração — {{marca.titulo}}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bungee&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/theme.css">
+<style>
+  /* Página do dono. Usa as primitivas do theme.css; o que está aqui é só o
+     que existe nesta tela. */
+  .topbar {
+    position: sticky; top: 0; z-index: 30;
+    background: rgba(10,8,7,.92);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line);
+  }
+  .topbar-inner {
+    max-width: 1080px; margin: 0 auto; padding: 14px 20px;
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .brand-mark {
+    width: 40px; height: 40px; border-radius: var(--r-md);
+    display: grid; place-items: center; font-size: 20px;
+    background: var(--card-3); border: 1px solid var(--line);
+  }
+  .brand h1 {
+    font-family: Bungee, system-ui, sans-serif; font-size: 20px; margin: 0;
+    background: var(--grad-ink); -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; letter-spacing: .02em;
+  }
+  .brand .sub { font-size: 12.5px; color: var(--ink-faint); margin: 2px 0 0; }
+  .topbar-inner .spacer { flex: 1 1 auto; }
+
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 24px 20px 80px; display: grid; gap: 18px; }
+
+  /* O .app-panel do theme.css é só a superfície (fundo, borda, sombra) — o
+     respiro de dentro é de cada página, igual ao .panel do ranking. */
+  .app-panel { padding: 18px 20px 20px; }
+  @media (max-width: 560px) { .app-panel { padding: 16px 14px 18px; } }
+
+  .aviso {
+    border: 1px solid rgba(255,176,58,.35); background: rgba(255,176,58,.06);
+    border-radius: var(--r-md); padding: 14px 16px; font-size: 14px; line-height: 1.55;
+    color: var(--ink-dim);
+  }
+  .aviso b { color: var(--gold); }
+
+  .campos { display: grid; gap: 14px; }
+  .campo { display: grid; gap: 6px; }
+  .campo label { font-size: 12px; font-weight: 700; letter-spacing: .06em;
+                 text-transform: uppercase; color: var(--ink-faint); }
+  .campo .dica { font-size: 12px; color: var(--ink-faint); }
+  .campo input[type="text"] { width: 100%; }
+
+  .cores { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; }
+  .cor { display: grid; gap: 6px; }
+  /* mesmo rótulo miúdo dos outros campos */
+  .cor label { font-size: 12px; font-weight: 700; letter-spacing: .06em;
+               text-transform: uppercase; color: var(--ink-faint); }
+  .cor .linha { display: flex; align-items: center; gap: 10px; }
+  .cor input[type="color"] {
+    width: 46px; height: 34px; padding: 0; border: 1px solid var(--line);
+    border-radius: var(--r-sm); background: var(--card-2); cursor: pointer;
+  }
+  .cor .hex { font-size: 13px; color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+
+  .faixa { display: flex; align-items: center; gap: 12px; }
+  .faixa input[type="range"] { flex: 1 1 auto; accent-color: var(--gold); }
+  .faixa .valor { font-size: 13px; color: var(--ink-dim); min-width: 52px; text-align: right; }
+
+  .rodape {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 14px 16px; border-radius: var(--r-lg);
+    background: rgba(15,11,8,.94); border: 1px solid var(--line);
+    backdrop-filter: blur(10px);
+  }
+  .rodape .spacer { flex: 1 1 auto; }
+  .status { font-size: 13px; color: var(--ink-dim); }
+  .status.ok  { color: var(--green); }
+  .status.err { color: var(--red); }
+
+  .amostra {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 14px; border-radius: var(--r-md);
+    background: var(--card-2); border: 1px solid var(--line-soft);
+  }
+  .amostra .titulo {
+    font-family: Bungee, system-ui, sans-serif; font-size: 18px;
+    background: var(--grad-ink); -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .amostra .barra { height: 10px; border-radius: 999px; background: var(--grad-fire); flex: 1 1 120px; }
+
+  .app-select {
+    background: var(--card-2); color: var(--ink); border: 1px solid var(--line);
+    border-radius: var(--r-sm); padding: 9px 12px; font: inherit; font-size: 14px;
+  }
+  .app-select:focus { border-color: var(--gold); outline: none; }
+
+  .lista-clientes { display: grid; gap: 10px; }
+  .cliente {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 12px 14px; border-radius: var(--r-md);
+    background: var(--card-2); border: 1px solid var(--line-soft);
+  }
+  .cliente .arroba { font-weight: 700; color: var(--gold); }
+  .cliente .quem { font-size: 13px; color: var(--ink-dim); }
+  .cliente .spacer { flex: 1 1 auto; }
+  .etiqueta {
+    font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+    padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line);
+    color: var(--ink-faint);
+  }
+  .etiqueta.ligado { color: var(--green); border-color: rgba(110,231,135,.35); }
+  .etiqueta.casa   { color: var(--gold); border-color: rgba(255,176,58,.35); }
+
+  .assinatura {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 12px 14px; border-radius: var(--r-md);
+    background: var(--card-2); border: 1px solid var(--line-soft); font-size: 14px;
+  }
+  .assinatura.sem-chave { border-color: rgba(255,176,58,.35); background: rgba(255,176,58,.06); }
+  .assinatura .quem { color: var(--ink-dim); }
+
+  .novo-cliente { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; align-items: end; }
+  .novo-cliente .campo { margin: 0; }
+
+  @media (max-width: 560px) {
+    .wrap { padding: 16px 14px 70px; }
+    .topbar-inner { padding: 12px 14px; }
+  }
+</style>
+{{tema}}
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <div class="brand-mark">⚙️</div>
+      <div>
+        <h1>Configuração</h1>
+        <p class="sub">A cara do site desta instalação</p>
+      </div>
+    </div>
+    <span class="spacer"></span>
+    <a class="app-btn" href="/index.html">⬅️ Voltar pro Ranking</a>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="aviso">
+    Isto muda só a <b>aparência e os textos</b>. Nada aqui mexe na contagem da live,
+    no ranking, nas batalhas ou nos power-ups — esses continuam funcionando igual.
+  </div>
+
+  <!-- ---------- DE QUEM É A CARA QUE EU ESTOU MEXENDO ---------- -->
+  <section class="app-panel">
+    <div class="app-panel-head">
+      <h2 class="app-panel-title">Configurando</h2>
+      <span class="app-panel-meta" id="alvoAviso"></span>
+    </div>
+    <div class="campo">
+      <label for="alvo">Quem</label>
+      <select class="app-select" id="alvo"></select>
+      <span class="dica">
+        A instalação é a cara padrão: vale pra todo mundo que não mexeu na sua.
+        Escolhendo um cliente, você mexe só na dele.
+      </span>
+    </div>
+  </section>
+
+  <!-- ---------- MARCA ---------- -->
+  <section class="app-panel">
+    <div class="app-panel-head">
+      <h2 class="app-panel-title">Marca</h2>
+      <span class="app-panel-meta">topo do site e aba do navegador</span>
+    </div>
+    <div class="campos">
+      <div class="campo">
+        <label for="marcaEmoji">Emoji</label>
+        <input class="app-input" type="text" id="marcaEmoji" maxlength="8" style="width:110px">
+      </div>
+      <div class="campo">
+        <label for="marcaTitulo">Título</label>
+        <input class="app-input" type="text" id="marcaTitulo" maxlength="60">
+      </div>
+      <div class="campo">
+        <label for="marcaSub">Frase de baixo</label>
+        <input class="app-input" type="text" id="marcaSub" maxlength="160">
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- CORES ---------- -->
+  <section class="app-panel">
+    <div class="app-panel-head">
+      <h2 class="app-panel-title">Cores</h2>
+      <span class="app-panel-meta">muda ao vivo aqui na tela</span>
+    </div>
+
+    <div class="amostra">
+      <span class="titulo">Assim vai ficar</span>
+      <span class="app-pill"><span class="dot"></span>Ao vivo agora</span>
+      <button class="app-btn app-btn--primary" type="button">Botão</button>
+      <span class="barra"></span>
+    </div>
+
+    <div class="cores" style="margin-top:14px">
+      <div class="cor">
+        <label for="corGold">Destaque</label>
+        <div class="linha"><input type="color" id="corGold"><span class="hex" id="hexGold"></span></div>
+      </div>
+      <div class="cor">
+        <label for="corEmber1">Brasa 1</label>
+        <div class="linha"><input type="color" id="corEmber1"><span class="hex" id="hexEmber1"></span></div>
+      </div>
+      <div class="cor">
+        <label for="corEmber2">Brasa 2</label>
+        <div class="linha"><input type="color" id="corEmber2"><span class="hex" id="hexEmber2"></span></div>
+      </div>
+      <div class="cor">
+        <label for="corBg">Fundo</label>
+        <div class="linha"><input type="color" id="corBg"><span class="hex" id="hexBg"></span></div>
+      </div>
+      <div class="cor">
+        <label for="corCard">Caixas</label>
+        <div class="linha"><input type="color" id="corCard"><span class="hex" id="hexCard"></span></div>
+      </div>
+    </div>
+
+    <div class="campo" style="margin-top:16px">
+      <label for="girarBrasa">Girar a cor das brasinhas do fundo</label>
+      <div class="faixa">
+        <input type="range" id="girarBrasa" min="0" max="360" step="5">
+        <span class="valor" id="girarValor">0°</span>
+      </div>
+      <span class="dica">
+        As brasinhas são desenhadas em laranja fixo pelo código da página. Este giro
+        é o que faz elas combinarem com um tema de outra cor.
+      </span>
+    </div>
+  </section>
+
+  <!-- ---------- MURAL ---------- -->
+  <section class="app-panel">
+    <div class="app-panel-head">
+      <h2 class="app-panel-title">Mural da Tropa</h2>
+      <span class="app-panel-meta">cabeçalho da página do mural</span>
+    </div>
+    <div class="campos">
+      <div class="campo">
+        <label for="muralTitulo">Título</label>
+        <input class="app-input" type="text" id="muralTitulo" maxlength="60">
+      </div>
+      <div class="campo">
+        <label for="muralSub">Frase de baixo</label>
+        <input class="app-input" type="text" id="muralSub" maxlength="160">
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- LIVE ---------- -->
+  <section class="app-panel">
+    <div class="app-panel-head">
+      <h2 class="app-panel-title">Live acompanhada</h2>
+      <span class="app-panel-meta" id="liveAtual"></span>
+    </div>
+    <div class="campos">
+      <div class="campo">
+        <label for="liveUsuario">@ da live</label>
+        <input class="app-input" type="text" id="liveUsuario" maxlength="32" placeholder="sem o @">
+        <span class="dica" id="liveDica"></span>
+      </div>
+    </div>
+    <div class="aviso" style="margin-top:14px">
+      Trocar o @ <b>só passa a valer quando o servidor reiniciar</b>. É de propósito:
+      trocar de live com a coisa rodando misturaria os dados das duas no mesmo lugar.
+    </div>
+  </section>
+
+  <div class="rodape">
+    <button class="app-btn app-btn--primary" id="salvarBtn">💾 Salvar</button>
+    <button class="app-btn" id="padraoBtn">↩️ Voltar ao padrão</button>
+    <span class="spacer"></span>
+    <span class="status" id="status"></span>
+  </div>
+
+  <!-- ---------- CLIENTES ---------- -->
+  <section class="app-panel">
+    <div class="app-panel-head">
+      <h2 class="app-panel-title">Clientes</h2>
+      <span class="app-panel-meta" id="clientesResumo"></span>
+    </div>
+
+    <div class="assinatura" id="assinatura"></div>
+
+    <div class="lista-clientes" id="listaClientes" style="margin-top:14px"></div>
+
+    <div style="margin-top:18px; padding-top:16px; border-top:1px solid var(--line-soft)">
+      <div class="novo-cliente">
+        <div class="campo">
+          <label for="novoUsuario">Usuário</label>
+          <input class="app-input" type="text" id="novoUsuario" maxlength="40" placeholder="login da pessoa">
+        </div>
+        <div class="campo">
+          <label for="novaSenha">Senha</label>
+          <input class="app-input" type="text" id="novaSenha" maxlength="60" placeholder="mínimo 6">
+        </div>
+        <div class="campo">
+          <label for="novoDono">@ da live</label>
+          <input class="app-input" type="text" id="novoDono" maxlength="32" placeholder="sem o @">
+        </div>
+        <div class="campo">
+          <button class="app-btn app-btn--primary" id="criarClienteBtn">➕ Criar cliente</button>
+        </div>
+      </div>
+      <span class="dica" id="criarAviso">
+        Criar já liga a live desse cliente — não precisa reiniciar. Ele entra com esse
+        login e vê só a live dele.
+      </span>
+    </div>
+  </section>
+
+</div>
+
+<script>
+(function () {
+  const $ = id => document.getElementById(id);
+  const statusEl = $('status');
+
+  const CORES = [
+    ['gold', 'corGold', 'hexGold'],
+    ['ember1', 'corEmber1', 'hexEmber1'],
+    ['ember2', 'corEmber2', 'hexEmber2'],
+    ['bg', 'corBg', 'hexBg'],
+    ['card', 'corCard', 'hexCard']
+  ];
+
+  let padrao = null;
+  let alvoAtual = '';      // '' = a instalação; senão o @ do cliente
+
+  function aviso(texto, tipo) {
+    statusEl.textContent = texto;
+    statusEl.className = 'status' + (tipo ? ' ' + tipo : '');
+  }
+
+  // Aplica as cores do formulário nesta página, pra ver o resultado antes de salvar.
+  function espelhar() {
+    const raiz = document.documentElement;
+    CORES.forEach(([chave, idCor, idHex]) => {
+      const v = $(idCor).value;
+      raiz.style.setProperty('--' + chave, v);
+      $(idHex).textContent = v;
+    });
+    const giro = Number($('girarBrasa').value) || 0;
+    $('girarValor').textContent = giro + '°';
+  }
+
+  // O painel "Live acompanhada" é da instalação: um cliente não escolhe o @
+  // dele por aqui — o @ dele É o cadastro.
+  function ajustarPainelDaLive() {
+    const painel = $('liveUsuario').closest('.app-panel');
+    if (painel) painel.style.display = alvoAtual ? 'none' : '';
+    $('alvoAviso').textContent = alvoAtual
+      ? 'a cara de @' + alvoAtual
+      : 'a cara padrão, que todo mundo herda';
+  }
+
+  function preencher(c) {
+    $('marcaEmoji').value  = c.marca.emoji;
+    $('marcaTitulo').value = c.marca.titulo;
+    $('marcaSub').value    = c.marca.sub;
+    $('muralTitulo').value = c.mural.titulo;
+    $('muralSub').value    = c.mural.sub;
+    CORES.forEach(([chave, idCor]) => { $(idCor).value = c.tema[chave]; });
+    $('girarBrasa').value  = c.tema.girarBrasa;
+    $('liveUsuario').value = c.live.usuario;
+    espelhar();
+  }
+
+  function montarEnvio() {
+    const tema = { girarBrasa: Number($('girarBrasa').value) || 0 };
+    CORES.forEach(([chave, idCor]) => { tema[chave] = $(idCor).value; });
+    return {
+      dono: alvoAtual,
+      marca: { emoji: $('marcaEmoji').value, titulo: $('marcaTitulo').value, sub: $('marcaSub').value },
+      mural: { titulo: $('muralTitulo').value, sub: $('muralSub').value },
+      tema:  tema,
+      live:  { usuario: $('liveUsuario').value }
+    };
+  }
+
+  // ---------- assinatura da conexão ----------
+  // Toda conexão (e toda reconexão) com uma live passa por um servidor de
+  // assinatura. Sem chave, o limite é do IP deste servidor — e é a primeira
+  // coisa que trava quando mais de uma live entra no ar.
+  function mostrarAssinatura(a, livesLigadas) {
+    const el = $('assinatura');
+    if (!a) { el.style.display = 'none'; return; }
+    el.style.display = '';
+    el.className = 'assinatura' + (a.comChave ? '' : ' sem-chave');
+    const lives = livesLigadas === 1 ? '1 live ligada' : livesLigadas + ' lives ligadas';
+    el.innerHTML = a.comChave
+      ? `<span>🔑 <b>Assinatura com chave</b></span>
+         <span class="quem">via ${esc(a.fonte)} · ${esc(a.servidor)} · ${lives}</span>`
+      : `<span>⚠️ <b>Assinatura sem chave</b></span>
+         <span class="quem">${esc(a.servidor)} te identifica pelo IP, e o limite é por IP.
+         ${lives} — cada uma pede assinatura ao conectar e a cada reconexão.
+         Defina ${a.nomesAceitos.map(esc).join(' ou ')} antes de crescer.</span>`;
+  }
+
+  // ---------- clientes ----------
+  function esc(t) {
+    return String(t === undefined || t === null ? '' : t).replace(/[&<>"']/g, c => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+  }
+
+  async function carregarClientes() {
+    const res = await fetch('/api/clientes');
+    if (!res.ok) throw new Error('falhou');
+    const dados = await res.json();
+
+    // o seletor de alvo acompanha a lista
+    const antes = alvoAtual;
+    $('alvo').innerHTML =
+      '<option value="">A instalação (cara padrão)</option>' +
+      dados.clientes.filter(c => !c.daCasa)
+        .map(c => `<option value="${esc(c.dono)}">@${esc(c.dono)}</option>`).join('');
+    $('alvo').value = antes;
+    if ($('alvo').value !== antes) { alvoAtual = ''; $('alvo').value = ''; }
+
+    $('clientesResumo').textContent = dados.clientes.length === 1
+      ? '1 live' : dados.clientes.length + ' lives';
+
+    $('listaClientes').innerHTML = dados.clientes.map(c => `
+      <div class="cliente">
+        <span class="arroba">@${esc(c.dono)}</span>
+        ${c.daCasa ? '<span class="etiqueta casa">da casa</span>' : ''}
+        <span class="etiqueta ${c.ligado ? 'ligado' : ''}">${c.ligado ? 'ligada' : 'parada'}</span>
+        <span class="quem">${c.usuarios.length ? esc(c.usuarios.join(', ')) : 'ninguém entra nela ainda'}</span>
+        <span class="spacer"></span>
+        ${c.usuarios.map(u => `<button class="app-btn" data-remover="${esc(u)}">🚫 ${esc(u)}</button>`).join('')}
+      </div>
+    `).join('');
+  }
+
+  $('listaClientes').addEventListener('click', async e => {
+    const btn = e.target.closest('[data-remover]');
+    if (!btn) return;
+    const quem = btn.dataset.remover;
+    if (!confirm(`Tirar o acesso de "${quem}"? Os dados da live dele NÃO são apagados.`)) return;
+    btn.disabled = true;
+    try {
+      const res = await fetch('/api/clientes/remover-acesso', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ usuario: quem })
+      });
+      const dados = await res.json();
+      if (!res.ok) throw new Error(dados.error || 'falhou');
+      await carregarClientes();
+      aviso('Acesso de ' + quem + ' removido.', 'ok');
+    } catch (err) {
+      btn.disabled = false;
+      aviso(err.message, 'err');
+    }
+  });
+
+  $('criarClienteBtn').addEventListener('click', async () => {
+    const btn = $('criarClienteBtn');
+    const corpo = {
+      usuario: $('novoUsuario').value.trim(),
+      senha: $('novaSenha').value,
+      dono: $('novoDono').value.trim()
+    };
+    if (!corpo.usuario || !corpo.senha || !corpo.dono) {
+      return aviso('Preencha usuário, senha e o @ da live.', 'err');
+    }
+    btn.disabled = true;
+    aviso('Criando...');
+    try {
+      const res = await fetch('/api/clientes', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(corpo)
+      });
+      const dados = await res.json();
+      if (!res.ok) throw new Error(dados.error || 'falhou');
+      $('novoUsuario').value = ''; $('novaSenha').value = ''; $('novoDono').value = '';
+      await carregarClientes();
+      aviso(dados.ligado
+        ? 'Cliente criado e a live @' + dados.dono + ' já está de pé.'
+        : 'Cliente criado, mas a live @' + dados.dono + ' não subiu — veja o log do servidor.',
+        dados.ligado ? 'ok' : 'err');
+    } catch (err) {
+      aviso(err.message, 'err');
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  $('alvo').addEventListener('change', async () => {
+    alvoAtual = $('alvo').value;
+    await carregar();
+  });
+
+  CORES.forEach(([, idCor]) => $(idCor).addEventListener('input', espelhar));
+  $('girarBrasa').addEventListener('input', espelhar);
+
+  $('padraoBtn').addEventListener('click', () => {
+    if (!padrao) return;
+    // só preenche o formulário: nada muda de verdade até clicar em Salvar
+    preencher(padrao);
+    aviso('Formulário voltou ao padrão — clique em Salvar pra valer.');
+  });
+
+  $('salvarBtn').addEventListener('click', async () => {
+    const btn = $('salvarBtn');
+    btn.disabled = true;
+    aviso('Salvando...');
+    try {
+      const res = await fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(montarEnvio())   // vai com o `dono` do alvo dentro
+      });
+      if (!res.ok) throw new Error('falhou');
+      const dados = await res.json();
+      preencher(dados.config);   // mostra o que o servidor realmente gravou
+      await carregarClientes();
+      aviso(dados.precisaReiniciar
+        ? 'Salvo. O @ da live só muda quando o servidor reiniciar.'
+        : (alvoAtual ? 'Salvo para @' + alvoAtual + '. Ele vê na próxima recarga.'
+                     : 'Salvo. Recarregue as outras páginas pra ver.'), 'ok');
+    } catch (e) {
+      aviso('Não deu pra salvar. Tente de novo.', 'err');
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  async function carregar() {
+    try {
+      const res = await fetch('/api/config?dono=' + encodeURIComponent(alvoAtual));
+      if (!res.ok) throw new Error('falhou');
+      const dados = await res.json();
+      // o botão "voltar ao padrão" de um cliente devolve a cara da INSTALAÇÃO,
+      // que é o que ele herda quando não mexe em nada
+      padrao = alvoAtual ? dados.instalacao : dados.padrao;
+      preencher(dados.config);
+      ajustarPainelDaLive();
+      $('liveAtual').textContent = '@' + dados.liveEmUso + ' agora';
+      mostrarAssinatura(dados.assinatura, dados.livesLigadas);
+      $('liveDica').textContent = dados.config.live.usuario
+        ? 'Configurado aqui. Deixe vazio pra usar a variável de ambiente.'
+        : (dados.liveDoAmbiente
+            ? 'Vazio: usando @' + dados.liveDoAmbiente + ' da variável TIKTOK_USERNAME.'
+            : 'Vazio: usando o @ padrão do código.');
+      aviso('');
+    } catch (e) {
+      aviso('Não deu pra carregar a configuração.', 'err');
+    }
+  }
+
+  (async function comecar() {
+    try {
+      await carregarClientes();
+    } catch (e) {
+      aviso('Não deu pra listar os clientes.', 'err');
+    }
+    await carregar();
+  })();
+})();
+</script>
+
+</body>
+</html>

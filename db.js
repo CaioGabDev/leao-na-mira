@@ -1,998 +1,1104 @@
-const fs = require('fs');
-const FILE = process.env.RAILWAY_ENVIRONMENT ? '/data/live.json' : 'live.json';
-
-// Tudo fica em memória (rápido, sem travar em picos de taps).
-// O disco só é atualizado periodicamente (ver saveToDisk).
-let state = { users: {}, actions: [] };
-
-
-if (fs.existsSync(FILE)) {
-  try {
-    state = JSON.parse(fs.readFileSync(FILE, 'utf-8'));
-    state.users = state.users || {};
-    state.actions = state.actions || [];
-  } catch (e) {
-    console.error('Erro ao ler live.json, começando do zero:', e.message);
-  }
-}
-state.tropa = state.tropa || [];
-state.sessions = state.sessions || []; // histórico de lives já finalizadas
-state.battles = state.battles || [];   // batalhas (PK) já encerradas
-state.currentBattle = state.currentBattle || null; // batalha rolando agora
-state.cartas = state.cartas || {};      // estoque de power-ups do PK por pessoa
-
-state.global = state.global || {
-  totalDiamonds: 0,
-  totalLikes: 0,
-  totalComments: 0,
-  totalFollows: 0,
-  totalShares: 0,
-  peakViewers: 0,
-  currentViewers: 0,
-  uniqueViewers: 0,
-  startedAt: Date.now()
-};
-// campos novos, com default pra não quebrar live.json antigo
-state.global.lastLiveDurationSeconds = state.global.lastLiveDurationSeconds || 0;
-state.global.sessionPeakViewers = state.global.sessionPeakViewers || 0;
-state.currentSessionSnapshot = state.currentSessionSnapshot || null;
-
-let dirty = false;
-
-// A marca de superfã foi gravada por um evento que, na verdade, avisa quando um
-// superfã ENTRA na live — não quando alguém vira superfã. Como isso marcou
-// gente que já era superfã há tempo, a marca é apagada pra não bloquear o
-// registro certo quando ele existir.
-if (!state.global.superfaRemarcado) {
-  Object.values(state.users).forEach(u => { delete u.superFaEm; });
-  // (o cadastro manual de superfã vive no navegador, não aqui — então isso
-  //  só tira o que foi anotado errado pelo automático)
-  state.tropa = state.tropa.filter(p => p.tipo !== 'superfã');
-  state.global.superfaRemarcado = true;
-  dirty = true;
-}
-
-// Enquanto o id vinha vazio, todos esses eventos caíam num mesmo registro de
-// chave "undefined" — que além de sujar o ranking, marcava followed/shared e
-// fazia todo mundo depois dele ser ignorado na contagem. Tira ele do caminho.
-['undefined', 'null', ''].forEach(chave => {
-  if (!state.users[chave]) return;
-  const fantasma = state.users[chave];
-  delete state.users[chave];
-  if (fantasma.followed) state.global.totalFollows = Math.max(0, state.global.totalFollows - 1);
-  if (fantasma.shared) state.global.totalShares = Math.max(0, state.global.totalShares - 1);
-  state.global.uniqueViewers = Math.max(0, state.global.uniqueViewers - 1);
-  state.actions = state.actions.filter(a => String(a.uniqueId) !== chave);
-  dirty = true;
-});
-
-// O pico ficou gravado com o acumulado de quem entrou (campo errado do
-// TikTok), e pico só cresce — então esse número errado nunca sairia sozinho.
-// Zera uma única vez pra ele voltar a ser medido pelo valor certo.
-if (!state.global.picoCorrigido) {
-  state.global.peakViewers = 0;
-  state.global.sessionPeakViewers = 0;
-  state.global.picoCorrigido = true;
-  dirty = true;
-}
-
-function saveToDisk() {
-  if (!dirty) return;
-  fs.writeFileSync(FILE, JSON.stringify(state, null, 2));
-  dirty = false;
-}
-setInterval(saveToDisk, 5000);
-process.on('SIGINT', () => { saveToDisk(); process.exit(); });
-process.on('exit', saveToDisk);
-
-function ensureUser(uniqueId, nickname, avatar) {
-  // Sem id não dá pra separar uma pessoa da outra: tudo cairia na mesma chave
-  // "undefined" e viraria um usuário só (e o `followed` desse fantasma faria
-  // todo mundo depois dele ser ignorado).
-  if (!uniqueId) return false;
-  if (!state.users[uniqueId]) {
-    state.users[uniqueId] = {
-      uniqueId, nickname, avatar: avatar || null,
-      likes: 0, gifts_count: 0, gifts_value: 0, powerups: {},
-      comments: 0, followed: false, shared: false,
-      gifterLevel: 0, memberLevel: 0,
-      firstSeenAt: Date.now()
-
-    };
-    state.global.uniqueViewers += 1;
-  } else {
-    // só sobrescreve com o que veio de verdade: tem evento que chega sem
-    // apelido, e antes isso apagava o nome que já estava guardado
-    if (nickname) state.users[uniqueId].nickname = nickname;
-    if (avatar) state.users[uniqueId].avatar = avatar;
-  }
-  return true;
-}
-
-// Likes: mantém UM único registro por usuário durante toda a live, apenas somando nele
-const pendingLikes = {};
-const likeActionRef = {};
-
-function addLikes(uniqueId, nickname, count, avatar) {
-  state.global.totalLikes += count;
-  dirty = true;
-  // Sem id o like aconteceu do mesmo jeito (entra no total), só não dá pra
-  // dizer de quem foi — então não entra no ranking de ninguém.
-  if (!ensureUser(uniqueId, nickname, avatar)) return false;
-  state.users[uniqueId].likes += count;
-  if (!pendingLikes[uniqueId]) pendingLikes[uniqueId] = { nickname, count: 0 };
-  pendingLikes[uniqueId].nickname = nickname;
-  pendingLikes[uniqueId].count += count;
-}
-
-function addToTropa(nome, nivel, tipo, avatar) {
-  // a lista do mural é casada por nome; sem nome não dá pra encaixar ninguém
-  if (!nome || !String(nome).trim()) return null;
-  const existente = state.tropa.find(p =>
-    String(p.nome || '').toLowerCase() === String(nome).toLowerCase() && p.tipo === tipo
-  );
-  if (existente) {
-    if (nivel <= existente.nivel) return null; // nada novo, ignora
-    existente.nivel = nivel;
-    existente.avatar = avatar || existente.avatar;
-    dirty = true;
-    return existente;
-  }
-  const novo = { id: Date.now() + Math.random(), nome, nivel, tipo, avatar: avatar || null };
-  state.tropa.push(novo);
-  dirty = true;
-  return novo;
-}
-
-// A lib do TikTok pode devolver, pro mesmo tipo de badge, mais de um objeto:
-// um só com a imagem do selo (sem level) e outro com o level de verdade. Um
-// .find() simples podia cair no objeto sem level e achar que a pessoa não tinha
-// nível nenhum — por isso aqui só vale badge que TEM level.
+// ============================================================================
+// DADOS DA LIVE
+// ----------------------------------------------------------------------------
+// Isto era um módulo com UM estado só, gravando num live.json. Agora é uma
+// FÁBRICA: `paraDono('@fulano')` devolve o mesmo conjunto de funções de
+// sempre, só que amarrado aos dados daquele dono. Quem chama não mudou nada —
+// `db.addLikes(...)` continua idêntico — e é isso que vai permitir, no passo
+// seguinte, o servidor segurar vários clientes ao mesmo tempo.
 //
-// Os nomes dos campos mudaram da v1 pra v2 da lib (badgeSceneType -> sceneType,
-// e o level saiu pra dentro de privilegeLogExtra, como string). Lemos os dois
-// formatos pra não depender da versão.
-function badgeSceneOf(b) {
-  return b.sceneType ?? b.badgeSceneType;
+// O estado continua inteiro em memória (rápido nos picos de tap); o banco é o
+// espelho dele, gravado de tempos em tempos e sempre dentro de uma transação.
+// ============================================================================
+const fs = require('fs');
+const banco = require('./banco');
+
+// Só serve pra migração: o live.json antigo vira a primeira carga do banco.
+const JSON_ANTIGO = process.env.RAILWAY_ENVIRONMENT ? '/data/live.json' : 'live.json';
+
+const INTERVALO_GRAVACAO = 5000;
+
+// Uma instância por dono, reaproveitada: dois pedidos pelo mesmo dono têm que
+// mexer no MESMO estado em memória, senão um sobrescreve o outro no banco.
+const instancias = new Map();
+
+// `opcoes.espelharJson` faz esta instância manter o live.json atualizado no
+// formato antigo. Só vale na PRIMEIRA chamada de cada dono (depois disso a
+// instância é reaproveitada).
+function paraDono(dono, opcoes) {
+  const chave = String(dono || '').trim().toLowerCase();
+  if (!chave) throw new Error('paraDono precisa do @ do dono da live.');
+  if (!instancias.has(chave)) instancias.set(chave, criarBanco(chave, opcoes));
+  return instancias.get(chave);
 }
 
-function badgeLevelOf(b) {
-  const bruto = b.level ?? b.privilegeLogExtra?.level;
-  const nivel = Number(bruto);
-  return Number.isFinite(nivel) && nivel > 0 ? nivel : null;
+// Grava todo mundo antes de morrer. Fica no módulo, e não dentro da fábrica,
+// pra não pendurar um listener por cliente no processo.
+function gravarTodos() {
+  for (const inst of instancias.values()) {
+    try { inst.saveToDisk(); } catch (e) { console.error('Erro ao gravar:', e.message); }
+  }
 }
+process.on('SIGINT', () => { gravarTodos(); process.exit(); });
+process.on('exit', gravarTodos);
 
-function getBadgeLevel(badges, sceneType) {
-  if (!Array.isArray(badges)) return null;
-  // pega o MAIOR level encontrado pra aquela cena (badges repetidos acontecem)
-  return badges.reduce((maior, b) => {
-    if (badgeSceneOf(b) !== sceneType) return maior;
-    const nivel = badgeLevelOf(b);
-    return nivel != null && nivel > (maior || 0) ? nivel : maior;
-  }, null);
-}
+function criarBanco(dono, opcoes) {
+  const espelharJson = !!(opcoes && opcoes.espelharJson);
+  let state = banco.carregar(dono);
 
-// Deixa rastro de toda leitura de nível, pra dar pra conferir no log da live
-// por que fulano entrou ou não entrou no mural.
-// Além do log do servidor, manda a linha pra quem estiver ouvindo (o server
-// repassa pra página de diagnóstico, pra dar pra acompanhar sem abrir o
-// Railway no meio da live).
-let ouvinteDeLog = null;
-function setLogListener(fn) { ouvinteDeLog = fn; }
-
-// A partir de que nível a pessoa entra no mural. Mudar aqui muda os dois tipos.
-const NIVEL_MINIMO_MURAL = 10;
-
-function registrarLeitura(msg) {
-  console.log('[nivel]', msg);
-  if (ouvinteDeLog) { try { ouvinteDeLog('nivel', msg); } catch (e) {} }
-}
-
-function checkLevelUp(uniqueId, nickname, avatar, badges) {
-  // sem id não dá pra saber de quem é o nível — e sem isso o `u` abaixo vinha
-  // undefined e derrubava o handler inteiro do evento (o comentário/presente
-  // daquele evento se perdia junto)
-  if (!ensureUser(uniqueId, nickname, avatar)) return [];
-  const u = state.users[uniqueId];
-  const resultados = [];
-
-  // Uma fonte só: o selo. Antes eu também olhava payGrade/fansClub como
-  // reforço e ficava com o maior valor — mas as duas fontes nem sempre dizem
-  // o mesmo número pra mesma pessoa, e a diferença entre elas era lida como
-  // "subiu de nível". É o selo que aparece do lado do nome; é ele que vale.
-  const presenteador = getBadgeLevel(badges, 8);
-  const membro = getBadgeLevel(badges, 10);
-
-  // Primeira vez que conseguimos ler um nível dessa pessoa: só anotamos o ponto
-  // de partida, sem anunciar. Sem isso, quem já era nível 17 há meses entraria
-  // no mural como se tivesse acabado de subir — e sairia de novo num print em
-  // que já apareceu. Da segunda leitura em diante, subida é subida.
+  // Primeira subida depois da mudança: traz o live.json pro banco, uma vez só.
+  // O arquivo antigo é só LIDO — fica lá, intacto, como rede de segurança.
   //
-  // A marca é POR CATEGORIA: muita gente aparece primeiro só com o selo de
-  // presenteador, e a primeira leitura do selo de membro (que pode vir lives
-  // depois) também não pode contar como subida.
-  // Quem manda pro mural é a SUBIDA DO SELO — o número que aparece do lado do
-  // nome. É a única fonte que dá pra ler com certeza. A regra é diferente pra
-  // cada tipo, porque os dois níveis têm natureza diferente:
+  // `listarDonos().length === 0` é a trava que importa: aquele live.json é de
+  // UMA instalação, a original. Sem isso, todo cliente novo que fosse criado
+  // depois nasceria com os dados do primeiro — cada um enxergando a live do
+  // outro. Banco vazio é a única situação em que o arquivo antigo é dele.
+  if (!state && banco.listarDonos().length === 0 && fs.existsSync(JSON_ANTIGO)) {
+    try {
+      state = JSON.parse(fs.readFileSync(JSON_ANTIGO, 'utf-8'));
+      console.log(`[banco] importando o live.json para o dono "${dono}"...`);
+
+      // Foto do "antes", feita uma vez só e nunca mais tocada. Se algo der
+      // errado na migração, é daqui que se volta.
+      const copia = JSON_ANTIGO + '.pre-sqlite';
+      if (!fs.existsSync(copia)) {
+        fs.copyFileSync(JSON_ANTIGO, copia);
+        console.log(`[banco] cópia de segurança em ${copia}`);
+      }
+    } catch (e) {
+      console.error('Erro ao ler o live.json antigo, começando do zero:', e.message);
+      state = null;
+    }
+  }
+  if (!state) state = banco.estadoVazio();
+
+  // defaults — o mesmo cuidado de antes, agora protegendo também contra um
+  // live.json velho que não tinha esses campos
+  state.users = state.users || {};
+  state.actions = state.actions || [];
+  state.tropa = state.tropa || [];
+  state.sessions = state.sessions || []; // histórico de lives já finalizadas
+  state.battles = state.battles || [];   // batalhas (PK) já encerradas
+  state.currentBattle = state.currentBattle || null; // batalha rolando agora
+  state.cartas = state.cartas || {};      // estoque de power-ups do PK por pessoa
+
+  state.global = state.global || {
+    totalDiamonds: 0,
+    totalLikes: 0,
+    totalComments: 0,
+    totalFollows: 0,
+    totalShares: 0,
+    peakViewers: 0,
+    currentViewers: 0,
+    uniqueViewers: 0,
+    startedAt: Date.now()
+  };
+  // Campo a campo, e não só `state.global || {...}`: um global truncado (que
+  // já apareceu vindo de arquivo torto) deixava os contadores `undefined`, e
+  // aí a primeira soma virava NaN e contaminava o ranking inteiro.
+  ['totalDiamonds', 'totalLikes', 'totalComments', 'totalFollows', 'totalShares',
+   'peakViewers', 'currentViewers', 'uniqueViewers'].forEach(campo => {
+    if (typeof state.global[campo] !== 'number' || !Number.isFinite(state.global[campo])) {
+      state.global[campo] = 0;
+    }
+  });
+  if (typeof state.global.startedAt !== 'number') state.global.startedAt = Date.now();
+
+  // campos novos, com default pra não quebrar estado antigo
+  state.global.lastLiveDurationSeconds = state.global.lastLiveDurationSeconds || 0;
+  state.global.sessionPeakViewers = state.global.sessionPeakViewers || 0;
+  state.currentSessionSnapshot = state.currentSessionSnapshot || null;
+
+  let dirty = false;
+
+  // A marca de superfã foi gravada por um evento que, na verdade, avisa quando um
+  // superfã ENTRA na live — não quando alguém vira superfã. Como isso marcou
+  // gente que já era superfã há tempo, a marca é apagada pra não bloquear o
+  // registro certo quando ele existir.
+  if (!state.global.superfaRemarcado) {
+    Object.values(state.users).forEach(u => { delete u.superFaEm; });
+    // (o cadastro manual de superfã vive no navegador, não aqui — então isso
+    //  só tira o que foi anotado errado pelo automático)
+    state.tropa = state.tropa.filter(p => p.tipo !== 'superfã');
+    state.global.superfaRemarcado = true;
+    dirty = true;
+  }
+
+  // Enquanto o id vinha vazio, todos esses eventos caíam num mesmo registro de
+  // chave "undefined" — que além de sujar o ranking, marcava followed/shared e
+  // fazia todo mundo depois dele ser ignorado na contagem. Tira ele do caminho.
+  ['undefined', 'null', ''].forEach(chave => {
+    if (!state.users[chave]) return;
+    const fantasma = state.users[chave];
+    delete state.users[chave];
+    if (fantasma.followed) state.global.totalFollows = Math.max(0, state.global.totalFollows - 1);
+    if (fantasma.shared) state.global.totalShares = Math.max(0, state.global.totalShares - 1);
+    state.global.uniqueViewers = Math.max(0, state.global.uniqueViewers - 1);
+    state.actions = state.actions.filter(a => String(a.uniqueId) !== chave);
+    dirty = true;
+  });
+
+  // O pico ficou gravado com o acumulado de quem entrou (campo errado do
+  // TikTok), e pico só cresce — então esse número errado nunca sairia sozinho.
+  // Zera uma única vez pra ele voltar a ser medido pelo valor certo.
+  if (!state.global.picoCorrigido) {
+    state.global.peakViewers = 0;
+    state.global.sessionPeakViewers = 0;
+    state.global.picoCorrigido = true;
+    dirty = true;
+  }
+
+  // ---------- espelho no formato antigo ----------
+  // Enquanto isto existir, voltar pro código pré-SQLite é de graça: o
+  // live.json está sempre atualizado. É a rede que segura a migração.
   //
-  //   membro  = clube de fãs DE VOCÊS. Se subiu, subiu aqui. Ponto.
-  //   presenteador = nível global do TikTok. A pessoa pode ter subido gastando
-  //                  na live de outro streamer e só aparecer aqui depois. Por
-  //                  isso só conta se ela também mandou presente NESTA live —
-  //                  sem presente não tem como o nível ter subido aqui.
-  // Janela: o presente tem que ter vindo DEPOIS da última vez que a gente leu o
-  // nível dela. Assim não basta ter presenteado em algum momento da live — o
-  // presente precisa estar dentro do intervalo em que a subida aconteceu.
-  // (Antes: presenteou em qualquer momento da live. Isso deixava passar quem
-  //  presenteou cedo, subiu na live de outro, e voltou aqui já com nível novo.)
-  const inicioDaJanela = Math.max(u.gifterLidoEm || 0, state.global.startedAt || 0);
-  const presenteouNaJanela = (u.ultimoPresenteEm || 0) >= inicioDaJanela;
-
-  const anotar = (nivel, tipo, campoNivel, campoLido) => {
-    if (!nivel) return; // esse selo não veio nesse evento
-    const anterior = u[campoNivel] || 0;
-    const primeiraLeitura = !u[campoLido];
-    u[campoLido] = true;
-    if (tipo === 'presenteador') u.gifterLidoEm = Date.now(); // fecha a janela
-    if (nivel <= anterior) return;
-    u[campoNivel] = nivel;
-
-    // Primeira vez que lemos o nível dessa pessoa: só ponto de partida. Sem
-    // isso, quem já era nível alto entraria como se tivesse acabado de subir.
-    if (primeiraLeitura) {
-      registrarLeitura(`${nickname} ${tipo} nv${nivel} — primeira leitura, só anotei`);
-      return;
+  // Anda junto com o banco, na mesma batida: qualquer atraso aqui vira uma
+  // janela de dado que se perderia num rollback. E não custa nada — é a mesma
+  // escrita que o código antigo já fazia a cada 5 segundos, sozinha.
+  function espelharNoJson() {
+    if (!espelharJson) return;
+    try {
+      fs.writeFileSync(JSON_ANTIGO, JSON.stringify(state, null, 2));
+    } catch (e) {
+      // o espelho é conveniência: falhar nele não pode derrubar a gravação
+      console.error('[banco] não consegui atualizar o live.json:', e.message);
     }
-    // A checagem da janela vem ANTES do corte de nível 10 de propósito: assim
-    // toda subida pequena (2 -> 3, etc) também passa pela regra e vira teste
-    // grátis dela no log, mesmo sem entrar no mural.
-    if (tipo === 'presenteador' && !presenteouNaJanela) {
+  }
+
+  function saveToDisk() {
+    if (!dirty) return;
+    banco.gravar(dono, state);
+    dirty = false;
+    espelharNoJson();
+  }
+
+  const relogio = setInterval(saveToDisk, INTERVALO_GRAVACAO);
+  // unref: o relógio de gravação sozinho não segura o processo de pé
+  if (relogio.unref) relogio.unref();
+
+  function fechar() {
+    saveToDisk();
+    espelharNoJson();
+    clearInterval(relogio);
+    instancias.delete(dono);
+  }
+
+  // Se o estado veio do live.json (ou nasceu vazio), grava agora pra o dono
+  // já existir no banco e a próxima subida não reimportar nada.
+  if (!banco.temDados(dono)) { dirty = true; saveToDisk(); }
+
+  function ensureUser(uniqueId, nickname, avatar) {
+    // Sem id não dá pra separar uma pessoa da outra: tudo cairia na mesma chave
+    // "undefined" e viraria um usuário só (e o `followed` desse fantasma faria
+    // todo mundo depois dele ser ignorado).
+    if (!uniqueId) return false;
+    if (!state.users[uniqueId]) {
+      state.users[uniqueId] = {
+        uniqueId, nickname, avatar: avatar || null,
+        likes: 0, gifts_count: 0, gifts_value: 0, powerups: {},
+        comments: 0, followed: false, shared: false,
+        gifterLevel: 0, memberLevel: 0,
+        firstSeenAt: Date.now()
+
+      };
+      state.global.uniqueViewers += 1;
+    } else {
+      // só sobrescreve com o que veio de verdade: tem evento que chega sem
+      // apelido, e antes isso apagava o nome que já estava guardado
+      if (nickname) state.users[uniqueId].nickname = nickname;
+      if (avatar) state.users[uniqueId].avatar = avatar;
+    }
+    return true;
+  }
+
+  // Likes: mantém UM único registro por usuário durante toda a live, apenas somando nele
+  const pendingLikes = {};
+  const likeActionRef = {};
+
+  function addLikes(uniqueId, nickname, count, avatar) {
+    state.global.totalLikes += count;
+    dirty = true;
+    // Sem id o like aconteceu do mesmo jeito (entra no total), só não dá pra
+    // dizer de quem foi — então não entra no ranking de ninguém.
+    if (!ensureUser(uniqueId, nickname, avatar)) return false;
+    state.users[uniqueId].likes += count;
+    if (!pendingLikes[uniqueId]) pendingLikes[uniqueId] = { nickname, count: 0 };
+    pendingLikes[uniqueId].nickname = nickname;
+    pendingLikes[uniqueId].count += count;
+  }
+
+  function addToTropa(nome, nivel, tipo, avatar) {
+    // a lista do mural é casada por nome; sem nome não dá pra encaixar ninguém
+    if (!nome || !String(nome).trim()) return null;
+    const existente = state.tropa.find(p =>
+      String(p.nome || '').toLowerCase() === String(nome).toLowerCase() && p.tipo === tipo
+    );
+    if (existente) {
+      if (nivel <= existente.nivel) return null; // nada novo, ignora
+      existente.nivel = nivel;
+      existente.avatar = avatar || existente.avatar;
+      dirty = true;
+      return existente;
+    }
+    const novo = { id: Date.now() + Math.random(), nome, nivel, tipo, avatar: avatar || null };
+    state.tropa.push(novo);
+    dirty = true;
+    return novo;
+  }
+
+  // A lib do TikTok pode devolver, pro mesmo tipo de badge, mais de um objeto:
+  // um só com a imagem do selo (sem level) e outro com o level de verdade. Um
+  // .find() simples podia cair no objeto sem level e achar que a pessoa não tinha
+  // nível nenhum — por isso aqui só vale badge que TEM level.
+  //
+  // Os nomes dos campos mudaram da v1 pra v2 da lib (badgeSceneType -> sceneType,
+  // e o level saiu pra dentro de privilegeLogExtra, como string). Lemos os dois
+  // formatos pra não depender da versão.
+  function badgeSceneOf(b) {
+    return b.sceneType ?? b.badgeSceneType;
+  }
+
+  function badgeLevelOf(b) {
+    const bruto = b.level ?? b.privilegeLogExtra?.level;
+    const nivel = Number(bruto);
+    return Number.isFinite(nivel) && nivel > 0 ? nivel : null;
+  }
+
+  function getBadgeLevel(badges, sceneType) {
+    if (!Array.isArray(badges)) return null;
+    // pega o MAIOR level encontrado pra aquela cena (badges repetidos acontecem)
+    return badges.reduce((maior, b) => {
+      if (badgeSceneOf(b) !== sceneType) return maior;
+      const nivel = badgeLevelOf(b);
+      return nivel != null && nivel > (maior || 0) ? nivel : maior;
+    }, null);
+  }
+
+  // Deixa rastro de toda leitura de nível, pra dar pra conferir no log da live
+  // por que fulano entrou ou não entrou no mural.
+  // Além do log do servidor, manda a linha pra quem estiver ouvindo (o server
+  // repassa pra página de diagnóstico, pra dar pra acompanhar sem abrir o
+  // Railway no meio da live).
+  let ouvinteDeLog = null;
+  function setLogListener(fn) { ouvinteDeLog = fn; }
+
+  // A partir de que nível a pessoa entra no mural. Mudar aqui muda os dois tipos.
+  const NIVEL_MINIMO_MURAL = 10;
+
+  function registrarLeitura(msg) {
+    console.log('[nivel]', msg);
+    if (ouvinteDeLog) { try { ouvinteDeLog('nivel', msg); } catch (e) {} }
+  }
+
+  function checkLevelUp(uniqueId, nickname, avatar, badges) {
+    // sem id não dá pra saber de quem é o nível — e sem isso o `u` abaixo vinha
+    // undefined e derrubava o handler inteiro do evento (o comentário/presente
+    // daquele evento se perdia junto)
+    if (!ensureUser(uniqueId, nickname, avatar)) return [];
+    const u = state.users[uniqueId];
+    const resultados = [];
+
+    // Uma fonte só: o selo. Antes eu também olhava payGrade/fansClub como
+    // reforço e ficava com o maior valor — mas as duas fontes nem sempre dizem
+    // o mesmo número pra mesma pessoa, e a diferença entre elas era lida como
+    // "subiu de nível". É o selo que aparece do lado do nome; é ele que vale.
+    const presenteador = getBadgeLevel(badges, 8);
+    const membro = getBadgeLevel(badges, 10);
+
+    // Primeira vez que conseguimos ler um nível dessa pessoa: só anotamos o ponto
+    // de partida, sem anunciar. Sem isso, quem já era nível 17 há meses entraria
+    // no mural como se tivesse acabado de subir — e sairia de novo num print em
+    // que já apareceu. Da segunda leitura em diante, subida é subida.
+    //
+    // A marca é POR CATEGORIA: muita gente aparece primeiro só com o selo de
+    // presenteador, e a primeira leitura do selo de membro (que pode vir lives
+    // depois) também não pode contar como subida.
+    // Quem manda pro mural é a SUBIDA DO SELO — o número que aparece do lado do
+    // nome. É a única fonte que dá pra ler com certeza. A regra é diferente pra
+    // cada tipo, porque os dois níveis têm natureza diferente:
+    //
+    //   membro  = clube de fãs DE VOCÊS. Se subiu, subiu aqui. Ponto.
+    //   presenteador = nível global do TikTok. A pessoa pode ter subido gastando
+    //                  na live de outro streamer e só aparecer aqui depois. Por
+    //                  isso só conta se ela também mandou presente NESTA live —
+    //                  sem presente não tem como o nível ter subido aqui.
+    // Janela: o presente tem que ter vindo DEPOIS da última vez que a gente leu o
+    // nível dela. Assim não basta ter presenteado em algum momento da live — o
+    // presente precisa estar dentro do intervalo em que a subida aconteceu.
+    // (Antes: presenteou em qualquer momento da live. Isso deixava passar quem
+    //  presenteou cedo, subiu na live de outro, e voltou aqui já com nível novo.)
+    const inicioDaJanela = Math.max(u.gifterLidoEm || 0, state.global.startedAt || 0);
+    const presenteouNaJanela = (u.ultimoPresenteEm || 0) >= inicioDaJanela;
+
+    const anotar = (nivel, tipo, campoNivel, campoLido) => {
+      if (!nivel) return; // esse selo não veio nesse evento
+      const anterior = u[campoNivel] || 0;
+      const primeiraLeitura = !u[campoLido];
+      u[campoLido] = true;
+      if (tipo === 'presenteador') u.gifterLidoEm = Date.now(); // fecha a janela
+      if (nivel <= anterior) return;
+      u[campoNivel] = nivel;
+
+      // Primeira vez que lemos o nível dessa pessoa: só ponto de partida. Sem
+      // isso, quem já era nível alto entraria como se tivesse acabado de subir.
+      if (primeiraLeitura) {
+        registrarLeitura(`${nickname} ${tipo} nv${nivel} — primeira leitura, só anotei`);
+        return;
+      }
+      // A checagem da janela vem ANTES do corte de nível 10 de propósito: assim
+      // toda subida pequena (2 -> 3, etc) também passa pela regra e vira teste
+      // grátis dela no log, mesmo sem entrar no mural.
+      if (tipo === 'presenteador' && !presenteouNaJanela) {
+        registrarLeitura(
+          `${nickname} presenteador ${anterior} -> ${nivel} — subiu FORA daqui ` +
+          '(não mandou presente entre uma leitura e outra), fica de fora'
+        );
+        return;
+      }
+      if (nivel < NIVEL_MINIMO_MURAL) {
+        registrarLeitura(
+          `${nickname} ${tipo} ${anterior} -> ${nivel} — subiu AQUI ✔ ` +
+          `mas o mural só mostra do ${NIVEL_MINIMO_MURAL} pra cima`
+        );
+        return;
+      }
+
+      const item = addToTropa(nickname, nivel, tipo, avatar);
       registrarLeitura(
-        `${nickname} presenteador ${anterior} -> ${nivel} — subiu FORA daqui ` +
-        '(não mandou presente entre uma leitura e outra), fica de fora'
+        `${nickname} ${tipo} ${anterior} -> ${nivel} — ` +
+        (item ? 'ENTROU no mural' : 'já estava no mural com nível igual ou maior')
       );
-      return;
-    }
-    if (nivel < NIVEL_MINIMO_MURAL) {
-      registrarLeitura(
-        `${nickname} ${tipo} ${anterior} -> ${nivel} — subiu AQUI ✔ ` +
-        `mas o mural só mostra do ${NIVEL_MINIMO_MURAL} pra cima`
-      );
-      return;
-    }
+      if (item) resultados.push(item);
+    };
 
-    const item = addToTropa(nickname, nivel, tipo, avatar);
+    anotar(presenteador, 'presenteador', 'gifterLevel', 'gifterLido');
+    anotar(membro, 'membro', 'memberLevel', 'memberLido');
+
+    dirty = true;
+    return resultados;
+  }
+
+  // Subida anunciada pelo próprio TikTok (o banner que passa na live).
+  // Diferente do selo, aqui não tem adivinhação: o TikTok está dizendo que a
+  // pessoa ACABOU de subir, e pra qual nível. Não precisa de linha de base, não
+  // perde quem subiu antes da primeira leitura e não inventa quem não subiu.
+  function registrarSubidaDeNivel(uniqueId, nickname, avatar, nivel, tipo) {
+    const n = Number(nivel);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    // Só atualiza quem o servidor já conhece. Antes eu criava o registro aqui, e
+    // quem só apareceu no aviso de subida entrava no ranking zerado e ainda
+    // contava como espectador único.
+    if (uniqueId) {
+      const u = state.users[uniqueId];
+      if (u) {
+        const campo = tipo === 'membro' ? 'memberLevel' : 'gifterLevel';
+        const lido = tipo === 'membro' ? 'memberLido' : 'gifterLido';
+        if (n > (u[campo] || 0)) u[campo] = n;
+        u[lido] = true;
+        dirty = true;
+      }
+    }
+    if (n < NIVEL_MINIMO_MURAL) {
+      registrarLeitura(`(TikTok) ${nickname} ${tipo} nv${n} — subiu AQUI ✔ mas o mural só mostra do ${NIVEL_MINIMO_MURAL} pra cima`);
+      return null;
+    }
+    const item = addToTropa(nickname, n, tipo, avatar);
     registrarLeitura(
-      `${nickname} ${tipo} ${anterior} -> ${nivel} — ` +
+      `(TikTok) ${nickname} ${tipo} nv${n} — ` +
       (item ? 'ENTROU no mural' : 'já estava no mural com nível igual ou maior')
     );
-    if (item) resultados.push(item);
-  };
+    return item;
+  }
 
-  anotar(presenteador, 'presenteador', 'gifterLevel', 'gifterLido');
-  anotar(membro, 'membro', 'memberLevel', 'memberLido');
-
-  dirty = true;
-  return resultados;
-}
-
-// Subida anunciada pelo próprio TikTok (o banner que passa na live).
-// Diferente do selo, aqui não tem adivinhação: o TikTok está dizendo que a
-// pessoa ACABOU de subir, e pra qual nível. Não precisa de linha de base, não
-// perde quem subiu antes da primeira leitura e não inventa quem não subiu.
-function registrarSubidaDeNivel(uniqueId, nickname, avatar, nivel, tipo) {
-  const n = Number(nivel);
-  if (!Number.isFinite(n) || n <= 0) return null;
-  // Só atualiza quem o servidor já conhece. Antes eu criava o registro aqui, e
-  // quem só apareceu no aviso de subida entrava no ranking zerado e ainda
-  // contava como espectador único.
-  if (uniqueId) {
+  // Superfã não tem nível: ou a pessoa é, ou não é. O TikTok avisa no momento em
+  // que alguém ENTRA no clube (superFanJoin), então esse é o único evento que
+  // serve — o outro (superFan) dispara pra quem já era, e encheria o mural de
+  // gente que já saiu em print antigo.
+  // O nível 1 aqui é só pra travar a repetição no addToTropa; o mural ignora o
+  // número quando o tipo é superfã.
+  function registrarSuperfa(uniqueId, nickname, avatar) {
+    if (!ensureUser(uniqueId, nickname, avatar)) return null;
     const u = state.users[uniqueId];
-    if (u) {
-      const campo = tipo === 'membro' ? 'memberLevel' : 'gifterLevel';
-      const lido = tipo === 'membro' ? 'memberLido' : 'gifterLido';
-      if (n > (u[campo] || 0)) u[campo] = n;
-      u[lido] = true;
+    if (u.superFaEm) return null; // já registramos essa pessoa antes
+    u.superFaEm = Date.now();
+    dirty = true;
+    return addToTropa(nickname, 1, 'superfã', avatar);
+  }
+
+  // Apagar alguém do mural tem que sair do servidor também, senão o tropa_init
+  // do próximo carregamento traz a pessoa de volta.
+  function removerDaTropa(nome, tipo) {
+    const antes = state.tropa.length;
+    state.tropa = state.tropa.filter(p =>
+      !(String(p.nome || '').toLowerCase() === String(nome || '').toLowerCase() && p.tipo === tipo)
+    );
+    const removeu = state.tropa.length < antes;
+    if (removeu) { dirty = true; saveToDisk(); }
+    return removeu;
+  }
+
+  function getTropa() {
+    return state.tropa;
+  }
+
+  // Zera só o mural (pro print da semana começar limpo). Ranking, likes,
+  // presentes e os níveis já aprendidos continuam intactos — o que importa é
+  // não repetir no print quem já saiu.
+  function limparTropa() {
+    state.tropa = [];
+    dirty = true;
+    saveToDisk();
+    return state.tropa;
+  }
+
+  function flushLikeBuffer() {
+    const entries = Object.entries(pendingLikes);
+    if (!entries.length) return;
+    entries.forEach(([uniqueId, { nickname, count }]) => {
+      let action = likeActionRef[uniqueId];
+      if (!action) {
+        action = { uniqueId, nickname, type: 'like', detail: null, value: 0, count: 0, timestamp: Date.now() };
+        state.actions.push(action);
+        likeActionRef[uniqueId] = action;
+      }
+      action.value += count;
+      action.nickname = nickname;
+      action.timestamp = Date.now();
       dirty = true;
-    }
+      delete pendingLikes[uniqueId];
+    });
   }
-  if (n < NIVEL_MINIMO_MURAL) {
-    registrarLeitura(`(TikTok) ${nickname} ${tipo} nv${n} — subiu AQUI ✔ mas o mural só mostra do ${NIVEL_MINIMO_MURAL} pra cima`);
-    return null;
+  setInterval(flushLikeBuffer, 10000);
+
+  // Presentes: UM registro por usuário + nome do presente (em vez de 1 linha por envio).
+  // Ex: se "Rose" for enviada 50 vezes pela mesma pessoa, vira 1 linha só com count:50 e value somado.
+  const giftActionRef = {}; // chave: `${uniqueId}::${giftName}`
+
+  function addGift(uniqueId, nickname, giftName, value, avatar) {
+    state.global.totalDiamonds += value;
+    dirty = true;
+    if (!ensureUser(uniqueId, nickname, avatar)) return false;
+    state.users[uniqueId].gifts_count += 1;
+    state.users[uniqueId].gifts_value += value;
+    // usado pra saber se a subida de presenteador aconteceu AQUI (ver checkLevelUp)
+    state.users[uniqueId].ultimoPresenteEm = Date.now();
+    logGiftAction(uniqueId, nickname, giftName, value);
+    return true;
   }
-  const item = addToTropa(nickname, n, tipo, avatar);
-  registrarLeitura(
-    `(TikTok) ${nickname} ${tipo} nv${n} — ` +
-    (item ? 'ENTROU no mural' : 'já estava no mural com nível igual ou maior')
-  );
-  return item;
-}
 
-// Superfã não tem nível: ou a pessoa é, ou não é. O TikTok avisa no momento em
-// que alguém ENTRA no clube (superFanJoin), então esse é o único evento que
-// serve — o outro (superFan) dispara pra quem já era, e encheria o mural de
-// gente que já saiu em print antigo.
-// O nível 1 aqui é só pra travar a repetição no addToTropa; o mural ignora o
-// número quando o tipo é superfã.
-function registrarSuperfa(uniqueId, nickname, avatar) {
-  if (!ensureUser(uniqueId, nickname, avatar)) return null;
-  const u = state.users[uniqueId];
-  if (u.superFaEm) return null; // já registramos essa pessoa antes
-  u.superFaEm = Date.now();
-  dirty = true;
-  return addToTropa(nickname, 1, 'superfã', avatar);
-}
-
-// Apagar alguém do mural tem que sair do servidor também, senão o tropa_init
-// do próximo carregamento traz a pessoa de volta.
-function removerDaTropa(nome, tipo) {
-  const antes = state.tropa.length;
-  state.tropa = state.tropa.filter(p =>
-    !(String(p.nome || '').toLowerCase() === String(nome || '').toLowerCase() && p.tipo === tipo)
-  );
-  const removeu = state.tropa.length < antes;
-  if (removeu) { dirty = true; saveToDisk(); }
-  return removeu;
-}
-
-function getTropa() {
-  return state.tropa;
-}
-
-// Zera só o mural (pro print da semana começar limpo). Ranking, likes,
-// presentes e os níveis já aprendidos continuam intactos — o que importa é
-// não repetir no print quem já saiu.
-function limparTropa() {
-  state.tropa = [];
-  dirty = true;
-  saveToDisk();
-  return state.tropa;
-}
-
-function flushLikeBuffer() {
-  const entries = Object.entries(pendingLikes);
-  if (!entries.length) return;
-  entries.forEach(([uniqueId, { nickname, count }]) => {
-    let action = likeActionRef[uniqueId];
+  function logGiftAction(uniqueId, nickname, giftName, value) {
+    const key = `${uniqueId}::${giftName}`;
+    let action = giftActionRef[key];
     if (!action) {
-      action = { uniqueId, nickname, type: 'like', detail: null, value: 0, count: 0, timestamp: Date.now() };
+      action = {
+        uniqueId, nickname, type: 'gift', detail: giftName,
+        value: 0, count: 0, timestamp: Date.now()
+      };
       state.actions.push(action);
-      likeActionRef[uniqueId] = action;
+      giftActionRef[key] = action;
     }
-    action.value += count;
+    action.value += value;
+    action.count += 1;
     action.nickname = nickname;
     action.timestamp = Date.now();
     dirty = true;
-    delete pendingLikes[uniqueId];
-  });
-}
-setInterval(flushLikeBuffer, 10000);
-
-// Presentes: UM registro por usuário + nome do presente (em vez de 1 linha por envio).
-// Ex: se "Rose" for enviada 50 vezes pela mesma pessoa, vira 1 linha só com count:50 e value somado.
-const giftActionRef = {}; // chave: `${uniqueId}::${giftName}`
-
-function addGift(uniqueId, nickname, giftName, value, avatar) {
-  state.global.totalDiamonds += value;
-  dirty = true;
-  if (!ensureUser(uniqueId, nickname, avatar)) return false;
-  state.users[uniqueId].gifts_count += 1;
-  state.users[uniqueId].gifts_value += value;
-  // usado pra saber se a subida de presenteador aconteceu AQUI (ver checkLevelUp)
-  state.users[uniqueId].ultimoPresenteEm = Date.now();
-  logGiftAction(uniqueId, nickname, giftName, value);
-  return true;
-}
-
-function logGiftAction(uniqueId, nickname, giftName, value) {
-  const key = `${uniqueId}::${giftName}`;
-  let action = giftActionRef[key];
-  if (!action) {
-    action = {
-      uniqueId, nickname, type: 'gift', detail: giftName,
-      value: 0, count: 0, timestamp: Date.now()
-    };
-    state.actions.push(action);
-    giftActionRef[key] = action;
   }
-  action.value += value;
-  action.count += 1;
-  action.nickname = nickname;
-  action.timestamp = Date.now();
-  dirty = true;
-}
 
-function addPowerUp(uniqueId, nickname, name, avatar) {
-  if (!ensureUser(uniqueId, nickname, avatar)) return false;
-  const powerups = state.users[uniqueId].powerups;
-  powerups[name] = (powerups[name] || 0) + 1;
-  dirty = true;
-  logPowerUpAction(uniqueId, nickname, name);
-}
-
-// Power-ups: mesma ideia, um registro por usuário + tipo de power-up
-const powerUpActionRef = {}; // chave: `${uniqueId}::${name}`
-
-function logPowerUpAction(uniqueId, nickname, name) {
-  const key = `${uniqueId}::${name}`;
-  let action = powerUpActionRef[key];
-  if (!action) {
-    action = {
-      uniqueId, nickname, type: 'powerup', detail: name,
-      value: 0, count: 0, timestamp: Date.now()
-    };
-    state.actions.push(action);
-    powerUpActionRef[key] = action;
-  }
-  action.count += 1;
-  action.value = action.count; // valor = quantidade de vezes
-  action.nickname = nickname;
-  action.timestamp = Date.now();
-  dirty = true;
-}
-
-const MAX_ACTIONS = 5000; // limite de segurança: nunca deixa o histórico crescer sem fim
-// (com a consolidação acima, cada usuário só ocupa 1 linha por like + 1 por tipo de presente/power-up,
-// então isso raramente vai bater nesse teto mesmo em lives longas)
-
-// ============================================================================
-// ESTOQUE DE POWER-UPS DO PK (luva, névoa, tempo, ...)
-//
-// Cada carta GANHA entra numa fila com a hora. Usar tira uma da fila (a mais
-// antiga do mesmo tipo, senão a mais antiga de todas). Passados 5 dias a carta
-// cai sozinha.
-//
-// LIMITE IMPORTANTE: este é o estoque DO QUE ESTA LIVE VIU. O servidor só está
-// conectado a uma sala, e a carta pertence à conta da pessoa — ela pode gastar
-// no PK de outro streamer e o evento nunca chega aqui. Quando isso acontece o
-// número fica ALTO demais (nunca baixo). Por isso o front mostra "estimativa".
-// ============================================================================
-const VALIDADE_CARTA_MS = 5 * 24 * 60 * 60 * 1000; // 5 dias
-
-function expirarCartas(agora = Date.now()) {
-  let mudou = false;
-  Object.values(state.cartas).forEach(ficha => {
-    const antes = ficha.ganhas.length;
-    ficha.ganhas = ficha.ganhas.filter(c => agora - c.em < VALIDADE_CARTA_MS);
-    const caiu = antes - ficha.ganhas.length;
-    if (caiu > 0) { ficha.expiradas += caiu; mudou = true; }
-  });
-  if (mudou) dirty = true;
-  return mudou;
-}
-
-function garantirFichaDeCarta(uniqueId, nickname, avatar, handle) {
-  if (!uniqueId) return null;
-  let ficha = state.cartas[uniqueId];
-  if (!ficha) {
-    ficha = state.cartas[uniqueId] = {
-      uniqueId, handle: handle || null, nickname: nickname || uniqueId, avatar: avatar || null,
-      ganhas: [], usos: {}, usadas: 0, expiradas: 0, ultimaEm: Date.now()
-    };
-  }
-  // mesmo cuidado do ensureUser: só sobrescreve com o que veio de verdade
-  if (nickname) ficha.nickname = nickname;
-  if (avatar) ficha.avatar = avatar;
-  if (handle) ficha.handle = handle; // pode chegar só em alguns eventos
-  return ficha;
-}
-
-function registrarCartaGanha(uniqueId, nickname, avatar, tipo, handle, qtd = 1) {
-  const ficha = garantirFichaDeCarta(uniqueId, nickname, avatar, handle);
-  if (!ficha) return false;
-  const agora = Date.now();
-  // Uma entrada por premiação. Se o evento identificou a carta (raro — o prêmio
-  // costuma vir genérico), já preenche os itens e a premiação não nasce
-  // pendente; senão fica esperando alguém informar.
-  for (let i = 0; i < Math.max(1, qtd); i++) {
-    const entrada = { em: agora, tipo: tipo || null };
-    if (tipo) entrada.itens = { [tipo]: 1 };
-    ficha.ganhas.push(entrada);
-  }
-  ficha.ultimaEm = agora;
-  dirty = true;
-  return true;
-}
-
-// NÃO abate da fila de premiações — e isso é de propósito.
-//
-// Confirmado em live: UMA mensagem de prêmio pode valer VÁRIAS cartas (a pessoa
-// ganhou 2 luvas e veio uma mensagem só), e o payload não tem quantidade nem
-// nomeia a carta. Então "premiações" e "cartas usadas" são duas contagens
-// diferentes e não dá pra subtrair uma da outra: se a premiação valia 2 e ela
-// usou 1, abater a premiação inteira zerava um estoque que ainda existe.
-//
-// O uso, ao contrário, é exato: sabe a carta, a pessoa e a quantidade.
-// O uso é exato: a carta, a pessoa e a quantidade vêm no evento. É o lado do
-// GASTO do estoque — o lado do GANHO vem de definirItensDaPremiacao, porque o
-// TikTok não diz quais cartas nem quantas cada premiação deu.
-function registrarCartaUsada(uniqueId, nickname, avatar, tipo, handle, qtd = 1) {
-  const ficha = garantirFichaDeCarta(uniqueId, nickname, avatar, handle);
-  if (!ficha) return false;
-  const n = Math.max(1, qtd);
-  const chave = tipo || 'desconhecido';
-
-  ficha.usos = ficha.usos || {};
-  ficha.usos[chave] = (ficha.usos[chave] || 0) + n;
-  ficha.usadas += n;
-
-  ficha.ultimaEm = Date.now();
-  dirty = true;
-  return true;
-}
-
-// Informa (ou corrige) QUAIS cartas e QUANTAS uma premiação deu.
-// O TikTok mostra isso no painel dele mas não manda pela live, então quem sabe
-// é a pessoa que está assistindo. `ganhaEm` identifica a premiação.
-function definirItensDaPremiacao(uniqueId, ganhaEm, itens) {
-  const ficha = state.cartas[uniqueId];
-  if (!ficha) return false;
-
-  const premio = ficha.ganhas.find(c => c.em === Number(ganhaEm));
-  if (!premio) return false;
-
-  const limpo = {};
-  Object.entries(itens || {}).forEach(([tipo, qtd]) => {
-    const n = Math.floor(Number(qtd) || 0);
-    if (tipo && n > 0) limpo[tipo] = Math.min(n, 99);   // teto de sanidade
-  });
-
-  premio.itens = limpo;
-  ficha.ultimaEm = Date.now();
-  dirty = true;
-  saveToDisk();
-  return true;
-}
-
-function getEstoqueCartas() {
-  expirarCartas();
-  const agora = Date.now();
-  return Object.values(state.cartas)
-    .map(ficha => {
-      const maisAntiga = ficha.ganhas.length ? Math.min(...ficha.ganhas.map(c => c.em)) : null;
-      return {
-        uniqueId: ficha.uniqueId,
-        handle: ficha.handle || null,
-        nickname: ficha.nickname,
-        avatar: ficha.avatar,
-        // premiações VÁLIDAS (dentro dos 5 dias). Cada uma vale 1 OU MAIS
-        // cartas — por isso o front mostra "≥" e não um número seco.
-        premiacoes: ficha.ganhas.length,
-        pendentes: ficha.ganhas.filter(c => !c.itens || Object.keys(c.itens).length === 0).length,
-        usos: ficha.usos || {},
-        usadas: ficha.usadas,
-        expiradas: ficha.expiradas,
-        totalPremiacoes: ficha.ganhas.length + ficha.expiradas,
-        // quanto falta pra próxima vencer, em ms (null = não tem carta na mão)
-        proximaExpiraEmMs: maisAntiga === null
-          ? null
-          : Math.max(0, VALIDADE_CARTA_MS - (agora - maisAntiga)),
-        // Uma entrada por PREMIAÇÃO: a hora é exata (vem do evento) e os itens
-        // são os informados. `pendente` = ainda ninguém disse o que veio nela.
-        cartas: ficha.ganhas
-          .map(c => ({
-            ganhaEm: c.em,
-            expiraEmMs: Math.max(0, VALIDADE_CARTA_MS - (agora - c.em)),
-            itens: c.itens || {},
-            pendente: !c.itens || Object.keys(c.itens).length === 0
-          }))
-          .sort((a, b) => a.expiraEmMs - b.expiraEmMs),
-
-        // ESTOQUE POR ITEM: o que foi informado nas premiações no prazo, menos
-        // o que a pessoa já jogou. É o "tem 2 luvas e 1 martelo".
-        estoque: (() => {
-          const ganho = {};
-          ficha.ganhas.forEach(c => {
-            Object.entries(c.itens || {}).forEach(([t, n]) => {
-              ganho[t] = (ganho[t] || 0) + n;
-            });
-          });
-          const usos = ficha.usos || {};
-          const saldo = {};
-          Object.keys(ganho).forEach(t => {
-            const resta = ganho[t] - (usos[t] || 0);
-            if (resta > 0) saldo[t] = resta;
-          });
-          return saldo;
-        })(),
-        ultimaEm: ficha.ultimaEm
-      };
-    })
-    .filter(f => f.totalPremiacoes > 0 || f.usadas > 0)
-    // quem tem premiação válida primeiro (é quem pode jogar carta agora)
-    .sort((a, b) => b.premiacoes - a.premiacoes || b.usadas - a.usadas || a.nickname.localeCompare(b.nickname));
-}
-
-function getRanking() {
-  return Object.values(state.users)
-    .map(u => ({ ...u, score: u.likes + u.gifts_value * 10 }))
-    .sort((a, b) => b.score - a.score);
-}
-
-function getUserProfile(uniqueId) {
-  const user = state.users[uniqueId];
-  // 200 em vez de 100 porque agora comentários entram um por linha e não
-  // podem empurrar os presentes/likes pra fora do histórico.
-  const history = state.actions
-    .filter(a => a.uniqueId === uniqueId)
-    .sort((a, b) => (b.timestamp - a.timestamp) || ((b.seq || 0) - (a.seq || 0)))
-    .slice(0, 200);
-  return { user, history };
-}
-
-function resetAll() {
-  state.users = {};
-  state.actions = [];
-  state.tropa = [];
-  state.sessions = [];
-  state.battles = [];
-  state.currentBattle = null;
-  state.currentSessionSnapshot = null;
-  state.cartas = {};
-  state.global = {
-    totalDiamonds: 0, totalLikes: 0, totalComments: 0, totalFollows: 0, totalShares: 0,
-    peakViewers: 0, currentViewers: 0, uniqueViewers: 0, startedAt: Date.now(),
-    lastLiveDurationSeconds: 0, sessionPeakViewers: 0
-  };
-  Object.keys(pendingLikes).forEach(k => delete pendingLikes[k]);
-  Object.keys(likeActionRef).forEach(k => delete likeActionRef[k]);
-  Object.keys(giftActionRef).forEach(k => delete giftActionRef[k]);
-  Object.keys(powerUpActionRef).forEach(k => delete powerUpActionRef[k]);
-  Object.keys(commentActionRefs).forEach(k => delete commentActionRefs[k]);
-  dirty = true;
-  saveToDisk();
-}
-
-// Comentários: além de contar, guardamos o texto pra poder mostrar no perfil.
-// Diferente de like/presente, cada comentário é uma linha própria (o texto muda
-// toda vez), então limitamos quantos ficam guardados por pessoa.
-const MAX_COMMENTS_PER_USER = 50;
-
-function addComment(uniqueId, nickname, avatar, text) {
-  state.global.totalComments += 1;
-  dirty = true;
-  if (!ensureUser(uniqueId, nickname, avatar)) return false;
-  state.users[uniqueId].comments += 1;
-  logCommentAction(uniqueId, nickname, text);
-  return true;
-}
-
-// Fila dos comentários guardados de cada pessoa (mais antigo primeiro), pra não
-// precisar varrer state.actions inteiro a cada comentário que chega.
-const commentActionRefs = {}; // uniqueId -> [action, ...]
-
-// Vários comentários caem no mesmo milissegundo numa live movimentada, então
-// timestamp sozinho não ordena. seq é o desempate (sempre crescente).
-let nextSeq = state.actions.reduce((max, a) => Math.max(max, a.seq || 0), 0) + 1;
-
-function commentQueue(uniqueId) {
-  if (!commentActionRefs[uniqueId]) {
-    // primeira vez no processo: remonta a fila do que veio do live.json
-    commentActionRefs[uniqueId] = state.actions.filter(
-      a => a.type === 'comment' && a.uniqueId === uniqueId
-    );
-  }
-  return commentActionRefs[uniqueId];
-}
-
-function logCommentAction(uniqueId, nickname, text) {
-  const detail = (text || '').trim();
-  if (!detail) return; // reação/figurinha sem texto: só entra na contagem
-
-  // A fila tem que ser montada ANTES do push: depois do reinício ela é
-  // remontada a partir de state.actions, e o comentário novo entraria
-  // duas vezes (derrubando um antigo a mais do que devia).
-  const fila = commentQueue(uniqueId);
-
-  const action = {
-    uniqueId, nickname, type: 'comment', detail,
-    value: 0, count: 1, timestamp: Date.now(), seq: nextSeq++
-  };
-  state.actions.push(action);
-
-  // Janela deslizante: entra o novo, sai o mais antigo. A contagem em
-  // users[].comments e o total global NÃO são tocados — só o texto guardado
-  // é descartado, pra não encher o live.json de linha.
-  fila.push(action);
-  while (fila.length > MAX_COMMENTS_PER_USER) {
-    const antigo = fila.shift();
-    const i = state.actions.indexOf(antigo);
-    if (i !== -1) state.actions.splice(i, 1);
-  }
-}
-
-function addFollow(uniqueId, nickname, avatar) {
-  if (!ensureUser(uniqueId, nickname, avatar)) return false;
-  if (state.users[uniqueId].followed) return false; // já tinha seguido antes
-  state.users[uniqueId].followed = true;
-  state.global.totalFollows += 1;
-  dirty = true;
-  return true;
-}
-
-function addShare(uniqueId, nickname, avatar) {
-  if (!ensureUser(uniqueId, nickname, avatar)) return false;
-  if (state.users[uniqueId].shared) return false;
-  state.users[uniqueId].shared = true;
-  state.global.totalShares += 1;
-  dirty = true;
-  return true;
-}
-
-function updateViewerCount(count) {
-  state.global.currentViewers = count;
-  if (count > state.global.peakViewers) state.global.peakViewers = count;
-  if (count > (state.global.sessionPeakViewers || 0)) state.global.sessionPeakViewers = count;
-  dirty = true;
-}
-
-// Chamado quando a conexão com a live é estabelecida (live entrou no ar).
-// Tira uma "foto" dos totais atuais pra depois calcular só o que essa live
-// específica gerou (delta), e zera o pico de espectadores dessa sessão.
-// Batida de coração enquanto a live está no ar. Serve pra saber, depois de um
-// restart do servidor, se a live que estava rodando é a MESMA (retoma a
-// contagem) ou se já é outra (começa do zero).
-const RETOMAR_SESSAO_MS = 3 * 60 * 1000;
-
-function heartbeat() {
-  if (!state.global.liveActive) return;
-  state.global.lastActivityAt = Date.now();
-  dirty = true;
-}
-
-function markLiveOnline() {
-  const now = Date.now();
-
-  // Um deploy/restart no meio da live derrubava startedAt pro instante da
-  // reconexão e a duração voltava do zero. Se a live estava no ar e a última
-  // batida foi agora há pouco, é a mesma live: mantém o relógio andando.
-  const mesmaLive =
-    state.global.liveActive &&
-    state.currentSessionSnapshot &&
-    now - (state.global.lastActivityAt || 0) < RETOMAR_SESSAO_MS;
-
-  state.global.liveActive = true;
-  state.global.lastActivityAt = now;
-
-  if (mesmaLive) {
-    state.global.startedAt = state.currentSessionSnapshot.startedAt;
+  function addPowerUp(uniqueId, nickname, name, avatar) {
+    if (!ensureUser(uniqueId, nickname, avatar)) return false;
+    const powerups = state.users[uniqueId].powerups;
+    powerups[name] = (powerups[name] || 0) + 1;
     dirty = true;
-    return;
+    logPowerUpAction(uniqueId, nickname, name);
   }
 
-  state.global.startedAt = now;
-  state.global.sessionPeakViewers = 0;
+  // Power-ups: mesma ideia, um registro por usuário + tipo de power-up
+  const powerUpActionRef = {}; // chave: `${uniqueId}::${name}`
 
-  state.currentSessionSnapshot = {
-    startedAt: now,
-    totalDiamonds: state.global.totalDiamonds,
-    totalLikes: state.global.totalLikes,
-    totalComments: state.global.totalComments,
-    totalFollows: state.global.totalFollows,
-    totalShares: state.global.totalShares
-  };
-  dirty = true;
-}
-
-// Chamado quando a live cai/termina. Calcula os números só dessa live
-// (delta contra o snapshot tirado no markLiveOnline) e guarda no histórico.
-// O uptime não zera: fica congelado na duração dessa live até a próxima começar.
-function markLiveOffline() {
-  if (state.global.liveActive && state.currentSessionSnapshot) {
-    const snap = state.currentSessionSnapshot;
-    const endedAt = Date.now();
-    const durationSeconds = Math.floor((endedAt - snap.startedAt) / 1000);
-
-    // só registra no histórico lives com alguma duração mínima (evita "lixo"
-    // de reconexões picadas de poucos segundos)
-    if (durationSeconds >= 10) {
-      state.sessions.push({
-        id: snap.startedAt,
-        startedAt: snap.startedAt,
-        endedAt,
-        durationSeconds,
-        totalDiamonds: state.global.totalDiamonds - snap.totalDiamonds,
-        totalLikes: state.global.totalLikes - snap.totalLikes,
-        totalComments: state.global.totalComments - snap.totalComments,
-        totalFollows: state.global.totalFollows - snap.totalFollows,
-        totalShares: state.global.totalShares - snap.totalShares,
-        peakViewers: state.global.sessionPeakViewers || 0
-      });
-      if (state.sessions.length > 200) state.sessions.shift(); // limite de segurança
-      state.global.lastLiveDurationSeconds = durationSeconds;
+  function logPowerUpAction(uniqueId, nickname, name) {
+    const key = `${uniqueId}::${name}`;
+    let action = powerUpActionRef[key];
+    if (!action) {
+      action = {
+        uniqueId, nickname, type: 'powerup', detail: name,
+        value: 0, count: 0, timestamp: Date.now()
+      };
+      state.actions.push(action);
+      powerUpActionRef[key] = action;
     }
+    action.count += 1;
+    action.value = action.count; // valor = quantidade de vezes
+    action.nickname = nickname;
+    action.timestamp = Date.now();
+    dirty = true;
   }
-  state.global.liveActive = false;
-  state.currentSessionSnapshot = null;
-  dirty = true;
-}
 
-// ---------- BATALHAS (PK / link mic) ----------
-const MAX_BATALHAS = 500;
+  const MAX_ACTIONS = 5000; // limite de segurança: nunca deixa o histórico crescer sem fim
+  // (com a consolidação acima, cada usuário só ocupa 1 linha por like + 1 por tipo de presente/power-up,
+  // então isso raramente vai bater nesse teto mesmo em lives longas)
 
-function iniciarBatalha(battleId, oponente, terminaEm, times) {
-  // o TikTok repete o evento de abertura; não recomeça a mesma batalha
-  if (state.currentBattle && state.currentBattle.battleId === battleId) {
-    return state.currentBattle;
+  // ============================================================================
+  // ESTOQUE DE POWER-UPS DO PK (luva, névoa, tempo, ...)
+  //
+  // Cada carta GANHA entra numa fila com a hora. Usar tira uma da fila (a mais
+  // antiga do mesmo tipo, senão a mais antiga de todas). Passados 5 dias a carta
+  // cai sozinha.
+  //
+  // LIMITE IMPORTANTE: este é o estoque DO QUE ESTA LIVE VIU. O servidor só está
+  // conectado a uma sala, e a carta pertence à conta da pessoa — ela pode gastar
+  // no PK de outro streamer e o evento nunca chega aqui. Quando isso acontece o
+  // número fica ALTO demais (nunca baixo). Por isso o front mostra "estimativa".
+  // ============================================================================
+  const VALIDADE_CARTA_MS = 5 * 24 * 60 * 60 * 1000; // 5 dias
+
+  function expirarCartas(agora = Date.now()) {
+    let mudou = false;
+    Object.values(state.cartas).forEach(ficha => {
+      const antes = ficha.ganhas.length;
+      ficha.ganhas = ficha.ganhas.filter(c => agora - c.em < VALIDADE_CARTA_MS);
+      const caiu = antes - ficha.ganhas.length;
+      if (caiu > 0) { ficha.expiradas += caiu; mudou = true; }
+    });
+    if (mudou) dirty = true;
+    return mudou;
   }
-  state.currentBattle = {
-    battleId,
-    startedAt: Date.now(),
-    oponente, // { uniqueId, nickname, avatar }
-    meuScore: 0,
-    scoreOponente: 0,
-    terminaEm: terminaEm || null,  // horário previsto de fim, quando o TikTok manda
-    ultimoSinalEm: Date.now(),     // última vez que o placar mexeu
-    // batalha de dupla: guardamos os times pra somar o placar do lado certo
-    emDupla: !!(times && times.meuTimeId),
-    meuTimeId: times?.meuTimeId || null,
-    timeRivalId: times?.timeRivalId || null
-  };
-  dirty = true;
-  return state.currentBattle;
-}
 
-function atualizarPlacarBatalha(battleId, meuScore, scoreOponente) {
-  const b = state.currentBattle;
-  if (!b) return null;
-  if (battleId && b.battleId !== battleId) return null;
-  b.meuScore = meuScore;
-  b.scoreOponente = scoreOponente;
-  b.ultimoSinalEm = Date.now();
-  dirty = true;
-  return b;
-}
+  function garantirFichaDeCarta(uniqueId, nickname, avatar, handle) {
+    if (!uniqueId) return null;
+    let ficha = state.cartas[uniqueId];
+    if (!ficha) {
+      ficha = state.cartas[uniqueId] = {
+        uniqueId, handle: handle || null, nickname: nickname || uniqueId, avatar: avatar || null,
+        ganhas: [], usos: {}, usadas: 0, expiradas: 0, ultimaEm: Date.now()
+      };
+    }
+    // mesmo cuidado do ensureUser: só sobrescreve com o que veio de verdade
+    if (nickname) ficha.nickname = nickname;
+    if (avatar) ficha.avatar = avatar;
+    if (handle) ficha.handle = handle; // pode chegar só em alguns eventos
+    return ficha;
+  }
 
-// Quando o adversário abandona no meio, o TikTok simplesmente para de mandar
-// evento — não vem FINISH nenhum. Sem isso a batalha ficava "ao vivo" pra
-// sempre no painel, travada no último placar.
-const BATALHA_SILENCIO_MS = 3 * 60 * 1000;   // placar parado por tanto tempo
-const BATALHA_LIMITE_MS = 20 * 60 * 1000;    // teto absoluto, se nada mais servir
-
-function fecharBatalhaAbandonada() {
-  const b = state.currentBattle;
-  if (!b) return false;
-
-  const agora = Date.now();
-  const passouDoFim = b.terminaEm && agora > b.terminaEm + 60 * 1000;
-  const semSinal = agora - (b.ultimoSinalEm || b.startedAt) > BATALHA_SILENCIO_MS;
-  const velhaDemais = agora - b.startedAt > BATALHA_LIMITE_MS;
-  if (!passouDoFim && !semSinal && !velhaDemais) return false;
-
-  // batalha que nem chegou a pontuar (convite cancelado, por ex.) some sem
-  // virar registro — senão o histórico enche de 0 x 0
-  if (!b.meuScore && !b.scoreOponente) {
-    state.currentBattle = null;
+  function registrarCartaGanha(uniqueId, nickname, avatar, tipo, handle, qtd = 1) {
+    const ficha = garantirFichaDeCarta(uniqueId, nickname, avatar, handle);
+    if (!ficha) return false;
+    const agora = Date.now();
+    // Uma entrada por premiação. Se o evento identificou a carta (raro — o prêmio
+    // costuma vir genérico), já preenche os itens e a premiação não nasce
+    // pendente; senão fica esperando alguém informar.
+    for (let i = 0; i < Math.max(1, qtd); i++) {
+      const entrada = { em: agora, tipo: tipo || null };
+      if (tipo) entrada.itens = { [tipo]: 1 };
+      ficha.ganhas.push(entrada);
+    }
+    ficha.ultimaEm = agora;
     dirty = true;
     return true;
   }
 
-  finalizarBatalha(b.battleId, { interrompida: true });
-  return true;
-}
+  // NÃO abate da fila de premiações — e isso é de propósito.
+  //
+  // Confirmado em live: UMA mensagem de prêmio pode valer VÁRIAS cartas (a pessoa
+  // ganhou 2 luvas e veio uma mensagem só), e o payload não tem quantidade nem
+  // nomeia a carta. Então "premiações" e "cartas usadas" são duas contagens
+  // diferentes e não dá pra subtrair uma da outra: se a premiação valia 2 e ela
+  // usou 1, abater a premiação inteira zerava um estoque que ainda existe.
+  //
+  // O uso, ao contrário, é exato: sabe a carta, a pessoa e a quantidade.
+  // O uso é exato: a carta, a pessoa e a quantidade vêm no evento. É o lado do
+  // GASTO do estoque — o lado do GANHO vem de definirItensDaPremiacao, porque o
+  // TikTok não diz quais cartas nem quantas cada premiação deu.
+  function registrarCartaUsada(uniqueId, nickname, avatar, tipo, handle, qtd = 1) {
+    const ficha = garantirFichaDeCarta(uniqueId, nickname, avatar, handle);
+    if (!ficha) return false;
+    const n = Math.max(1, qtd);
+    const chave = tipo || 'desconhecido';
 
-function finalizarBatalha(battleId, dados = {}) {
-  const b = state.currentBattle;
-  if (!b) return null;
-  if (battleId && b.battleId !== battleId) return null;
+    ficha.usos = ficha.usos || {};
+    ficha.usos[chave] = (ficha.usos[chave] || 0) + n;
+    ficha.usadas += n;
 
-  // o evento de fim costuma chegar mais de uma vez
-  if (state.battles.some(x => x.battleId === b.battleId)) {
-    state.currentBattle = null;
+    ficha.ultimaEm = Date.now();
     dirty = true;
-    return null;
+    return true;
   }
 
-  const meuScore = dados.meuScore ?? b.meuScore;
-  const scoreOponente = dados.scoreOponente ?? b.scoreOponente;
-  const resultado = dados.resultado
-    || (meuScore > scoreOponente ? 'vitoria'
-      : meuScore < scoreOponente ? 'derrota' : 'empate');
+  // Informa (ou corrige) QUAIS cartas e QUANTAS uma premiação deu.
+  // O TikTok mostra isso no painel dele mas não manda pela live, então quem sabe
+  // é a pessoa que está assistindo. `ganhaEm` identifica a premiação.
+  function definirItensDaPremiacao(uniqueId, ganhaEm, itens) {
+    const ficha = state.cartas[uniqueId];
+    if (!ficha) return false;
 
-  const registro = {
-    battleId: b.battleId,
-    startedAt: b.startedAt,
-    endedAt: Date.now(),
-    duracaoSegundos: Math.max(0, Math.round((Date.now() - b.startedAt) / 1000)),
-    oponente: b.oponente,
-    meuScore,
-    scoreOponente,
-    resultado,
-    // marca que não veio veredito do TikTok: o adversário saiu no meio e o
-    // resultado saiu do placar em que a batalha parou
-    interrompida: !!dados.interrompida,
-    emDupla: !!b.emDupla
-  };
+    const premio = ficha.ganhas.find(c => c.em === Number(ganhaEm));
+    if (!premio) return false;
 
-  state.battles.push(registro);
-  if (state.battles.length > MAX_BATALHAS) state.battles.shift();
-  state.currentBattle = null;
-  dirty = true;
-  saveToDisk();
-  return registro;
-}
+    const limpo = {};
+    Object.entries(itens || {}).forEach(([tipo, qtd]) => {
+      const n = Math.floor(Number(qtd) || 0);
+      if (tipo && n > 0) limpo[tipo] = Math.min(n, 99);   // teto de sanidade
+    });
 
-// Se a live cair no meio da batalha, não deixa uma batalha fantasma pendurada.
-function cancelarBatalhaEmAndamento() {
-  if (!state.currentBattle) return;
-  state.currentBattle = null;
-  dirty = true;
-}
+    premio.itens = limpo;
+    ficha.ultimaEm = Date.now();
+    dirty = true;
+    saveToDisk();
+    return true;
+  }
 
-function getBattleStats() {
-  const batalhas = state.battles;
-  const conta = r => batalhas.filter(b => b.resultado === r).length;
-  const vitorias = conta('vitoria');
-  const derrotas = conta('derrota');
-  const empates = conta('empate');
+  function getEstoqueCartas() {
+    expirarCartas();
+    const agora = Date.now();
+    return Object.values(state.cartas)
+      .map(ficha => {
+        const maisAntiga = ficha.ganhas.length ? Math.min(...ficha.ganhas.map(c => c.em)) : null;
+        return {
+          uniqueId: ficha.uniqueId,
+          handle: ficha.handle || null,
+          nickname: ficha.nickname,
+          avatar: ficha.avatar,
+          // premiações VÁLIDAS (dentro dos 5 dias). Cada uma vale 1 OU MAIS
+          // cartas — por isso o front mostra "≥" e não um número seco.
+          premiacoes: ficha.ganhas.length,
+          pendentes: ficha.ganhas.filter(c => !c.itens || Object.keys(c.itens).length === 0).length,
+          usos: ficha.usos || {},
+          usadas: ficha.usadas,
+          expiradas: ficha.expiradas,
+          totalPremiacoes: ficha.ganhas.length + ficha.expiradas,
+          // quanto falta pra próxima vencer, em ms (null = não tem carta na mão)
+          proximaExpiraEmMs: maisAntiga === null
+            ? null
+            : Math.max(0, VALIDADE_CARTA_MS - (agora - maisAntiga)),
+          // Uma entrada por PREMIAÇÃO: a hora é exata (vem do evento) e os itens
+          // são os informados. `pendente` = ainda ninguém disse o que veio nela.
+          cartas: ficha.ganhas
+            .map(c => ({
+              ganhaEm: c.em,
+              expiraEmMs: Math.max(0, VALIDADE_CARTA_MS - (agora - c.em)),
+              itens: c.itens || {},
+              pendente: !c.itens || Object.keys(c.itens).length === 0
+            }))
+            .sort((a, b) => a.expiraEmMs - b.expiraEmMs),
 
-  // agrupa por adversário
-  const porRival = {};
-  batalhas.forEach(b => {
-    const id = b.oponente?.uniqueId || b.oponente?.nickname || '?';
-    if (!porRival[id]) {
-      porRival[id] = {
-        uniqueId: id,
-        nickname: b.oponente?.nickname || id,
-        avatar: b.oponente?.avatar || null,
-        batalhas: 0, vitorias: 0, derrotas: 0, empates: 0,
-        diamantesFeitos: 0, diamantesTomados: 0,
-        ultimaEm: 0
-      };
+          // ESTOQUE POR ITEM: o que foi informado nas premiações no prazo, menos
+          // o que a pessoa já jogou. É o "tem 2 luvas e 1 martelo".
+          estoque: (() => {
+            const ganho = {};
+            ficha.ganhas.forEach(c => {
+              Object.entries(c.itens || {}).forEach(([t, n]) => {
+                ganho[t] = (ganho[t] || 0) + n;
+              });
+            });
+            const usos = ficha.usos || {};
+            const saldo = {};
+            Object.keys(ganho).forEach(t => {
+              const resta = ganho[t] - (usos[t] || 0);
+              if (resta > 0) saldo[t] = resta;
+            });
+            return saldo;
+          })(),
+          ultimaEm: ficha.ultimaEm
+        };
+      })
+      .filter(f => f.totalPremiacoes > 0 || f.usadas > 0)
+      // quem tem premiação válida primeiro (é quem pode jogar carta agora)
+      .sort((a, b) => b.premiacoes - a.premiacoes || b.usadas - a.usadas || a.nickname.localeCompare(b.nickname));
+  }
+
+  function getRanking() {
+    return Object.values(state.users)
+      .map(u => ({ ...u, score: u.likes + u.gifts_value * 10 }))
+      .sort((a, b) => b.score - a.score);
+  }
+
+  function getUserProfile(uniqueId) {
+    const user = state.users[uniqueId];
+    // 200 em vez de 100 porque agora comentários entram um por linha e não
+    // podem empurrar os presentes/likes pra fora do histórico.
+    const history = state.actions
+      .filter(a => a.uniqueId === uniqueId)
+      .sort((a, b) => (b.timestamp - a.timestamp) || ((b.seq || 0) - (a.seq || 0)))
+      .slice(0, 200);
+    return { user, history };
+  }
+
+  function resetAll() {
+    state.users = {};
+    state.actions = [];
+    state.tropa = [];
+    state.sessions = [];
+    state.battles = [];
+    state.currentBattle = null;
+    state.currentSessionSnapshot = null;
+    state.cartas = {};
+    state.global = {
+      totalDiamonds: 0, totalLikes: 0, totalComments: 0, totalFollows: 0, totalShares: 0,
+      peakViewers: 0, currentViewers: 0, uniqueViewers: 0, startedAt: Date.now(),
+      lastLiveDurationSeconds: 0, sessionPeakViewers: 0
+    };
+    Object.keys(pendingLikes).forEach(k => delete pendingLikes[k]);
+    Object.keys(likeActionRef).forEach(k => delete likeActionRef[k]);
+    Object.keys(giftActionRef).forEach(k => delete giftActionRef[k]);
+    Object.keys(powerUpActionRef).forEach(k => delete powerUpActionRef[k]);
+    Object.keys(commentActionRefs).forEach(k => delete commentActionRefs[k]);
+    dirty = true;
+    saveToDisk();
+  }
+
+  // Comentários: além de contar, guardamos o texto pra poder mostrar no perfil.
+  // Diferente de like/presente, cada comentário é uma linha própria (o texto muda
+  // toda vez), então limitamos quantos ficam guardados por pessoa.
+  const MAX_COMMENTS_PER_USER = 50;
+
+  function addComment(uniqueId, nickname, avatar, text) {
+    state.global.totalComments += 1;
+    dirty = true;
+    if (!ensureUser(uniqueId, nickname, avatar)) return false;
+    state.users[uniqueId].comments += 1;
+    logCommentAction(uniqueId, nickname, text);
+    return true;
+  }
+
+  // Fila dos comentários guardados de cada pessoa (mais antigo primeiro), pra não
+  // precisar varrer state.actions inteiro a cada comentário que chega.
+  const commentActionRefs = {}; // uniqueId -> [action, ...]
+
+  // Vários comentários caem no mesmo milissegundo numa live movimentada, então
+  // timestamp sozinho não ordena. seq é o desempate (sempre crescente).
+  let nextSeq = state.actions.reduce((max, a) => Math.max(max, a.seq || 0), 0) + 1;
+
+  function commentQueue(uniqueId) {
+    if (!commentActionRefs[uniqueId]) {
+      // primeira vez no processo: remonta a fila do que veio do live.json
+      commentActionRefs[uniqueId] = state.actions.filter(
+        a => a.type === 'comment' && a.uniqueId === uniqueId
+      );
     }
-    const r = porRival[id];
-    r.batalhas += 1;
-    if (b.resultado === 'vitoria') r.vitorias += 1;
-    else if (b.resultado === 'derrota') r.derrotas += 1;
-    else r.empates += 1;
-    r.diamantesFeitos += b.meuScore || 0;
-    r.diamantesTomados += b.scoreOponente || 0;
-    if (b.endedAt > r.ultimaEm) r.ultimaEm = b.endedAt;
-    if (b.oponente?.avatar) r.avatar = b.oponente.avatar;
-    if (b.oponente?.nickname) r.nickname = b.oponente.nickname;
-  });
+    return commentActionRefs[uniqueId];
+  }
 
-  const rivais = Object.values(porRival)
-    .sort((a, b) => b.batalhas - a.batalhas || b.vitorias - a.vitorias);
+  function logCommentAction(uniqueId, nickname, text) {
+    const detail = (text || '').trim();
+    if (!detail) return; // reação/figurinha sem texto: só entra na contagem
+
+    // A fila tem que ser montada ANTES do push: depois do reinício ela é
+    // remontada a partir de state.actions, e o comentário novo entraria
+    // duas vezes (derrubando um antigo a mais do que devia).
+    const fila = commentQueue(uniqueId);
+
+    const action = {
+      uniqueId, nickname, type: 'comment', detail,
+      value: 0, count: 1, timestamp: Date.now(), seq: nextSeq++
+    };
+    state.actions.push(action);
+
+    // Janela deslizante: entra o novo, sai o mais antigo. A contagem em
+    // users[].comments e o total global NÃO são tocados — só o texto guardado
+    // é descartado, pra não encher o live.json de linha.
+    fila.push(action);
+    while (fila.length > MAX_COMMENTS_PER_USER) {
+      const antigo = fila.shift();
+      const i = state.actions.indexOf(antigo);
+      if (i !== -1) state.actions.splice(i, 1);
+    }
+  }
+
+  function addFollow(uniqueId, nickname, avatar) {
+    if (!ensureUser(uniqueId, nickname, avatar)) return false;
+    if (state.users[uniqueId].followed) return false; // já tinha seguido antes
+    state.users[uniqueId].followed = true;
+    state.global.totalFollows += 1;
+    dirty = true;
+    return true;
+  }
+
+  function addShare(uniqueId, nickname, avatar) {
+    if (!ensureUser(uniqueId, nickname, avatar)) return false;
+    if (state.users[uniqueId].shared) return false;
+    state.users[uniqueId].shared = true;
+    state.global.totalShares += 1;
+    dirty = true;
+    return true;
+  }
+
+  function updateViewerCount(count) {
+    state.global.currentViewers = count;
+    if (count > state.global.peakViewers) state.global.peakViewers = count;
+    if (count > (state.global.sessionPeakViewers || 0)) state.global.sessionPeakViewers = count;
+    dirty = true;
+  }
+
+  // Chamado quando a conexão com a live é estabelecida (live entrou no ar).
+  // Tira uma "foto" dos totais atuais pra depois calcular só o que essa live
+  // específica gerou (delta), e zera o pico de espectadores dessa sessão.
+  // Batida de coração enquanto a live está no ar. Serve pra saber, depois de um
+  // restart do servidor, se a live que estava rodando é a MESMA (retoma a
+  // contagem) ou se já é outra (começa do zero).
+  const RETOMAR_SESSAO_MS = 3 * 60 * 1000;
+
+  function heartbeat() {
+    if (!state.global.liveActive) return;
+    state.global.lastActivityAt = Date.now();
+    dirty = true;
+  }
+
+  function markLiveOnline() {
+    const now = Date.now();
+
+    // Um deploy/restart no meio da live derrubava startedAt pro instante da
+    // reconexão e a duração voltava do zero. Se a live estava no ar e a última
+    // batida foi agora há pouco, é a mesma live: mantém o relógio andando.
+    const mesmaLive =
+      state.global.liveActive &&
+      state.currentSessionSnapshot &&
+      now - (state.global.lastActivityAt || 0) < RETOMAR_SESSAO_MS;
+
+    state.global.liveActive = true;
+    state.global.lastActivityAt = now;
+
+    if (mesmaLive) {
+      state.global.startedAt = state.currentSessionSnapshot.startedAt;
+      dirty = true;
+      return;
+    }
+
+    state.global.startedAt = now;
+    state.global.sessionPeakViewers = 0;
+
+    state.currentSessionSnapshot = {
+      startedAt: now,
+      totalDiamonds: state.global.totalDiamonds,
+      totalLikes: state.global.totalLikes,
+      totalComments: state.global.totalComments,
+      totalFollows: state.global.totalFollows,
+      totalShares: state.global.totalShares
+    };
+    dirty = true;
+  }
+
+  // Chamado quando a live cai/termina. Calcula os números só dessa live
+  // (delta contra o snapshot tirado no markLiveOnline) e guarda no histórico.
+  // O uptime não zera: fica congelado na duração dessa live até a próxima começar.
+  function markLiveOffline() {
+    if (state.global.liveActive && state.currentSessionSnapshot) {
+      const snap = state.currentSessionSnapshot;
+      const endedAt = Date.now();
+      const durationSeconds = Math.floor((endedAt - snap.startedAt) / 1000);
+
+      // só registra no histórico lives com alguma duração mínima (evita "lixo"
+      // de reconexões picadas de poucos segundos)
+      if (durationSeconds >= 10) {
+        state.sessions.push({
+          id: snap.startedAt,
+          startedAt: snap.startedAt,
+          endedAt,
+          durationSeconds,
+          totalDiamonds: state.global.totalDiamonds - snap.totalDiamonds,
+          totalLikes: state.global.totalLikes - snap.totalLikes,
+          totalComments: state.global.totalComments - snap.totalComments,
+          totalFollows: state.global.totalFollows - snap.totalFollows,
+          totalShares: state.global.totalShares - snap.totalShares,
+          peakViewers: state.global.sessionPeakViewers || 0
+        });
+        if (state.sessions.length > 200) state.sessions.shift(); // limite de segurança
+        state.global.lastLiveDurationSeconds = durationSeconds;
+      }
+    }
+    state.global.liveActive = false;
+    state.currentSessionSnapshot = null;
+    dirty = true;
+  }
+
+  // ---------- BATALHAS (PK / link mic) ----------
+  const MAX_BATALHAS = 500;
+
+  function iniciarBatalha(battleId, oponente, terminaEm, times) {
+    // o TikTok repete o evento de abertura; não recomeça a mesma batalha
+    if (state.currentBattle && state.currentBattle.battleId === battleId) {
+      return state.currentBattle;
+    }
+    state.currentBattle = {
+      battleId,
+      startedAt: Date.now(),
+      oponente, // { uniqueId, nickname, avatar }
+      meuScore: 0,
+      scoreOponente: 0,
+      terminaEm: terminaEm || null,  // horário previsto de fim, quando o TikTok manda
+      ultimoSinalEm: Date.now(),     // última vez que o placar mexeu
+      // batalha de dupla: guardamos os times pra somar o placar do lado certo
+      emDupla: !!(times && times.meuTimeId),
+      meuTimeId: times?.meuTimeId || null,
+      timeRivalId: times?.timeRivalId || null
+    };
+    dirty = true;
+    return state.currentBattle;
+  }
+
+  function atualizarPlacarBatalha(battleId, meuScore, scoreOponente) {
+    const b = state.currentBattle;
+    if (!b) return null;
+    if (battleId && b.battleId !== battleId) return null;
+    b.meuScore = meuScore;
+    b.scoreOponente = scoreOponente;
+    b.ultimoSinalEm = Date.now();
+    dirty = true;
+    return b;
+  }
+
+  // Quando o adversário abandona no meio, o TikTok simplesmente para de mandar
+  // evento — não vem FINISH nenhum. Sem isso a batalha ficava "ao vivo" pra
+  // sempre no painel, travada no último placar.
+  const BATALHA_SILENCIO_MS = 3 * 60 * 1000;   // placar parado por tanto tempo
+  const BATALHA_LIMITE_MS = 20 * 60 * 1000;    // teto absoluto, se nada mais servir
+
+  function fecharBatalhaAbandonada() {
+    const b = state.currentBattle;
+    if (!b) return false;
+
+    const agora = Date.now();
+    const passouDoFim = b.terminaEm && agora > b.terminaEm + 60 * 1000;
+    const semSinal = agora - (b.ultimoSinalEm || b.startedAt) > BATALHA_SILENCIO_MS;
+    const velhaDemais = agora - b.startedAt > BATALHA_LIMITE_MS;
+    if (!passouDoFim && !semSinal && !velhaDemais) return false;
+
+    // batalha que nem chegou a pontuar (convite cancelado, por ex.) some sem
+    // virar registro — senão o histórico enche de 0 x 0
+    if (!b.meuScore && !b.scoreOponente) {
+      state.currentBattle = null;
+      dirty = true;
+      return true;
+    }
+
+    finalizarBatalha(b.battleId, { interrompida: true });
+    return true;
+  }
+
+  function finalizarBatalha(battleId, dados = {}) {
+    const b = state.currentBattle;
+    if (!b) return null;
+    if (battleId && b.battleId !== battleId) return null;
+
+    // o evento de fim costuma chegar mais de uma vez
+    if (state.battles.some(x => x.battleId === b.battleId)) {
+      state.currentBattle = null;
+      dirty = true;
+      return null;
+    }
+
+    const meuScore = dados.meuScore ?? b.meuScore;
+    const scoreOponente = dados.scoreOponente ?? b.scoreOponente;
+    const resultado = dados.resultado
+      || (meuScore > scoreOponente ? 'vitoria'
+        : meuScore < scoreOponente ? 'derrota' : 'empate');
+
+    const registro = {
+      battleId: b.battleId,
+      startedAt: b.startedAt,
+      endedAt: Date.now(),
+      duracaoSegundos: Math.max(0, Math.round((Date.now() - b.startedAt) / 1000)),
+      oponente: b.oponente,
+      meuScore,
+      scoreOponente,
+      resultado,
+      // marca que não veio veredito do TikTok: o adversário saiu no meio e o
+      // resultado saiu do placar em que a batalha parou
+      interrompida: !!dados.interrompida,
+      emDupla: !!b.emDupla
+    };
+
+    state.battles.push(registro);
+    if (state.battles.length > MAX_BATALHAS) state.battles.shift();
+    state.currentBattle = null;
+    dirty = true;
+    saveToDisk();
+    return registro;
+  }
+
+  // Se a live cair no meio da batalha, não deixa uma batalha fantasma pendurada.
+  function cancelarBatalhaEmAndamento() {
+    if (!state.currentBattle) return;
+    state.currentBattle = null;
+    dirty = true;
+  }
+
+  function getBattleStats() {
+    const batalhas = state.battles;
+    const conta = r => batalhas.filter(b => b.resultado === r).length;
+    const vitorias = conta('vitoria');
+    const derrotas = conta('derrota');
+    const empates = conta('empate');
+
+    // agrupa por adversário
+    const porRival = {};
+    batalhas.forEach(b => {
+      const id = b.oponente?.uniqueId || b.oponente?.nickname || '?';
+      if (!porRival[id]) {
+        porRival[id] = {
+          uniqueId: id,
+          nickname: b.oponente?.nickname || id,
+          avatar: b.oponente?.avatar || null,
+          batalhas: 0, vitorias: 0, derrotas: 0, empates: 0,
+          diamantesFeitos: 0, diamantesTomados: 0,
+          ultimaEm: 0
+        };
+      }
+      const r = porRival[id];
+      r.batalhas += 1;
+      if (b.resultado === 'vitoria') r.vitorias += 1;
+      else if (b.resultado === 'derrota') r.derrotas += 1;
+      else r.empates += 1;
+      r.diamantesFeitos += b.meuScore || 0;
+      r.diamantesTomados += b.scoreOponente || 0;
+      if (b.endedAt > r.ultimaEm) r.ultimaEm = b.endedAt;
+      if (b.oponente?.avatar) r.avatar = b.oponente.avatar;
+      if (b.oponente?.nickname) r.nickname = b.oponente.nickname;
+    });
+
+    const rivais = Object.values(porRival)
+      .sort((a, b) => b.batalhas - a.batalhas || b.vitorias - a.vitorias);
+
+    return {
+      total: batalhas.length,
+      vitorias,
+      derrotas,
+      empates,
+      // % só faz sentido sobre batalhas decididas
+      aproveitamento: (vitorias + derrotas)
+        ? Math.round((vitorias / (vitorias + derrotas)) * 100)
+        : 0,
+      rivais,
+      maisEnfrentado: rivais[0] || null,
+      maisVencido: [...rivais].sort((a, b) => b.vitorias - a.vitorias)[0] || null,
+      carrasco: [...rivais].sort((a, b) => b.derrotas - a.derrotas)[0] || null,
+      ultimas: [...batalhas].sort((a, b) => b.endedAt - a.endedAt).slice(0, 30),
+      emAndamento: state.currentBattle
+    };
+  }
+
+  function getGlobalStats() {
+    const uptimeSeconds = state.global.liveActive
+      ? Math.floor((Date.now() - state.global.startedAt) / 1000)
+      : (state.global.lastLiveDurationSeconds || 0);
+    return { ...state.global, uptimeSeconds };
+  }
+
+  // Histórico de lives já finalizadas (mais recente primeiro), até o último reset.
+  function getSessions() {
+    return [...state.sessions].sort((a, b) => b.startedAt - a.startedAt);
+  }
 
   return {
-    total: batalhas.length,
-    vitorias,
-    derrotas,
-    empates,
-    // % só faz sentido sobre batalhas decididas
-    aproveitamento: (vitorias + derrotas)
-      ? Math.round((vitorias / (vitorias + derrotas)) * 100)
-      : 0,
-    rivais,
-    maisEnfrentado: rivais[0] || null,
-    maisVencido: [...rivais].sort((a, b) => b.vitorias - a.vitorias)[0] || null,
-    carrasco: [...rivais].sort((a, b) => b.derrotas - a.derrotas)[0] || null,
-    ultimas: [...batalhas].sort((a, b) => b.endedAt - a.endedAt).slice(0, 30),
-    emAndamento: state.currentBattle
+    addLikes, addGift, addPowerUp, getRanking, getUserProfile, resetAll,
+    registrarCartaGanha, registrarCartaUsada, getEstoqueCartas, VALIDADE_CARTA_MS,
+    definirItensDaPremiacao,
+    getGlobalStats, updateViewerCount, addComment, addFollow, addShare,
+    markLiveOnline, markLiveOffline, checkLevelUp, getTropa, limparTropa, getSessions,
+    heartbeat,
+    registrarSuperfa, removerDaTropa, registrarSubidaDeNivel, setLogListener,
+    iniciarBatalha, atualizarPlacarBatalha, finalizarBatalha, fecharBatalhaAbandonada,
+    cancelarBatalhaEmAndamento, getBattleStats,
+    saveToDisk, fechar, dono, espelharNoJson
   };
 }
 
-function getGlobalStats() {
-  const uptimeSeconds = state.global.liveActive
-    ? Math.floor((Date.now() - state.global.startedAt) / 1000)
-    : (state.global.lastLiveDurationSeconds || 0);
-  return { ...state.global, uptimeSeconds };
-}
-
-// Histórico de lives já finalizadas (mais recente primeiro), até o último reset.
-function getSessions() {
-  return [...state.sessions].sort((a, b) => b.startedAt - a.startedAt);
-}
-
-module.exports = {
-  addLikes, addGift, addPowerUp, getRanking, getUserProfile, resetAll,
-  registrarCartaGanha, registrarCartaUsada, getEstoqueCartas, VALIDADE_CARTA_MS,
-  definirItensDaPremiacao,
-  getGlobalStats, updateViewerCount, addComment, addFollow, addShare,
-  markLiveOnline, markLiveOffline, checkLevelUp, getTropa, limparTropa, getSessions,
-  heartbeat,
-  registrarSuperfa, removerDaTropa, registrarSubidaDeNivel, setLogListener,
-  iniciarBatalha, atualizarPlacarBatalha, finalizarBatalha, fecharBatalhaAbandonada,
-  cancelarBatalhaEmAndamento, getBattleStats
-};
+module.exports = { paraDono, gravarTodos, instancias };

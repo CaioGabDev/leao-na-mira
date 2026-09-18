@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Ranking da Live</title>
+<title>{{marca.titulo}}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bungee&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
@@ -625,6 +625,7 @@
 
   @keyframes flashUp { 0% { border-left-color: var(--green); } 100% { border-left-color: transparent; } }
 </style>
+{{tema}}
 </head>
 <body>
 
@@ -637,10 +638,10 @@
 
     <div class="topbar-row">
       <div class="brand">
-        <div class="brand-mark">🔥</div>
+        <div class="brand-mark">{{marca.emoji}}</div>
         <div>
-          <h1 class="brand-title">Ranking da Live</h1>
-          <p class="brand-sub">Quem mais tá na treta hoje</p>
+          <h1 class="brand-title">{{marca.titulo}}</h1>
+          <p class="brand-sub">{{marca.sub}}</p>
         </div>
       </div>
 
@@ -653,6 +654,7 @@
     <nav class="topbar-row toolbar">
       <a class="app-btn app-btn--primary" href="/mural.html">🖼️ Mural da Tropa</a>
       <a class="app-btn" href="/diagnostico.html">🔬 Diagnóstico</a>
+      {{linkAdmin}}
       <span class="sep"></span>
       <button class="app-btn" id="toggleDinheiroBtn">👁️ Ocultar diamantes</button>
       <span class="spacer"></span>

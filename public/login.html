@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Login — Ranking da Live</title>
+<title>Login — {{marca.titulo}}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bungee&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
@@ -100,12 +100,13 @@
 
   :where(input, button):focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 </style>
+{{tema}}
 </head>
 <body>
 
 <div class="box">
-  <div class="mark">🔥</div>
-  <h1>Ranking da Live</h1>
+  <div class="mark">{{marca.emoji}}</div>
+  <h1>{{marca.titulo}}</h1>
   <p class="sub">Faça login pra acessar</p>
 
   <form id="loginForm">
