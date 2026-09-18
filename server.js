@@ -130,6 +130,9 @@ const PK_CARTA_POR_MSGTYPE = {
   6:  { campo: 'useSpecialEffectCard',  tipo: 'efeito'  },
   7:  { campo: 'usePotionCard',         tipo: 'pocao'   },
   8:  { campo: 'useWaveCard',           tipo: 'onda'    },
+  // O raio vem em tres cartas ("no. 1/2/3 booster") = raio 1x, 2x e 3x. O
+  // protocolo so tem campo pro 2 e pro 3; o de 1x nao existe aqui, entao ele
+  // chega pelo balde generico (msgType 6) e quem identifica e o texto.
   10: { campo: 'useTop2Card',           tipo: 'booster2'},
   11: { campo: 'useTop3Card',           tipo: 'booster3'},
   // "vault glove" é outra carta, não a luva do dia a dia — id separado pra não
@@ -168,8 +171,10 @@ const PK_CARTA_POR_MSGTYPE = {
 const PALAVRAS_DA_CARTA = [
   // específicos primeiro
   [/stun.?hammer|hammer|martelo/i,          'martelo'  ],
-  [/no[\s._-]*2(?!\d)|top.?2/i,             'booster2' ], // "no. 2 booster" = raio
-  [/no[\s._-]*3(?!\d)|top.?3/i,             'booster3' ],
+  // o (?!\d) impede que "top 10" / "no. 20" caiam num dos raios
+  [/no[\s._-]*1(?!\d)|top.?1(?!\d)/i,        'booster1' ], // "no. 1 booster" = raio 1x
+  [/no[\s._-]*2(?!\d)|top.?2(?!\d)/i,        'booster2' ], // "no. 2 booster" = raio 2x
+  [/no[\s._-]*3(?!\d)|top.?3(?!\d)/i,        'booster3' ], // "no. 3 booster" = raio 3x
   [/glove|luva/i,                           'luva'     ],
   [/smoke|fog|n[eé]voa|nevoa/i,             'nevoa'    ],
   [/extra.?time|timer|tempo/i,              'tempo'    ],
@@ -199,8 +204,9 @@ function quantidadeDoTexto(texto) {
 // depois do texto.
 const IMAGEM_DA_CARTA = [
   [/card_crit/i,          'luva'     ],
-  [/top2_buffer|top_?2/i, 'booster2' ],
-  [/top3_buffer|top_?3/i, 'booster3' ],
+  [/top1_buffer|top_?1(?!\d)/i, 'booster1' ],
+  [/top2_buffer|top_?2(?!\d)/i, 'booster2' ],
+  [/top3_buffer|top_?3(?!\d)/i, 'booster3' ],
   [/hammer/i,             'martelo'  ],
   [/heart_?me/i,          'coracao'  ],
   [/smoke|fog/i,          'nevoa'    ],

@@ -1497,8 +1497,10 @@
     // booster2 = "no. 2 booster" no protocolo = o que a gente chama de raio.
     const NOME_DO_TIPO = {
       martelo:  '🔨 Martelo',
-      booster2: '⚡ Raio',
-      booster3: '🔥 Nº 3',
+      // o TikTok chama de "no. 1/2/3 booster"; pra tropa é o raio 1x, 2x e 3x
+      booster1: '⚡ Raio 1x',
+      booster2: '⚡ Raio 2x',
+      booster3: '⚡ Raio 3x',
       luva:     '🧤 Luva',          // "boosting glove" no TikTok
       luva_cofre: '🧰 Luva cofre',  // "vault glove", outra carta
       nevoa:    '🌫️ Névoa',
@@ -1514,7 +1516,9 @@
 
     // só o emoji, pra caber na etiqueta da premiação
     const ICONE_DO_TIPO = {
-      martelo: '🔨', booster2: '⚡', booster3: '🔥', luva: '🧤', luva_cofre: '🧰',
+      // os tres raios levam o número junto, senão a etiqueta não diz qual é
+      martelo: '🔨', booster1: '⚡1x', booster2: '⚡2x', booster3: '⚡3x',
+      luva: '🧤', luva_cofre: '🧰',
       nevoa: '🌫️', tempo: '⏱️', critico: '💥', pocao: '🧪', onda: '🌊',
       coracao: '💗', efeito: '✨', desconhecido: '🎴'
     };
@@ -1607,7 +1611,7 @@
                     </button>`;
           }
           const itens = Object.entries(c.itens)
-            .map(([t, n]) => `${ICONE_DO_TIPO[t] || '🎴'}${n > 1 ? n : ''}`).join(' ');
+            .map(([t, n]) => `${ICONE_DO_TIPO[t] || '🎴'}${n > 1 ? ' ×' + n : ''}`).join(' ');
           return `<button class="pu-carta ${urge ? 'urgente' : ''}" data-uid="${esc2(p.uniqueId)}" data-em="${c.ganhaEm}">
                     <b>${curto(falta)}</b> <i class="pu-itens">${itens}</i>
                   </button>`;
@@ -1638,8 +1642,11 @@
     }
 
     // ---------- editor de itens de uma premiação ----------
-    const ORDEM_ITENS = ['luva', 'martelo', 'booster2', 'booster3', 'nevoa', 'tempo',
-                         'critico', 'pocao', 'onda', 'coracao', 'efeito'];
+    // Só os itens que a tropa realmente joga na batalha — é o que aparece na
+    // hora de informar. Se algum dia aparecer outro, ele entra pela detecção
+    // automática e o editor mostra ele no fim (ver renderEditor).
+    const ORDEM_ITENS = ['luva', 'tempo', 'booster1', 'booster2', 'booster3',
+                         'nevoa', 'martelo'];
     let editando = null;   // { uniqueId, ganhaEm, itens }
 
     function abrirEditor(uniqueId, ganhaEm) {
@@ -1652,7 +1659,10 @@
 
     function renderEditor(pessoa) {
       if (!editando) { editorEl.hidden = true; editorEl.innerHTML = ''; return; }
-      const linhas = ORDEM_ITENS.map(t => {
+      // item marcado pela detecção automática que não está na lista curta entra
+      // no fim: nada fica escondido e travado sem poder ser corrigido
+      const extras = Object.keys(editando.itens).filter(t => !ORDEM_ITENS.includes(t));
+      const linhas = ORDEM_ITENS.concat(extras).map(t => {
         const n = editando.itens[t] || 0;
         return `<div class="pu-ed-linha ${n ? 'ativo' : ''}">
                   <span class="pu-ed-nome">${NOME_DO_TIPO[t] || t}</span>
