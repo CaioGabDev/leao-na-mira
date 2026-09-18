@@ -467,7 +467,7 @@ function garantirFichaDeCarta(uniqueId, nickname, avatar, handle) {
   if (!ficha) {
     ficha = state.cartas[uniqueId] = {
       uniqueId, handle: handle || null, nickname: nickname || uniqueId, avatar: avatar || null,
-      ganhas: [], usadas: 0, expiradas: 0, ultimaEm: Date.now()
+      ganhas: [], usos: {}, usadas: 0, expiradas: 0, ultimaEm: Date.now()
     };
   }
   // mesmo cuidado do ensureUser: só sobrescreve com o que veio de verdade
@@ -477,25 +477,37 @@ function garantirFichaDeCarta(uniqueId, nickname, avatar, handle) {
   return ficha;
 }
 
-function registrarCartaGanha(uniqueId, nickname, avatar, tipo, handle) {
+function registrarCartaGanha(uniqueId, nickname, avatar, tipo, handle, qtd = 1) {
   const ficha = garantirFichaDeCarta(uniqueId, nickname, avatar, handle);
   if (!ficha) return false;
-  ficha.ganhas.push({ em: Date.now(), tipo: tipo || null });
-  ficha.ultimaEm = Date.now();
+  const agora = Date.now();
+  // Cada carta é uma entrada própria: duas luvas ganhas juntas vencem juntas,
+  // mas uma ganha depois tem prazo próprio.
+  for (let i = 0; i < Math.max(1, qtd); i++) {
+    ficha.ganhas.push({ em: agora, tipo: tipo || null });
+  }
+  ficha.ultimaEm = agora;
   dirty = true;
   return true;
 }
 
-function registrarCartaUsada(uniqueId, nickname, avatar, tipo, handle) {
+// NÃO abate da fila de premiações — e isso é de propósito.
+//
+// Confirmado em live: UMA mensagem de prêmio pode valer VÁRIAS cartas (a pessoa
+// ganhou 2 luvas e veio uma mensagem só), e o payload não tem quantidade nem
+// nomeia a carta. Então "premiações" e "cartas usadas" são duas contagens
+// diferentes e não dá pra subtrair uma da outra: se a premiação valia 2 e ela
+// usou 1, abater a premiação inteira zerava um estoque que ainda existe.
+//
+// O uso, ao contrário, é exato: sabe a carta, a pessoa e a quantidade.
+function registrarCartaUsada(uniqueId, nickname, avatar, tipo, handle, qtd = 1) {
   const ficha = garantirFichaDeCarta(uniqueId, nickname, avatar, handle);
   if (!ficha) return false;
-  expirarCartas();
-  // tira a mais antiga do mesmo tipo; se o tipo não bater (ou a carta tiver
-  // sido ganha antes da gente estar ouvindo), tira a mais antiga da fila
-  let i = tipo ? ficha.ganhas.findIndex(c => c.tipo === tipo) : -1;
-  if (i < 0 && ficha.ganhas.length) i = 0;
-  if (i >= 0) ficha.ganhas.splice(i, 1);
-  ficha.usadas += 1;
+  const n = Math.max(1, qtd);
+  const chave = tipo || 'desconhecido';
+  ficha.usos = ficha.usos || {};
+  ficha.usos[chave] = (ficha.usos[chave] || 0) + n;
+  ficha.usadas += n;
   ficha.ultimaEm = Date.now();
   dirty = true;
   return true;
@@ -512,21 +524,19 @@ function getEstoqueCartas() {
         handle: ficha.handle || null,
         nickname: ficha.nickname,
         avatar: ficha.avatar,
-        emMaos: ficha.ganhas.length,
+        // premiações VÁLIDAS (dentro dos 5 dias). Cada uma vale 1 OU MAIS
+        // cartas — por isso o front mostra "≥" e não um número seco.
+        premiacoes: ficha.ganhas.length,
+        usos: ficha.usos || {},
         usadas: ficha.usadas,
         expiradas: ficha.expiradas,
-        totalGanhas: ficha.ganhas.length + ficha.usadas + ficha.expiradas,
+        totalPremiacoes: ficha.ganhas.length + ficha.expiradas,
         // quanto falta pra próxima vencer, em ms (null = não tem carta na mão)
         proximaExpiraEmMs: maisAntiga === null
           ? null
           : Math.max(0, VALIDADE_CARTA_MS - (agora - maisAntiga)),
-        porTipo: ficha.ganhas.reduce((acc, c) => {
-          const k = c.tipo || 'desconhecido';
-          acc[k] = (acc[k] || 0) + 1;
-          return acc;
-        }, {}),
-        // Cada carta tem o SEU prazo: um martelo ganho anteontem vence em 3
-        // dias e uma luva ganha hoje vence em 5. Vai ordenado do mais urgente.
+        // Uma entrada por PREMIAÇÃO, cada uma com o seu prazo — é isso que é
+        // exato: a hora em que caiu. A quantidade de cartas dentro dela, não.
         cartas: ficha.ganhas
           .map(c => ({
             tipo: c.tipo || 'desconhecido',
@@ -537,8 +547,9 @@ function getEstoqueCartas() {
         ultimaEm: ficha.ultimaEm
       };
     })
-    .filter(f => f.totalGanhas > 0)
-    .sort((a, b) => b.emMaos - a.emMaos || b.totalGanhas - a.totalGanhas || a.nickname.localeCompare(b.nickname));
+    .filter(f => f.totalPremiacoes > 0 || f.usadas > 0)
+    // quem tem premiação válida primeiro (é quem pode jogar carta agora)
+    .sort((a, b) => b.premiacoes - a.premiacoes || b.usadas - a.usadas || a.nickname.localeCompare(b.nickname));
 }
 
 function getRanking() {

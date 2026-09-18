@@ -103,7 +103,9 @@ const POWERUP_GIFTS = ['GG', 'Rocket', 'Universe'];
 // dos campos irmãos vem preenchido, e é o msgType que diz qual ler.
 const PK_MSG_GANHOU = 4; // AWARD_CARD_NOTICE
 const PK_CARTA_POR_MSGTYPE = {
-  2:  { campo: 'useCriticalStrikeCard', tipo: 'critico' },
+  // Dado real: msgType 2 chega com o texto "sent 1 boosting glove" — é a LUVA
+  // que a tropa usa. "critical strike" é o efeito interno dela, não o nome.
+  2:  { campo: 'useCriticalStrikeCard', tipo: 'luva'    },
   3:  { campo: 'useSmokeCard',          tipo: 'nevoa'   },
   5:  { campo: 'useExtraTimeCard',      tipo: 'tempo'   },
   6:  { campo: 'useSpecialEffectCard',  tipo: 'efeito'  },
@@ -111,7 +113,9 @@ const PK_CARTA_POR_MSGTYPE = {
   8:  { campo: 'useWaveCard',           tipo: 'onda'    },
   10: { campo: 'useTop2Card',           tipo: 'booster2'},
   11: { campo: 'useTop3Card',           tipo: 'booster3'},
-  12: { campo: 'useVaultGloveCard',     tipo: 'luva'    }
+  // "vault glove" é outra carta, não a luva do dia a dia — id separado pra não
+  // misturar as duas no estoque caso apareça.
+  12: { campo: 'useVaultGloveCard',     tipo: 'luva_cofre' }
 };
 
 // ---------- DESCOBRIR QUAL CARTA FOI GANHA ----------
@@ -157,6 +161,14 @@ const PALAVRAS_DA_CARTA = [
   // genérico: só cai aqui se nada acima casou
   [/special.?effect|boost.?effect|efeito/i, 'efeito'   ]
 ];
+
+// O texto da carta traz a quantidade ("{0:user} sent 1 boosting glove").
+// Se vier 2, são duas cartas — não uma.
+function quantidadeDoTexto(texto) {
+  const m = /\bsent\s+(\d{1,2})\b/i.exec(String(texto || ''));
+  const n = m ? parseInt(m[1], 10) : 1;
+  return n >= 1 && n <= 50 ? n : 1;   // teto de sanidade
+}
 
 function tipoPelasPalavras(texto) {
   if (!texto) return null;
@@ -247,11 +259,20 @@ function anfitriaoBeneficiado(carta) {
   );
 }
 
+// Duas travas, porque em live real a primeira pode não vir:
+//   1. o anfitrião beneficiado na própria carta (autoritativo quando existe)
+//   2. se a carta não disser, olha se quem mandou é contribuinte NOSSO
+// Retorna null só quando nenhuma das duas sabe responder.
 function ehDoNossoLado(carta) {
-  if (!meuUserId) return null;               // não sei ainda: quem chama decide
+  if (!meuUserId) return null;
   const alvo = anfitriaoBeneficiado(carta);
-  if (!alvo) return null;                    // carta sem anfitrião: idem
-  return alvo === String(meuUserId);
+  if (alvo) return alvo === String(meuUserId);
+
+  const quem = usuarioDaCarta(carta);
+  const id = String(quem?.userId || quem?.displayId || '');
+  if (id && meusContribuintes.size) return meusContribuintes.has(id);
+
+  return null;
 }
 
 function broadcastPowerUps() {
@@ -1009,6 +1030,7 @@ function startTikTokConnection() {
     if (msgType === PK_MSG_GANHOU) {
       const premiados = data?.awardCardNotice?.awardedUsers || [];
       const tipoGanho = descobrirCartaGanha(data); // pode vir null
+      const qtdGanha = quantidadeDoTexto(textosDoDisplayContent(data?.awardCardNotice?.displayContent));
       premiados.forEach(bu => {
         const p = dadosDoUsuarioPK(bu?.user);
         if (!p) return;
@@ -1022,11 +1044,11 @@ function startTikTokConnection() {
             (meusContribuintes.size ? 'não está nos nossos contribuintes' : 'lista de contribuintes ainda vazia'));
           return;
         }
-        if (db.registrarCartaGanha(p.uniqueId, p.nickname, p.avatar, tipoGanho, p.handle)) {
+        if (db.registrarCartaGanha(p.uniqueId, p.nickname, p.avatar, tipoGanho, p.handle, qtdGanha)) {
           mexeu = true;
           // Sem pushFeed de propósito: o feedLine() do front não conhece esses
           // tipos e renderizaria uma linha sem texto. O lugar deles é a aba.
-          console.log(`[POWERUP] ${p.nickname} GANHOU ${tipoGanho || 'um power-up (tipo nao identificado)'}`);
+          console.log(`[POWERUP] ${p.nickname} GANHOU ${qtdGanha}x ${tipoGanho || 'power-up (tipo nao identificado)'}`);
         }
       });
     }
@@ -1050,9 +1072,10 @@ function startTikTokConnection() {
       }
       const p = dadosDoUsuarioPK(usuarioDaCarta(carta));
       const tipoUsado = descobrirCartaUsada(data, mapa);
-      if (p && db.registrarCartaUsada(p.uniqueId, p.nickname, p.avatar, tipoUsado, p.handle)) {
+      const qtdUsada = quantidadeDoTexto(textosDoDisplayContent(carta?.displayContent));
+      if (p && db.registrarCartaUsada(p.uniqueId, p.nickname, p.avatar, tipoUsado, p.handle, qtdUsada)) {
         mexeu = true;
-        console.log(`[POWERUP] ${p.nickname} USOU ${tipoUsado}`);
+        console.log(`[POWERUP] ${p.nickname} USOU ${qtdUsada}x ${tipoUsado}`);
       }
     }
 
