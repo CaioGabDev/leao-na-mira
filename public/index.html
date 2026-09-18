@@ -163,6 +163,54 @@
   }
   .pu-carta b { color: var(--gold); font-weight: 700; font-variant-numeric: tabular-nums; }
   .pu-itens { font-style: normal; letter-spacing: -1px; }
+  .pu-item {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(255,176,58,.13); border: 1px solid rgba(255,176,58,.4);
+    border-radius: var(--r-pill); padding: 4px 11px;
+    font-size: 12.5px; font-weight: 700; color: var(--ink); white-space: nowrap;
+  }
+  .pu-item b { font-family: 'Bungee', sans-serif; font-size: 13px; color: var(--gold); }
+  .pu-estoque { margin-bottom: 2px; }
+  .pu-totais { margin-top: 14px; align-items: center; }
+
+  /* etiquetas de prazo viram botao (clicar informa os itens) */
+  button.pu-carta { cursor: pointer; font-family: 'Rajdhani', sans-serif; }
+  button.pu-carta:hover { border-color: var(--gold); }
+  .pu-pendente {
+    border-style: dashed; border-color: rgba(255,176,58,.5);
+    background: rgba(255,176,58,.06);
+  }
+
+  /* editor */
+  .pu-editor { padding: 18px 20px 20px; }
+  .pu-ed-topo { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .pu-ed-topo strong { font-size: 15px; }
+  .pu-ed-topo span { font-size: 12.5px; color: var(--ink-faint); }
+  .pu-ed-fechar {
+    margin-left: auto; background: none; border: none; color: var(--ink-faint);
+    font-size: 22px; line-height: 1; cursor: pointer;
+  }
+  .pu-ed-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; }
+  .pu-ed-linha {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--card-2); border: 1px solid var(--line);
+    border-radius: var(--r-md); padding: 8px 10px;
+  }
+  .pu-ed-linha.ativo { border-color: rgba(255,176,58,.5); background: rgba(255,176,58,.07); }
+  .pu-ed-nome { flex: 1; font-size: 13px; font-weight: 700; color: var(--ink-dim); }
+  .pu-ed-linha.ativo .pu-ed-nome { color: var(--ink); }
+  .pu-ed-btn {
+    width: 26px; height: 26px; flex-shrink: 0; cursor: pointer;
+    background: #0d0907; border: 1px solid var(--line); border-radius: 50%;
+    color: var(--ink-dim); font-size: 15px; line-height: 1;
+  }
+  .pu-ed-btn:hover { border-color: var(--gold); color: var(--ink); }
+  .pu-ed-qtd {
+    min-width: 20px; text-align: center;
+    font-family: 'Bungee', sans-serif; font-size: 14px; color: var(--gold);
+  }
+  .pu-ed-pe { display: flex; gap: 8px; margin-top: 16px; }
+
   .pu-itens.pu-aberto {
     letter-spacing: .04em; font-size: 10px; text-transform: uppercase;
     color: var(--ink-faint); font-weight: 700;
@@ -175,7 +223,7 @@
     text-transform: uppercase; color: var(--ink-faint);
   }
   .pu-uso {
-    display: inline-flex; align-items: center;
+    display: inline-flex; align-items: center; gap: 5px;
     background: rgba(255,255,255,.04); border: 1px solid var(--line);
     border-radius: var(--r-pill); padding: 3px 9px;
     font-size: 11.5px; font-weight: 700; color: var(--ink-faint); white-space: nowrap;
@@ -719,15 +767,18 @@
           </div>
 
           <div class="aviso-estimativa">
-            <strong>Como ler esta tela.</strong>
-            O TikTok avisa <em>quando</em> alguém é premiado e o prazo de 5 dias de
-            cada premiação — isso é exato. O que ele não manda é quantas cartas vêm
-            em cada uma. Os itens aparecem quando a pessoa joga: aí a gente sabe o
-            que ela tinha. Carta jogada pro adversário não entra.
+            <strong>O TikTok não manda quais cartas a premiação deu.</strong>
+            Ele avisa <em>quem</em> foi premiado e <em>quando</em> (e o prazo de 5
+            dias de cada uma) — o resto ele só mostra no painel dele. Então quando
+            aparecer <em>toque pra informar</em>, escolhe os itens ali e o site cuida
+            do resto: desconta sozinho quando a pessoa joga e vence em 5 dias.
           </div>
 
           <div class="stats-grid" id="powerupResumo"></div>
+          <div class="pu-cartas pu-totais" id="powerupTotais"></div>
         </section>
+
+        <section class="panel pu-editor" id="powerupEditor" hidden></section>
 
         <section class="panel">
           <div class="panel-head">
@@ -1435,6 +1486,8 @@
     const listaEl  = document.getElementById('powerupList');
     const resumoEl = document.getElementById('powerupResumo');
     const contagemEl = document.getElementById('powerupContagem');
+    const totaisEl = document.getElementById('powerupTotais');
+    const editorEl = document.getElementById('powerupEditor');
     if (!listaEl) return;
 
     const SEM_FOTO = 'data:image/svg+xml;utf8,' + encodeURIComponent(
@@ -1505,12 +1558,27 @@
       const expiradas = ultimo.reduce((t, p) => t + p.expiradas, 0);
       const podemJogar = ultimo.filter(p => p.premiacoes > 0).length;
 
+      // total de cartas em estoque, somando item por item de todo mundo
+      const porItem = {};
+      ultimo.forEach(pe => Object.entries(pe.estoque || {}).forEach(([t, n]) => {
+        porItem[t] = (porItem[t] || 0) + n;
+      }));
+      const totalCartas = Object.values(porItem).reduce((a, b) => a + b, 0);
+      const pendentes = ultimo.reduce((t, pe) => t + (pe.pendentes || 0), 0);
+
       resumoEl.innerHTML = `
-        <div class="stats-card"><div class="num">${podemJogar}</div><div class="lbl">🎴 Podem jogar</div></div>
-        <div class="stats-card"><div class="num">${premiacoes}</div><div class="lbl">Premiações no prazo</div></div>
+        <div class="stats-card"><div class="num">${totalCartas}</div><div class="lbl">🎴 Cartas em estoque</div></div>
+        <div class="stats-card"><div class="num">${podemJogar}</div><div class="lbl">Podem jogar</div></div>
         <div class="stats-card"><div class="num">${usadas}</div><div class="lbl">Cartas jogadas</div></div>
-        <div class="stats-card"><div class="num">${expiradas}</div><div class="lbl">Premiações vencidas</div></div>
+        <div class="stats-card"><div class="num">${pendentes}</div><div class="lbl">A informar</div></div>
       `;
+
+      // linha com o total de cada item
+      const resumoItens = Object.entries(porItem).sort((a, b) => b[1] - a[1])
+        .map(([t, n]) => `<span class="pu-uso">${NOME_DO_TIPO[t] || t} <b>${n}</b></span>`).join('');
+      totaisEl.innerHTML = resumoItens
+        ? `<span class="pu-rotulo">no total</span>${resumoItens}`
+        : '';
 
       contagemEl.textContent = pessoas ? `${podemJogar} com premiação válida · ${pessoas} no total` : '';
 
@@ -1523,43 +1591,135 @@
         const restante = p.proximaExpiraEmMs === null ? null : Math.max(0, p.proximaExpiraEmMs - decorrido);
         const urgente = restante !== null && restante < 24 * 3600000;
 
-        // Uma etiqueta por premiação: o prazo dela (exato) e os itens que a
-        // gente já descobriu que estavam dentro, pelo que a pessoa jogou.
+        // ESTOQUE: o que a pessoa tem, item por item, com quantidade
+        const estoque = Object.entries(p.estoque || {}).sort((a, b) => b[1] - a[1])
+          .map(([t, n]) => `<span class="pu-item">${NOME_DO_TIPO[t] || t} <b>${n}</b></span>`)
+          .join('');
+        const totalEstoque = Object.values(p.estoque || {}).reduce((a, b) => a + b, 0);
+
+        // uma etiqueta por premiação; a pendente é clicável pra informar
         const premios = (p.cartas || []).map(c => {
           const falta = Math.max(0, c.expiraEmMs - decorrido);
           const urge = falta < 24 * 3600000;
-          const itens = Object.entries(c.itens || {})
-            .map(([t, n]) => (ICONE_DO_TIPO[t] || '🎴').repeat(Math.min(n, 3)))
-            .join('');
-          return `<span class="pu-carta ${urge ? 'urgente' : ''}">
-                    <b>${curto(falta)}</b>
-                    ${itens ? `<i class="pu-itens">${itens}</i>` : '<i class="pu-itens pu-aberto">a descobrir</i>'}
-                  </span>`;
+          if (c.pendente) {
+            return `<button class="pu-carta pu-pendente" data-uid="${esc2(p.uniqueId)}" data-em="${c.ganhaEm}">
+                      <b>${curto(falta)}</b> <i class="pu-itens pu-aberto">toque pra informar</i>
+                    </button>`;
+          }
+          const itens = Object.entries(c.itens)
+            .map(([t, n]) => `${ICONE_DO_TIPO[t] || '🎴'}${n > 1 ? n : ''}`).join(' ');
+          return `<button class="pu-carta ${urge ? 'urgente' : ''}" data-uid="${esc2(p.uniqueId)}" data-em="${c.ganhaEm}">
+                    <b>${curto(falta)}</b> <i class="pu-itens">${itens}</i>
+                  </button>`;
         }).join('');
 
-        // o que a pessoa jogou: exato, com carta e quantidade
         const usos = Object.entries(p.usos || {})
           .sort((a, b) => b[1] - a[1])
           .map(([t, n]) => `<span class="pu-uso">${NOME_DO_TIPO[t] || t}${n > 1 ? ' ×' + n : ''}</span>`)
           .join('');
 
         return `
-          <div class="pu-row ${p.premiacoes > 0 ? 'tem' : 'zerado'}">
+          <div class="pu-row ${totalEstoque > 0 ? 'tem' : 'zerado'}">
             <img class="row-avatar" src="${esc2(p.avatar || SEM_FOTO)}" onerror="this.src='${SEM_FOTO}'" alt="">
             <div>
               <div class="pu-nome">${esc2(p.nickname)}</div>
               <div class="pu-sub">${p.handle ? '@' + esc2(p.handle) + ' · ' : ''}premiado ${p.totalPremiacoes}x · jogou ${p.usadas} carta(s)${p.expiradas ? ' · ' + p.expiradas + ' vencida(s)' : ''}</div>
-              ${premios ? `<div class="pu-cartas"><span class="pu-rotulo">no prazo</span>${premios}</div>` : ''}
+              ${estoque ? `<div class="pu-cartas pu-estoque">${estoque}</div>` : ''}
+              ${premios ? `<div class="pu-cartas"><span class="pu-rotulo">prazos</span>${premios}</div>` : ''}
               ${usos ? `<div class="pu-cartas pu-usados"><span class="pu-rotulo">jogou</span>${usos}</div>` : ''}
             </div>
             <div class="pu-dir">
-              <span class="pu-mao ${p.premiacoes ? '' : 'vazio'}">${p.premiacoes}</span>
+              <span class="pu-mao ${totalEstoque ? '' : 'vazio'}">${totalEstoque}</span>
               <span class="pu-prazo ${urgente ? 'urgente' : ''}">${p.premiacoes ? prazo(restante) : 'nada no prazo'}</span>
             </div>
           </div>
         `;
       }).join('');
     }
+
+    // ---------- editor de itens de uma premiação ----------
+    const ORDEM_ITENS = ['luva', 'martelo', 'booster2', 'booster3', 'nevoa', 'tempo',
+                         'critico', 'pocao', 'onda', 'coracao', 'efeito'];
+    let editando = null;   // { uniqueId, ganhaEm, itens }
+
+    function abrirEditor(uniqueId, ganhaEm) {
+      const pessoa = ultimo.find(x => String(x.uniqueId) === String(uniqueId));
+      const premio = pessoa && (pessoa.cartas || []).find(c => String(c.ganhaEm) === String(ganhaEm));
+      if (!premio) return;
+      editando = { uniqueId, ganhaEm, itens: Object.assign({}, premio.itens) };
+      renderEditor(pessoa);
+    }
+
+    function renderEditor(pessoa) {
+      if (!editando) { editorEl.hidden = true; editorEl.innerHTML = ''; return; }
+      const linhas = ORDEM_ITENS.map(t => {
+        const n = editando.itens[t] || 0;
+        return `<div class="pu-ed-linha ${n ? 'ativo' : ''}">
+                  <span class="pu-ed-nome">${NOME_DO_TIPO[t] || t}</span>
+                  <button class="pu-ed-btn" data-acao="menos" data-tipo="${t}">−</button>
+                  <span class="pu-ed-qtd">${n}</span>
+                  <button class="pu-ed-btn" data-acao="mais" data-tipo="${t}">+</button>
+                </div>`;
+      }).join('');
+      editorEl.hidden = false;
+      editorEl.innerHTML = `
+        <div class="pu-ed-topo">
+          <strong>${esc2(pessoa.nickname)}</strong>
+          <span>o que veio nessa premiação?</span>
+          <button class="pu-ed-fechar" data-acao="fechar">×</button>
+        </div>
+        <div class="pu-ed-grid">${linhas}</div>
+        <div class="pu-ed-pe">
+          <button class="app-btn app-btn--primary" data-acao="salvar">Salvar</button>
+          <button class="app-btn" data-acao="fechar">Cancelar</button>
+        </div>
+      `;
+    }
+
+    editorEl.addEventListener('click', async e => {
+      const btn = e.target.closest('[data-acao]');
+      if (!btn || !editando) return;
+      const acao = btn.dataset.acao;
+
+      if (acao === 'fechar') { editando = null; renderEditor(); return; }
+
+      if (acao === 'mais' || acao === 'menos') {
+        const t = btn.dataset.tipo;
+        const atual = editando.itens[t] || 0;
+        const novo = acao === 'mais' ? Math.min(atual + 1, 99) : Math.max(atual - 1, 0);
+        if (novo) editando.itens[t] = novo; else delete editando.itens[t];
+        const pessoa = ultimo.find(x => String(x.uniqueId) === String(editando.uniqueId));
+        if (pessoa) renderEditor(pessoa);
+        return;
+      }
+
+      if (acao === 'salvar') {
+        const corpo = { uniqueId: editando.uniqueId, ganhaEm: editando.ganhaEm, itens: editando.itens };
+        btn.disabled = true;
+        btn.textContent = 'Salvando...';
+        try {
+          const res = await fetch('/api/powerup/itens', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(corpo)
+          });
+          if (!res.ok) throw new Error('falhou');
+          editando = null;
+          renderEditor();   // o servidor reemite o estoque e a lista se redesenha
+        } catch (err) {
+          btn.disabled = false;
+          btn.textContent = 'Salvar';
+          alert('Não deu pra salvar. Confere se o servidor está rodando.');
+        }
+        return;
+      }
+    });
+
+    listaEl.addEventListener('click', e => {
+      const alvo = e.target.closest('.pu-carta[data-uid]');
+      if (!alvo) return;
+      abrirEditor(alvo.dataset.uid, alvo.dataset.em);
+    });
 
     socket.on('powerup_estoque', dados => {
       ultimo = Array.isArray(dados) ? dados : [];

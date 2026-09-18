@@ -481,10 +481,13 @@ function registrarCartaGanha(uniqueId, nickname, avatar, tipo, handle, qtd = 1) 
   const ficha = garantirFichaDeCarta(uniqueId, nickname, avatar, handle);
   if (!ficha) return false;
   const agora = Date.now();
-  // Cada carta é uma entrada própria: duas luvas ganhas juntas vencem juntas,
-  // mas uma ganha depois tem prazo próprio.
+  // Uma entrada por premiação. Se o evento identificou a carta (raro — o prêmio
+  // costuma vir genérico), já preenche os itens e a premiação não nasce
+  // pendente; senão fica esperando alguém informar.
   for (let i = 0; i < Math.max(1, qtd); i++) {
-    ficha.ganhas.push({ em: agora, tipo: tipo || null });
+    const entrada = { em: agora, tipo: tipo || null };
+    if (tipo) entrada.itens = { [tipo]: 1 };
+    ficha.ganhas.push(entrada);
   }
   ficha.ultimaEm = agora;
   dirty = true;
@@ -500,14 +503,9 @@ function registrarCartaGanha(uniqueId, nickname, avatar, tipo, handle, qtd = 1) 
 // usou 1, abater a premiação inteira zerava um estoque que ainda existe.
 //
 // O uso, ao contrário, é exato: sabe a carta, a pessoa e a quantidade.
-// O uso é exato (carta + quantidade) e serve pra DUAS coisas:
-//
-//  1. somar em ficha.usos, que é o histórico confiável do que a pessoa joga;
-//  2. descobrir de que item era uma premiação antiga. O prêmio não diz a carta,
-//     mas se a pessoa foi premiada terça e jogou uma luva na quarta, aquela luva
-//     saiu de alguma premiação válida — então registramos o item na premiação
-//     mais antiga que ainda estava no prazo. É a única forma de nomear as
-//     cartas antigas, e ela vem do próprio dado, sem chute.
+// O uso é exato: a carta, a pessoa e a quantidade vêm no evento. É o lado do
+// GASTO do estoque — o lado do GANHO vem de definirItensDaPremiacao, porque o
+// TikTok não diz quais cartas nem quantas cada premiação deu.
 function registrarCartaUsada(uniqueId, nickname, avatar, tipo, handle, qtd = 1) {
   const ficha = garantirFichaDeCarta(uniqueId, nickname, avatar, handle);
   if (!ficha) return false;
@@ -518,20 +516,31 @@ function registrarCartaUsada(uniqueId, nickname, avatar, tipo, handle, qtd = 1) 
   ficha.usos[chave] = (ficha.usos[chave] || 0) + n;
   ficha.usadas += n;
 
-  // atribui o item às premiações válidas, da mais antiga pra mais nova
-  if (tipo) {
-    expirarCartas();
-    let restantes = n;
-    for (const premio of ficha.ganhas) {
-      if (restantes <= 0) break;
-      premio.itens = premio.itens || {};
-      premio.itens[tipo] = (premio.itens[tipo] || 0) + 1;
-      restantes--;
-    }
-  }
-
   ficha.ultimaEm = Date.now();
   dirty = true;
+  return true;
+}
+
+// Informa (ou corrige) QUAIS cartas e QUANTAS uma premiação deu.
+// O TikTok mostra isso no painel dele mas não manda pela live, então quem sabe
+// é a pessoa que está assistindo. `ganhaEm` identifica a premiação.
+function definirItensDaPremiacao(uniqueId, ganhaEm, itens) {
+  const ficha = state.cartas[uniqueId];
+  if (!ficha) return false;
+
+  const premio = ficha.ganhas.find(c => c.em === Number(ganhaEm));
+  if (!premio) return false;
+
+  const limpo = {};
+  Object.entries(itens || {}).forEach(([tipo, qtd]) => {
+    const n = Math.floor(Number(qtd) || 0);
+    if (tipo && n > 0) limpo[tipo] = Math.min(n, 99);   // teto de sanidade
+  });
+
+  premio.itens = limpo;
+  ficha.ultimaEm = Date.now();
+  dirty = true;
+  saveToDisk();
   return true;
 }
 
@@ -549,6 +558,7 @@ function getEstoqueCartas() {
         // premiações VÁLIDAS (dentro dos 5 dias). Cada uma vale 1 OU MAIS
         // cartas — por isso o front mostra "≥" e não um número seco.
         premiacoes: ficha.ganhas.length,
+        pendentes: ficha.ganhas.filter(c => !c.itens || Object.keys(c.itens).length === 0).length,
         usos: ficha.usos || {},
         usadas: ficha.usadas,
         expiradas: ficha.expiradas,
@@ -557,17 +567,34 @@ function getEstoqueCartas() {
         proximaExpiraEmMs: maisAntiga === null
           ? null
           : Math.max(0, VALIDADE_CARTA_MS - (agora - maisAntiga)),
-        // Uma entrada por PREMIAÇÃO, cada uma com o seu prazo — é isso que é
-        // exato: a hora em que caiu. A quantidade de cartas dentro dela, não.
+        // Uma entrada por PREMIAÇÃO: a hora é exata (vem do evento) e os itens
+        // são os informados. `pendente` = ainda ninguém disse o que veio nela.
         cartas: ficha.ganhas
           .map(c => ({
-            tipo: c.tipo || 'desconhecido',
             ganhaEm: c.em,
             expiraEmMs: Math.max(0, VALIDADE_CARTA_MS - (agora - c.em)),
-            // itens descobertos depois, pelo que a pessoa usou
-            itens: c.itens || {}
+            itens: c.itens || {},
+            pendente: !c.itens || Object.keys(c.itens).length === 0
           }))
           .sort((a, b) => a.expiraEmMs - b.expiraEmMs),
+
+        // ESTOQUE POR ITEM: o que foi informado nas premiações no prazo, menos
+        // o que a pessoa já jogou. É o "tem 2 luvas e 1 martelo".
+        estoque: (() => {
+          const ganho = {};
+          ficha.ganhas.forEach(c => {
+            Object.entries(c.itens || {}).forEach(([t, n]) => {
+              ganho[t] = (ganho[t] || 0) + n;
+            });
+          });
+          const usos = ficha.usos || {};
+          const saldo = {};
+          Object.keys(ganho).forEach(t => {
+            const resta = ganho[t] - (usos[t] || 0);
+            if (resta > 0) saldo[t] = resta;
+          });
+          return saldo;
+        })(),
         ultimaEm: ficha.ultimaEm
       };
     })
@@ -961,6 +988,7 @@ function getSessions() {
 module.exports = {
   addLikes, addGift, addPowerUp, getRanking, getUserProfile, resetAll,
   registrarCartaGanha, registrarCartaUsada, getEstoqueCartas, VALIDADE_CARTA_MS,
+  definirItensDaPremiacao,
   getGlobalStats, updateViewerCount, addComment, addFollow, addShare,
   markLiveOnline, markLiveOffline, checkLevelUp, getTropa, limparTropa, getSessions,
   heartbeat,

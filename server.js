@@ -82,6 +82,25 @@ app.use((req, res, next) => {
   requireAuth(req, res, next);
 });
 
+// Quais cartas (e quantas) uma premiação deu. O TikTok não manda isso pela
+// live — mostra no painel dele — então quem informa é quem está assistindo.
+// O restante do estoque é automático: o uso desconta e os 5 dias vencem.
+app.post('/api/powerup/itens', (req, res) => {
+  const { uniqueId, ganhaEm, itens } = req.body || {};
+  if (!uniqueId || !ganhaEm) {
+    return res.status(400).json({ error: 'uniqueId e ganhaEm são obrigatórios.' });
+  }
+  if (itens && typeof itens !== 'object') {
+    return res.status(400).json({ error: 'itens deve ser um objeto { tipo: quantidade }.' });
+  }
+  const ok = db.definirItensDaPremiacao(uniqueId, ganhaEm, itens || {});
+  if (!ok) return res.status(404).json({ error: 'Premiação não encontrada.' });
+
+  broadcastPowerUps();
+  res.json({ ok: true });
+});
+
+
 app.use(express.static('public'));
 
 let liveOnline = false;
@@ -170,6 +189,34 @@ function quantidadeDoTexto(texto) {
   return n >= 1 && n <= 50 ? n : 1;   // teto de sanidade
 }
 
+// O nome do arquivo de imagem da carta também identifica o item. Estas
+// assinaturas saíram de mensagens reais:
+//   card_crit_v3        -> "boosting glove" (a luva da tropa)
+//   top2_buffer         -> "no. 2 booster"  (o raio)
+//   card_effect_heartme -> heart me
+// Atenção: na MENSAGEM DE USO a imagem já veio errada uma vez (o martelo
+// chegou com a imagem do heartme). Por isso imagem é sempre a ÚLTIMA opção,
+// depois do texto.
+const IMAGEM_DA_CARTA = [
+  [/card_crit/i,          'luva'     ],
+  [/top2_buffer|top_?2/i, 'booster2' ],
+  [/top3_buffer|top_?3/i, 'booster3' ],
+  [/hammer/i,             'martelo'  ],
+  [/heart_?me/i,          'coracao'  ],
+  [/smoke|fog/i,          'nevoa'    ],
+  [/extra_?time|timer/i,  'tempo'    ],
+  [/potion/i,             'pocao'    ],
+  [/wave/i,               'onda'     ]
+];
+
+function tipoPelaImagem(uri) {
+  if (!uri) return null;
+  for (const [padrao, tipo] of IMAGEM_DA_CARTA) {
+    if (padrao.test(uri)) return tipo;
+  }
+  return null;
+}
+
 function tipoPelasPalavras(texto) {
   if (!texto) return null;
   for (const [padrao, tipo] of PALAVRAS_DA_CARTA) {
@@ -209,6 +256,42 @@ function descobrirCartaGanha(data) {
   // 2) e 3) a chave de i18n e depois o texto
   const dc = data?.awardCardNotice?.displayContent;
   return tipoPelasPalavras(dc?.key) || tipoPelasPalavras(textosDoDisplayContent(dc));
+}
+
+// ---------- O ITEM DE CADA PREMIADO ----------
+// O texto geral do prêmio vem genérico ("Contributors got match power-ups"),
+// mas cada premiado carrega `tags[]`, que é o selo que o TikTok desenha ao lado
+// do nome dele — com `content` (texto) e `iconImage` (o ícone da carta).
+// É daí que sai o item de cada um, individualmente. Se a tag não disser nada,
+// cai pro que a mensagem inteira sugerir; se nem isso, fica pendente.
+function descobrirCartaDoPremiado(bu, data) {
+  const tags = bu?.tags || [];
+
+  // 1) o texto da tag
+  for (const tg of tags) {
+    const achou = tipoPelasPalavras(tg?.content);
+    if (achou) return achou;
+  }
+  // 2) o ícone da tag
+  for (const tg of tags) {
+    const achou = tipoPelaImagem(tg?.iconImage?.uri || tg?.iconImage?.urlList?.[0]);
+    if (achou) return achou;
+  }
+  // 3) a mensagem como um todo
+  return descobrirCartaGanha(data);
+}
+
+// A tag pode trazer quantidade ("x2", "×2", "2x"). Retorna null quando não diz,
+// pra quem chamou usar a quantidade do texto da mensagem.
+function quantidadeDoPremiado(bu) {
+  for (const tg of (bu?.tags || [])) {
+    const m = /[x×]\s*(\d{1,2})|(\d{1,2})\s*[x×]/i.exec(String(tg?.content || ''));
+    if (m) {
+      const n = parseInt(m[1] || m[2], 10);
+      if (n >= 1 && n <= 50) return n;
+    }
+  }
+  return null;
 }
 
 // Luva/Top2/Top3 aninham o sendUser dentro de cardInfo.common; névoa, tempo e
@@ -1029,7 +1112,6 @@ function startTikTokConnection() {
     // carta entra na fila com tipo null e o abatimento cai pra "mais antiga".
     if (msgType === PK_MSG_GANHOU) {
       const premiados = data?.awardCardNotice?.awardedUsers || [];
-      const tipoGanho = descobrirCartaGanha(data); // pode vir null
       const qtdGanha = quantidadeDoTexto(textosDoDisplayContent(data?.awardCardNotice?.displayContent));
       premiados.forEach(bu => {
         const p = dadosDoUsuarioPK(bu?.user);
@@ -1044,11 +1126,15 @@ function startTikTokConnection() {
             (meusContribuintes.size ? 'não está nos nossos contribuintes' : 'lista de contribuintes ainda vazia'));
           return;
         }
-        if (db.registrarCartaGanha(p.uniqueId, p.nickname, p.avatar, tipoGanho, p.handle, qtdGanha)) {
+        // item e quantidade DESTE premiado (a tag dele), não da mensagem toda
+        const tipoGanho = descobrirCartaDoPremiado(bu, data);
+        const qtd = quantidadeDoPremiado(bu) ?? qtdGanha;
+
+        if (db.registrarCartaGanha(p.uniqueId, p.nickname, p.avatar, tipoGanho, p.handle, qtd)) {
           mexeu = true;
           // Sem pushFeed de propósito: o feedLine() do front não conhece esses
           // tipos e renderizaria uma linha sem texto. O lugar deles é a aba.
-          console.log(`[POWERUP] ${p.nickname} GANHOU ${qtdGanha}x ${tipoGanho || 'power-up (tipo nao identificado)'}`);
+          console.log(`[POWERUP] ${p.nickname} GANHOU ${qtd}x ${tipoGanho || 'power-up (item nao identificado -> fica pendente)'}`);
         }
       });
     }
