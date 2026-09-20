@@ -28,6 +28,40 @@
     --line-soft: #1b212b;
   }
   /* o brilho de brasa do theme.css é do produto; aqui o fundo é liso */
+
+  /* ---------- chaves de ativação ---------- */
+  .nova-chave { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+  .nova-chave .campo { flex: 1 1 160px; min-width: 140px; }
+  .nova-chave .campo--curto { flex: 0 1 110px; }
+
+  .chave-nova {
+    margin-top: 14px; padding: 16px; border-radius: var(--r-md);
+    background: rgba(255,176,58,.07); border: 1px solid rgba(255,176,58,.28);
+  }
+  .chave-nova .codigo {
+    font-family: 'Bungee', sans-serif; font-size: 25px; letter-spacing: .12em;
+    color: var(--gold); text-align: center; margin: 4px 0 12px; word-break: break-all;
+  }
+  .chave-nova .para {
+    text-align: center; font-size: 11px; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--ink-faint); font-weight: 700;
+  }
+  .chave-nova .botoes { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+
+  .lista-chaves { display: flex; flex-direction: column; gap: 8px; }
+  .chave-linha {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 10px 13px; border-radius: var(--r-sm);
+    background: var(--card-2); border: 1px solid var(--line-soft);
+  }
+  .chave-linha.gasta { opacity: .55; }
+  .chave-linha .codigo {
+    font-family: 'Bungee', sans-serif; font-size: 14px; letter-spacing: .06em; color: var(--ink);
+  }
+  .chave-linha .quando { color: var(--ink-faint); font-size: 12px; }
+  .etiqueta.aberta { background: rgba(110,231,135,.14); color: #8fe3a5; border-color: rgba(110,231,135,.3); }
+  .etiqueta.usada { background: rgba(120,160,255,.12); color: #9db4ff; border-color: rgba(120,160,255,.28); }
+  .etiqueta.vencida, .etiqueta.cancelada { background: rgba(255,70,70,.1); color: #ff9b9b; border-color: rgba(255,70,70,.26); }
   html { background: var(--bg); }
   body::before { display: none; }
 </style>
@@ -97,6 +131,51 @@
         login e vê só a live dele.
       </span>
     </div>
+  </section>
+
+  <!-- ---------- CHAVES DE ATIVAÇÃO ---------- -->
+  <section class="app-panel">
+    <div class="app-panel-head">
+      <h2 class="app-panel-title">Chaves de ativação</h2>
+      <span class="app-panel-meta" id="chavesResumo"></span>
+    </div>
+
+    <span class="dica" style="display:block; margin-bottom:14px">
+      Você só escolhe <b>de qual live</b> é o acesso. Quem recebe a chave cria o próprio
+      usuário e a própria senha — a senha não passa pela sua mão. Cada chave vale uma vez.
+    </span>
+
+    <div class="nova-chave">
+      <div class="campo">
+        <label for="chaveDono">@ da live</label>
+        <input class="app-input" type="text" id="chaveDono" maxlength="32" placeholder="sem o @">
+      </div>
+      <div class="campo campo--curto">
+        <label for="chaveDias">Vence em</label>
+        <input class="app-input" type="number" id="chaveDias" min="1" max="90" value="7">
+      </div>
+      <div class="campo">
+        <label for="chaveNota">Pra quem é (opcional)</label>
+        <input class="app-input" type="text" id="chaveNota" maxlength="120" placeholder="ex: Vitor, do @vitorb0rba">
+      </div>
+      <div class="campo campo--curto">
+        <button class="app-btn app-btn--primary" id="gerarChaveBtn">🔑 Gerar chave</button>
+      </div>
+    </div>
+
+    <div class="chave-nova" id="chaveNova" hidden>
+      <div class="para" id="chaveNovaPara"></div>
+      <div class="codigo" id="chaveNovaCodigo"></div>
+      <div class="botoes">
+        <button class="app-btn" id="copiarChave">📋 Copiar a chave</button>
+        <button class="app-btn app-btn--primary" id="copiarLink">🔗 Copiar o link pronto</button>
+      </div>
+      <span class="dica" style="display:block; text-align:center; margin-top:10px">
+        Mande o link: a pessoa abre, escolhe usuário e senha, e já entra.
+      </span>
+    </div>
+
+    <div class="lista-chaves" id="listaChaves" style="margin-top:16px"></div>
   </section>
 
   <!-- ---------- ADMINISTRADORES ---------- -->
@@ -402,6 +481,154 @@
     `).join('');
   }
 
+  // ---------------------------------------------------------- CHAVES
+  const SITUACAO = {
+    aberta:    { rotulo: 'aberta',    gasta: false },
+    usada:     { rotulo: 'usada',     gasta: true  },
+    vencida:   { rotulo: 'vencida',   gasta: true  },
+    cancelada: { rotulo: 'cancelada', gasta: true  }
+  };
+
+  const linkDaChave = chave => location.origin + '/ativar.html?k=' + encodeURIComponent(chave);
+
+  // navigator.clipboard só existe em https (ou localhost). No http de um IP
+  // interno ele nem aparece — daí o caminho de baixo, com um campo escondido.
+  async function copiar(texto, oQue) {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(texto);
+      } else {
+        const caixa = document.createElement('textarea');
+        caixa.value = texto;
+        caixa.style.position = 'fixed';
+        caixa.style.opacity = '0';
+        document.body.appendChild(caixa);
+        caixa.select();
+        document.execCommand('copy');
+        caixa.remove();
+      }
+      aviso(oQue + ' copiado.', 'ok');
+    } catch (e) {
+      aviso('Não deu pra copiar. Selecione e copie na mão: ' + texto, 'err');
+    }
+  }
+
+  function desenharChaves(lista) {
+    const abertas = lista.filter(c => c.situacao === 'aberta').length;
+    $('chavesResumo').textContent = !lista.length
+      ? 'nenhuma ainda'
+      : (abertas === 1 ? '1 esperando' : abertas + ' esperando') + ' · ' + lista.length + ' no total';
+
+    $('listaChaves').innerHTML = lista.length ? lista.map(c => {
+      const est = SITUACAO[c.situacao] || SITUACAO.aberta;
+      const detalhe = c.situacao === 'usada'
+        ? 'virou o login <b>' + esc(c.usadaPor || '?') + '</b> ' + faz(c.usadaEm)
+        : (c.situacao === 'aberta' ? 'vence ' + emBreve(c.expiraEm) : 'criada ' + faz(c.criadaEm));
+
+      return '<div class="chave-linha' + (est.gasta ? ' gasta' : '') + '">'
+        + '<span class="codigo">' + esc(c.chave) + '</span>'
+        + '<span class="etiqueta ' + c.situacao + '">' + est.rotulo + '</span>'
+        + '<span class="arroba">@' + esc(c.dono) + '</span>'
+        + (c.observacao ? '<span class="quem">' + esc(c.observacao) + '</span>' : '')
+        + '<span class="quando">' + detalhe + '</span>'
+        + '<span class="spacer"></span>'
+        + (c.situacao === 'aberta'
+            ? '<button class="app-btn" data-copiar-link="' + esc(c.chave) + '">🔗 Link</button>'
+              + '<button class="app-btn app-btn--danger" data-revogar="' + esc(c.chave) + '">🚫 Cancelar</button>'
+            : '<button class="app-btn app-btn--danger" data-apagar="' + esc(c.chave) + '">🗑️</button>')
+        + '</div>';
+    }).join('') : '<div class="chave-linha"><span class="quem">Nenhuma chave gerada ainda.</span></div>';
+  }
+
+  // "vence em 6 dias" — o contrário do faz(), que olha pra trás
+  function emBreve(quando) {
+    const falta = quando - Date.now();
+    if (falta <= 0) return 'agora';
+    const min = Math.round(falta / 60000);
+    if (min < 60) return 'em ' + min + ' min';
+    const h = Math.round(min / 60);
+    if (h < 48) return 'em ' + h + 'h';
+    return 'em ' + Math.round(h / 24) + ' dias';
+  }
+
+  async function carregarChaves() {
+    const res = await fetch('/api/chaves');
+    if (!res.ok) throw new Error('falhou');
+    const dados = await res.json();
+    desenharChaves(dados.chaves || []);
+  }
+
+  $('gerarChaveBtn').addEventListener('click', async () => {
+    const btn = $('gerarChaveBtn');
+    const dono = $('chaveDono').value.trim();
+    if (!dono) return aviso('Falta o @ da live que essa chave libera.', 'err');
+
+    btn.disabled = true;
+    aviso('Gerando...');
+    try {
+      const res = await fetch('/api/chaves', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dono,
+          validadeDias: Number($('chaveDias').value) || undefined,
+          observacao: $('chaveNota').value.trim()
+        })
+      });
+      const dados = await res.json();
+      if (!res.ok) throw new Error(dados.error || 'falhou');
+
+      $('chaveNovaCodigo').textContent = dados.chave;
+      $('chaveNovaPara').textContent = 'para a live @' + dados.dono;
+      $('chaveNova').hidden = false;
+      $('chaveNova').dataset.chave = dados.chave;
+      $('chaveNota').value = '';
+      await carregarChaves();
+      aviso('Chave criada. Copie e mande pra pessoa.', 'ok');
+    } catch (err) {
+      aviso(err.message, 'err');
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  $('copiarChave').addEventListener('click', () =>
+    copiar($('chaveNova').dataset.chave || '', 'Chave'));
+  $('copiarLink').addEventListener('click', () =>
+    copiar(linkDaChave($('chaveNova').dataset.chave || ''), 'Link'));
+
+  $('listaChaves').addEventListener('click', async e => {
+    const link = e.target.closest('[data-copiar-link]');
+    if (link) return copiar(linkDaChave(link.dataset.copiarLink), 'Link');
+
+    const cancelar = e.target.closest('[data-revogar]');
+    if (cancelar) {
+      if (!confirm('Cancelar a chave ' + cancelar.dataset.revogar + '? Quem receber ela não vai conseguir ativar.')) return;
+      return mexerNaChave(cancelar, '/api/chaves/revogar', cancelar.dataset.revogar, 'Chave cancelada.');
+    }
+    const apagar = e.target.closest('[data-apagar]');
+    if (apagar) {
+      if (!confirm('Tirar a chave ' + apagar.dataset.apagar + ' da lista? Isso não mexe em quem já ativou com ela.')) return;
+      return mexerNaChave(apagar, '/api/chaves/apagar', apagar.dataset.apagar, 'Chave removida da lista.');
+    }
+  });
+
+  async function mexerNaChave(btn, rota, chave, recado) {
+    btn.disabled = true;
+    try {
+      const res = await fetch(rota, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chave })
+      });
+      const dados = await res.json();
+      if (!res.ok) throw new Error(dados.error || 'falhou');
+      await carregarChaves();
+      aviso(recado, 'ok');
+    } catch (err) {
+      btn.disabled = false;
+      aviso(err.message, 'err');
+    }
+  }
+
   $('sairBtn').addEventListener('click', async () => {
     try { await fetch('/api/logout', { method: 'POST' }); } catch (e) { /* segue */ }
     location.href = '/login.html';
@@ -409,7 +636,7 @@
 
   (async function comecar() {
     try {
-      await carregarClientes();
+      await Promise.all([carregarClientes(), carregarChaves()]);
       aviso('');
     } catch (e) {
       aviso('Não deu pra listar os clientes.', 'err');
@@ -421,6 +648,7 @@
       // não atrapalha quem está no meio de um formulário
       if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
       carregarClientes().catch(() => {});
+      carregarChaves().catch(() => {});
     }, 20000);
   })();
 })();

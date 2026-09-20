@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ativar conta — {{marca.titulo}}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bungee&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* Mesma regra do login: esta tela roda ANTES de existir conta, e o gate só
+     libera ela e as APIs de ativação — CSS externo seria redirecionado. */
+  :root {
+    --bg: #0a0807; --card: #150f0b; --card-2: #0f0b08; --line: #2b2119; --line-soft: #201810;
+    --ink: #f3e9dc; --ink-dim: #9c8b7d; --ink-faint: #5a4c40;
+    --gold: #ffb03a; --ember1: #ff7a1a; --ember2: #ff2d2d;
+    --grad-fire: linear-gradient(180deg, var(--gold), var(--ember1));
+    --r-sm: 10px; --r-md: 14px; --r-lg: 18px; --r-xl: 22px; --r-pill: 999px;
+  }
+  * { box-sizing: border-box; }
+  html { height: 100%; background: var(--bg); }
+  body {
+    margin: 0; min-height: 100%;
+    color: var(--ink); font-family: 'Rajdhani', sans-serif; font-weight: 600;
+    -webkit-font-smoothing: antialiased;
+    display: grid; place-items: center; padding: 24px;
+  }
+  body::before {
+    content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+    background:
+      radial-gradient(700px 420px at 12% -6%, rgba(255,122,26,.14), transparent 60%),
+      radial-gradient(900px 600px at 100% 0%, rgba(255,45,45,.08), transparent 55%);
+  }
+
+  .caixa {
+    width: 100%; max-width: 440px;
+    background: linear-gradient(168deg, var(--card), var(--card-2));
+    border: 1px solid var(--line); border-radius: var(--r-xl);
+    padding: 36px 32px 30px;
+    box-shadow: 0 40px 90px -40px #000;
+  }
+
+  .selo {
+    width: 54px; height: 54px; margin: 0 auto 16px;
+    display: grid; place-items: center; font-size: 25px;
+    border-radius: var(--r-md);
+    background: linear-gradient(160deg, rgba(255,176,58,.22), rgba(255,45,45,.10));
+    border: 1px solid rgba(255,176,58,.32);
+    box-shadow: inset 0 0 22px -6px rgba(255,122,26,.7);
+  }
+  h1 {
+    font-family: 'Bungee', sans-serif; font-weight: 400; font-size: 21px;
+    text-align: center; margin: 0 0 6px; line-height: 1.15;
+    background: linear-gradient(180deg, #ffe9b0 0%, var(--gold) 30%, var(--ember1) 65%, #a3230f 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .abre { text-align: center; color: var(--ink-faint); font-size: 13px; margin: 0 0 24px; }
+
+  /* ---------- passos ---------- */
+  .passos { display: flex; align-items: center; gap: 8px; margin: 0 0 26px; justify-content: center; }
+  .passo {
+    display: flex; align-items: center; gap: 7px;
+    font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--ink-faint); font-weight: 700;
+  }
+  .passo .bolha {
+    width: 21px; height: 21px; border-radius: 50%; display: grid; place-items: center;
+    font-size: 11px; border: 1.5px solid var(--line); background: #0d0907;
+  }
+  .passo.ativo { color: var(--gold); }
+  .passo.ativo .bolha { border-color: var(--gold); color: var(--gold); }
+  .passo.feito .bolha { background: var(--grad-fire); border-color: transparent; color: #2a1400; }
+  .traco { width: 26px; height: 1.5px; background: var(--line); }
+
+  .campo + .campo { margin-top: 15px; }
+  label {
+    display: block; font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase;
+    font-weight: 700; color: var(--ink-faint); margin: 0 0 7px;
+  }
+  input {
+    width: 100%; padding: 12px 14px; border-radius: var(--r-sm);
+    border: 1.5px solid var(--line); background: #0d0907;
+    font-family: 'Rajdhani', sans-serif; font-weight: 600; font-size: 15px;
+    color: var(--ink); outline: none;
+    transition: border-color .15s ease, box-shadow .15s ease;
+  }
+  input::placeholder { color: var(--ink-faint); }
+  input:focus { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(255,176,58,.16); }
+  input#chave {
+    text-transform: uppercase; letter-spacing: .22em; text-align: center;
+    font-size: 18px; font-weight: 700;
+  }
+
+  .dica { display: block; margin-top: 7px; font-size: 11.5px; color: var(--ink-faint); line-height: 1.45; }
+
+  /* força da senha */
+  .forca { display: flex; gap: 4px; margin-top: 8px; }
+  .forca i { flex: 1; height: 3px; border-radius: 2px; background: var(--line); transition: background .2s ease; }
+  .forca.n1 i:nth-child(1) { background: var(--ember2); }
+  .forca.n2 i:nth-child(-n+2) { background: var(--ember1); }
+  .forca.n3 i:nth-child(-n+3) { background: var(--gold); }
+  .forca.n4 i { background: #6ee787; }
+
+  button {
+    width: 100%; margin-top: 24px; cursor: pointer;
+    background: var(--grad-fire); color: #2a1400;
+    font-family: 'Rajdhani', sans-serif; font-weight: 700; font-size: 14px;
+    letter-spacing: .04em; text-transform: uppercase;
+    padding: 13px 16px; border-radius: var(--r-pill); border: none;
+    box-shadow: 0 10px 24px -12px rgba(255,122,26,.9);
+    transition: filter .15s ease, transform .1s ease;
+  }
+  button:hover { filter: brightness(1.06); }
+  button:active { transform: translateY(1px); }
+  button:disabled { opacity: .55; cursor: default; filter: none; }
+  button.fantasma {
+    background: none; color: var(--ink-dim); border: 1.5px solid var(--line);
+    box-shadow: none; margin-top: 10px;
+  }
+  button.fantasma:hover { color: var(--ink); border-color: var(--ink-faint); filter: none; }
+
+  .aviso {
+    display: none; margin-top: 16px; border-radius: var(--r-sm);
+    padding: 10px 13px; font-size: 13px; text-align: center; line-height: 1.45;
+  }
+  .aviso.ver { display: block; }
+  .aviso.ruim { background: rgba(90,20,20,.3); border: 1px solid rgba(255,70,70,.32); color: #ffb3b3; }
+  .aviso.bom  { background: rgba(20,70,35,.28); border: 1px solid rgba(110,231,135,.3); color: #a6e9ba; }
+
+  /* o cartão que mostra de qual live é a chave */
+  .alvo {
+    margin: 0 0 20px; padding: 13px 15px; border-radius: var(--r-md);
+    background: rgba(255,176,58,.07); border: 1px solid rgba(255,176,58,.22);
+    text-align: center;
+  }
+  .alvo .rotulo {
+    font-size: 10px; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--ink-faint); font-weight: 700;
+  }
+  /* Sem Bungee aqui de propósito: nela o zero sai idêntico ao "O", e num @
+     isso vira "essa não é a minha live". @vitorb0rba tem zero. */
+  .alvo .arroba {
+    font-weight: 700; font-size: 20px; letter-spacing: .03em;
+    color: var(--gold); margin-top: 4px; word-break: break-all;
+  }
+
+  .rodape {
+    margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line-soft);
+    text-align: center; font-size: 13px; color: var(--ink-faint);
+  }
+  .rodape a { color: var(--gold); text-decoration: none; font-weight: 700; }
+  .rodape a:hover { text-decoration: underline; }
+
+  [hidden] { display: none !important; }
+  :where(input, button, a):focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+</style>
+{{tema}}
+</head>
+<body>
+
+<main class="caixa">
+  <div class="selo">{{marca.emoji}}</div>
+  <h1>Ativar sua conta</h1>
+  <p class="abre">Sua chave vale uma vez só.</p>
+
+  <div class="passos">
+    <span class="passo" id="passo1"><span class="bolha">1</span>Chave</span>
+    <span class="traco"></span>
+    <span class="passo" id="passo2"><span class="bolha">2</span>Seu login</span>
+  </div>
+
+  <!-- ---------- passo 1: a chave ---------- -->
+  <form id="formChave" novalidate>
+    <div class="campo">
+      <label for="chave">Chave de acesso</label>
+      <input type="text" id="chave" maxlength="20" placeholder="XXXX-XXXX-XXXX"
+             autocapitalize="characters" autocomplete="off" spellcheck="false" required>
+      <span class="dica">Foi o que o administrador te mandou. Pode digitar sem os traços.</span>
+    </div>
+    <div class="aviso ruim" id="erroChave" role="alert"></div>
+    <button type="submit" id="btnChave">Conferir chave</button>
+  </form>
+
+  <!-- ---------- passo 2: usuário e senha ---------- -->
+  <form id="formConta" novalidate hidden>
+    <div class="alvo">
+      <div class="rotulo">Você vai acompanhar a live</div>
+      <div class="arroba" id="alvoArroba"></div>
+    </div>
+
+    <div class="campo">
+      <label for="usuario">Escolha seu usuário</label>
+      <input type="text" id="usuario" maxlength="40" autocomplete="username"
+             placeholder="como você vai entrar" autocapitalize="none" spellcheck="false" required>
+      <span class="dica">Letras, números, ponto, hífen e sublinhado. De 3 a 40 caracteres.</span>
+    </div>
+
+    <div class="campo">
+      <label for="senha">Escolha sua senha</label>
+      <input type="password" id="senha" autocomplete="new-password" placeholder="mínimo 6 caracteres" required>
+      <div class="forca" id="forca"><i></i><i></i><i></i><i></i></div>
+    </div>
+
+    <div class="campo">
+      <label for="senha2">Repita a senha</label>
+      <input type="password" id="senha2" autocomplete="new-password" placeholder="de novo" required>
+    </div>
+
+    <div class="aviso ruim" id="erroConta" role="alert"></div>
+    <div class="aviso bom" id="okConta" role="status"></div>
+
+    <button type="submit" id="btnConta">Criar minha conta</button>
+    <button type="button" class="fantasma" id="voltar">← Usar outra chave</button>
+  </form>
+
+  <div class="rodape" id="rodape">
+    Já tem conta? <a href="/login.html">Entrar</a>
+  </div>
+</main>
+
+<script>
+  const $ = id => document.getElementById(id);
+  let chaveBoa = null;
+
+  // ------------------------------------------------ formatação da chave
+  // A pessoa vai colar de uma mensagem, digitar sem traço, com espaço no meio.
+  // Tudo isso vira o mesmo formato enquanto ela digita.
+  const campoChave = $('chave');
+  campoChave.addEventListener('input', () => {
+    const cru = campoChave.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12);
+    campoChave.value = (cru.match(/.{1,4}/g) || []).join('-');
+  });
+
+  const mostrar = (el, texto) => { el.textContent = texto; el.classList.add('ver'); };
+  const esconder = el => el.classList.remove('ver');
+
+  function irPara(passo) {
+    $('passo1').className = 'passo' + (passo === 1 ? ' ativo' : ' feito');
+    $('passo2').className = 'passo' + (passo === 2 ? ' ativo' : '');
+    $('formChave').hidden = passo !== 1;
+    $('formConta').hidden = passo !== 2;
+  }
+  irPara(1);
+
+  // ------------------------------------------------ passo 1
+  $('formChave').addEventListener('submit', async e => {
+    e.preventDefault();
+    esconder($('erroChave'));
+    const valor = campoChave.value.trim();
+    if (!valor) return mostrar($('erroChave'), 'Digite a chave que você recebeu.');
+
+    const botao = $('btnChave');
+    botao.disabled = true;
+    botao.textContent = 'Conferindo...';
+    try {
+      const res = await fetch('/api/ativar/info?chave=' + encodeURIComponent(valor));
+      const dados = await res.json().catch(() => ({}));
+      if (!res.ok) return mostrar($('erroChave'), dados.error || 'Essa chave não serve.');
+
+      chaveBoa = valor;
+      $('alvoArroba').textContent = '@' + dados.dono;
+      irPara(2);
+      $('usuario').focus();
+    } catch (e) {
+      mostrar($('erroChave'), 'Erro ao conectar com o servidor.');
+    } finally {
+      botao.disabled = false;
+      botao.textContent = 'Conferir chave';
+    }
+  });
+
+  $('voltar').addEventListener('click', () => {
+    chaveBoa = null;
+    esconder($('erroConta'));
+    irPara(1);
+    campoChave.focus();
+  });
+
+  // ------------------------------------------------ força da senha
+  // Não é trava, é aviso: quem quiser usar uma senha fraca usa. O servidor só
+  // exige o mínimo de 6.
+  $('senha').addEventListener('input', () => {
+    const v = $('senha').value;
+    let nivel = 0;
+    if (v.length >= 6) nivel++;
+    if (v.length >= 10) nivel++;
+    if (/[^a-zA-Z]/.test(v)) nivel++;
+    if (/[a-z]/.test(v) && /[A-Z]/.test(v)) nivel++;
+    $('forca').className = 'forca' + (v ? ' n' + Math.min(nivel, 4) : '');
+  });
+
+  // ------------------------------------------------ passo 2
+  $('formConta').addEventListener('submit', async e => {
+    e.preventDefault();
+    esconder($('erroConta'));
+    esconder($('okConta'));
+
+    const usuario = $('usuario').value.trim();
+    const senha = $('senha').value;
+
+    if (!usuario) return mostrar($('erroConta'), 'Escolha um nome de usuário.');
+    if (senha.length < 6) return mostrar($('erroConta'), 'A senha precisa de pelo menos 6 caracteres.');
+    // conferido aqui porque é o único erro que o servidor não tem como pegar
+    if (senha !== $('senha2').value) return mostrar($('erroConta'), 'As duas senhas não são iguais.');
+
+    const botao = $('btnConta');
+    botao.disabled = true;
+    botao.textContent = 'Criando...';
+    try {
+      const res = await fetch('/api/ativar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chave: chaveBoa, usuario, senha })
+      });
+      const dados = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        mostrar($('erroConta'), dados.error || 'Não deu pra criar a conta.');
+        botao.disabled = false;
+        botao.textContent = 'Criar minha conta';
+        return;
+      }
+      $('voltar').hidden = true;
+      $('rodape').hidden = true;
+      mostrar($('okConta'), dados.entrou
+        ? 'Conta criada! Levando você pra sua live...'
+        : 'Conta criada! Entre com o login que você acabou de escolher.');
+      botao.textContent = 'Pronto';
+      setTimeout(() => { location.href = dados.entrou ? '/index.html' : '/login.html'; }, 1400);
+    } catch (e) {
+      mostrar($('erroConta'), 'Erro ao conectar com o servidor.');
+      botao.disabled = false;
+      botao.textContent = 'Criar minha conta';
+    }
+  });
+
+  // Chave que veio no link (?k=XXXX): já preenche e confere sozinho, pra quem
+  // recebeu o link pronto não ter que copiar nada.
+  const naUrl = new URLSearchParams(location.search).get('k');
+  if (naUrl) {
+    campoChave.value = naUrl;
+    campoChave.dispatchEvent(new Event('input'));
+    $('formChave').dispatchEvent(new Event('submit'));
+  } else {
+    campoChave.focus();
+  }
+</script>
+</body>
+</html>

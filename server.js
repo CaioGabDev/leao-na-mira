@@ -9,6 +9,7 @@ const path = require('path');
 const criarRegistro = require('./clientes');
 const assinatura = require('./assinatura');
 const auth = require('./auth');
+const chaves = require('./chaves');
 const config = require('./config');
 const { FileSessionStore } = require('./session-store');
 
@@ -84,6 +85,25 @@ app.post('/api/login', (req, res) => {
   });
 });
 
+// A mesma régua pra quem se cadastra por chave e pro que o administrador cria
+// na mão — senão dá pra criar pela porta dos fundos uma conta que a outra
+// porta recusaria.
+const MIN_SENHA = 6;
+function validarCredenciais(usuario, senha) {
+  const nome = String(usuario || '').trim();
+  if (!nome) return 'Escolha um nome de usuário.';
+  if (nome.length < 3) return 'O usuário precisa de pelo menos 3 caracteres.';
+  if (nome.length > 40) return 'O usuário passou de 40 caracteres.';
+  if (!/^[a-zA-Z0-9._-]+$/.test(nome)) {
+    return 'No usuário valem letras, números, ponto, hífen e sublinhado.';
+  }
+  if (!senha || String(senha).length < MIN_SENHA) {
+    return `A senha precisa de pelo menos ${MIN_SENHA} caracteres.`;
+  }
+  if (String(senha).length > 200) return 'Essa senha é longa demais.';
+  return null;
+}
+
 app.post('/api/logout', (req, res) => {
   req.session.destroy(() => res.json({ ok: true }));
 });
@@ -101,9 +121,120 @@ function requireAuth(req, res, next) {
   return res.redirect('/login.html?next=' + encodeURIComponent(req.originalUrl));
 }
 
+// Quem chega com uma chave ainda NÃO tem conta — se estas rotas ficassem
+// atrás do login, ativar seria impossível.
+const SEM_LOGIN = new Set([
+  '/login.html', '/api/login',
+  '/ativar.html', '/api/ativar', '/api/ativar/info'
+]);
+
 app.use((req, res, next) => {
-  if (req.path === '/login.html' || req.path === '/api/login') return next();
+  if (SEM_LOGIN.has(req.path)) return next();
   requireAuth(req, res, next);
+});
+
+// ---------- ATIVAÇÃO POR CHAVE ----------
+// O administrador gera a chave e diz de qual live ela é. Quem recebe escolhe o
+// próprio usuário e a própria senha: a senha não passa pela mão de ninguém e o
+// administrador nunca fica sabendo dela.
+
+// Freio de tentativa. A rota é pública e chave é coisa que dá pra chutar:
+// 12 caracteres num alfabeto de 31 são ~59 bits, então força bruta não ia
+// longe — mas sem freio ela vira um jeito barato de fazer barulho no servidor.
+const chutes = new Map();   // ip -> { contagem, ate }
+const LIMITE_DE_CHUTES = 15;
+const JANELA_DE_CHUTES = 10 * 60 * 1000;
+
+// O freio conta UMA coisa: chave rejeitada.
+//
+// Contar toda requisição parecia mais seguro e era pior: consultar a chave
+// certa, errar o formato do usuário ou repetir um nome já usado somavam no
+// mesmo balde, e o cliente legítimo travava no meio do próprio cadastro. Quem
+// tem uma chave válida na mão já provou que não está chutando — e chutar é a
+// única coisa contra a qual este freio serve.
+function chuteiAChave(req) {
+  const ip = req.ip || 'desconhecido';
+  const agora = Date.now();
+  const atual = chutes.get(ip);
+  if (!atual || agora > atual.ate) {
+    chutes.set(ip, { contagem: 1, ate: agora + JANELA_DE_CHUTES });
+    return;
+  }
+  atual.contagem++;
+}
+
+function estaDeCastigo(req) {
+  const atual = chutes.get(req.ip || 'desconhecido');
+  if (!atual || Date.now() > atual.ate) return false;
+  return atual.contagem > LIMITE_DE_CHUTES;
+}
+
+// Acertou a chave: o IP volta a ter crédito. Senão, ativar vários clientes da
+// mesma rede (o mesmo escritório, o mesmo celular) esbarraria no freio.
+function limparChutes(req) {
+  chutes.delete(req.ip || 'desconhecido');
+}
+
+// Diz de qual live a chave é, sem gastar ela. É o que a tela mostra antes da
+// pessoa escolher usuário e senha — pra ela saber que caiu no lugar certo.
+app.get('/api/ativar/info', (req, res) => {
+  if (estaDeCastigo(req)) {
+    return res.status(429).json({ error: 'Muitas chaves erradas. Espere alguns minutos.' });
+  }
+  const conferida = chaves.conferir((req.query && req.query.chave) || '');
+  if (!conferida.ok) {
+    chuteiAChave(req);
+    return res.status(404).json({ error: conferida.motivo });
+  }
+  limparChutes(req);
+  res.json({ ok: true, dono: conferida.dono, expiraEm: conferida.expiraEm });
+});
+
+app.post('/api/ativar', (req, res) => {
+  if (estaDeCastigo(req)) {
+    return res.status(429).json({ error: 'Muitas chaves erradas. Espere alguns minutos.' });
+  }
+  const { chave, usuario, senha } = req.body || {};
+  const nome = String(usuario || '').trim();
+
+  const conferida = chaves.conferir(chave);
+  if (!conferida.ok) {
+    chuteiAChave(req);
+    return res.status(400).json({ error: conferida.motivo });
+  }
+  // chave boa: daqui pra frente os erros são de formulário, não de chute
+  limparChutes(req);
+
+  const problema = validarCredenciais(nome, senha);
+  if (problema) return res.status(400).json({ error: problema });
+  if (auth.loadUsers().some(u => u.username === nome)) {
+    return res.status(409).json({ error: 'Já existe alguém com esse nome de usuário.' });
+  }
+
+  // Gastar a chave ANTES de criar a conta. Se o cadastro falhar depois, o
+  // prejuízo é uma chave queimada; na ordem inversa, duas ativações
+  // simultâneas criariam duas contas com a mesma chave.
+  const gasto = chaves.usar(chave, nome);
+  if (!gasto.ok) return res.status(400).json({ error: gasto.motivo });
+
+  auth.upsertUser(nome, String(senha), { dono: gasto.dono });
+
+  let ligado = false;
+  try {
+    clientes.iniciar(gasto.dono);
+    ligado = true;
+  } catch (e) {
+    console.error(`Não consegui subir a live @${gasto.dono}:`, e.message);
+  }
+
+
+  // Já entra logado: pedir pra digitar de novo o que acabou de escolher é
+  // só um jeito a mais de errar.
+  req.session.regenerate(err => {
+    if (err) return res.json({ ok: true, dono: gasto.dono, ligado, entrou: false });
+    req.session.user = nome;
+    req.session.save(() => res.json({ ok: true, dono: gasto.dono, ligado, entrou: true }));
+  });
 });
 
 // Quais cartas (e quantas) uma premiação deu. O TikTok não manda isso pela
@@ -145,7 +276,7 @@ function requireAdmin(req, res, next) {
 }
 // O painel e o cadastro são do dono do negócio. A APARÊNCIA não: o cliente
 // mexe na cara da live dele (o /api/config decide o escopo por quem pediu).
-app.use(['/admin.html', '/api/clientes', '/api/espiar'], requireAdmin);
+app.use(['/admin.html', '/api/clientes', '/api/chaves', '/api/espiar'], requireAdmin);
 
 // De quem é a cara que esta requisição pode mexer.
 //
@@ -259,10 +390,10 @@ app.post('/api/clientes', (req, res) => {
   const ehAdministrador = !!(req.body && req.body.administrador);
   const dono = config.usuarioTikTok((req.body && req.body.dono) || '');
 
-  if (!usuario || !senha) return res.status(400).json({ error: 'Usuário e senha são obrigatórios.' });
   // administrador é conta da casa: não pertence a live nenhuma
   if (!ehAdministrador && !dono) return res.status(400).json({ error: 'O @ da live do cliente é obrigatório.' });
-  if (String(senha).length < 6) return res.status(400).json({ error: 'A senha precisa de pelo menos 6 caracteres.' });
+  const problema = validarCredenciais(usuario, senha);
+  if (problema) return res.status(400).json({ error: problema });
   if (auth.loadUsers().some(u => u.username === usuario)) {
     return res.status(409).json({ error: 'Já existe alguém com esse nome de usuário.' });
   }
@@ -338,6 +469,36 @@ app.post('/api/clientes/remover-acesso', (req, res) => {
   res.json({ ok: true });
 });
 
+// ---------- CHAVES ----------
+app.get('/api/chaves', (req, res) => {
+  res.json({ chaves: chaves.listar(), padrao: TIKTOK_USERNAME });
+});
+
+app.post('/api/chaves', (req, res) => {
+  const dono = config.usuarioTikTok((req.body && req.body.dono) || '');
+  if (!dono) return res.status(400).json({ error: 'A chave precisa do @ da live.' });
+
+  const registro = chaves.gerar({
+    dono,
+    criadaPor: (req.session && req.session.user) || null,
+    validadeDias: req.body && req.body.validadeDias,
+    observacao: req.body && req.body.observacao
+  });
+  res.json({ ok: true, ...registro });
+});
+
+app.post('/api/chaves/revogar', (req, res) => {
+  const ok = chaves.revogar((req.body && req.body.chave) || '');
+  if (!ok) return res.status(404).json({ error: 'Chave não encontrada, ou já usada.' });
+  res.json({ ok: true });
+});
+
+app.post('/api/chaves/apagar', (req, res) => {
+  const ok = chaves.apagar((req.body && req.body.chave) || '');
+  if (!ok) return res.status(404).json({ error: 'Chave não encontrada.' });
+  res.json({ ok: true });
+});
+
 // ---------- ESPIAR ----------
 // O administrador não tem live própria. Pra dar suporte, ele entra na de um
 // cliente — e isso fica guardado na sessão dele, não na do cliente.
@@ -358,7 +519,8 @@ app.get('/api/espiar/sair', (req, res) => {
 // aqui é trocar os {{marcadores}} pelo config antes de entregar. Vem ANTES do
 // express.static de propósito: senão ele entrega o arquivo cru.
 // Lista fechada de nomes — nada de montar caminho com o que veio na URL.
-const PAGINAS = new Set(['index.html', 'mural.html', 'login.html', 'diagnostico.html', 'admin.html', 'config.html']);
+const PAGINAS = new Set(['index.html', 'mural.html', 'login.html', 'ativar.html',
+                         'diagnostico.html', 'admin.html', 'config.html']);
 // as telas que pertencem a UMA live — o administrador não mora nelas
 const PAGINAS_DE_CLIENTE = new Set(['index.html', 'mural.html', 'diagnostico.html']);
 const cachePagina = new Map();   // nome|variante -> { mtimeMs, versao, html }

@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Login — {{marca.titulo}}</title>
+<title>Entrar — {{marca.titulo}}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bungee&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
   /* Esta página NÃO usa /assets/theme.css de propósito: o gate de autenticação
-     do server só libera /login.html e /api/login, então qualquer CSS externo
-     seria redirecionado e a tela cairia sem estilo. Os tokens abaixo são os
-     mesmos do theme.css — se mudar lá, mude aqui. */
+     do server só libera /login.html, /ativar.html e as APIs delas, então
+     qualquer CSS externo seria redirecionado e a tela cairia sem estilo.
+     Os tokens abaixo são os mesmos do theme.css — se mudar lá, mude aqui. */
   :root {
     --bg: #0a0807; --card: #150f0b; --card-2: #0f0b08; --line: #2b2119; --line-soft: #201810;
     --ink: #f3e9dc; --ink-dim: #9c8b7d; --ink-faint: #5a4c40;
@@ -20,47 +20,103 @@
     --r-sm: 10px; --r-md: 14px; --r-lg: 18px; --r-xl: 22px; --r-pill: 999px;
   }
   * { box-sizing: border-box; }
-  html, body {
+  html { height: 100%; background: var(--bg); }
+  body {
     margin: 0; min-height: 100%;
-    background:
-      radial-gradient(700px 420px at 12% -6%, rgba(255,122,26,.14), transparent 60%),
-      radial-gradient(900px 600px at 100% 0%, rgba(255,45,45,.08), transparent 55%),
-      var(--bg);
     color: var(--ink); font-family: 'Rajdhani', sans-serif; font-weight: 600;
     -webkit-font-smoothing: antialiased;
+    display: grid; place-items: center; padding: 24px;
   }
-  body { display: grid; place-items: center; padding: 24px; min-height: 100vh; }
+  /* o brilho fica numa camada presa à viewport: assim não existe "fim do
+     degradê" no meio da página, por mais alta que ela fique */
+  body::before {
+    content: ''; position: fixed; inset: 0; z-index: -2; pointer-events: none;
+    background:
+      radial-gradient(700px 420px at 12% -6%, rgba(255,122,26,.14), transparent 60%),
+      radial-gradient(900px 600px at 100% 0%, rgba(255,45,45,.08), transparent 55%);
+  }
 
-  .box {
-    width: 100%; max-width: 380px;
+  /* ---------- brasinhas do fundo ----------
+     CSS puro, sem canvas: esta tela roda antes do login e não vale carregar
+     script pra enfeite. São 9 pontinhos subindo em tempos diferentes. */
+  .brasas { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+  .brasa {
+    position: absolute; bottom: -12px; width: 3px; height: 3px; border-radius: 50%;
+    background: var(--gold); opacity: 0;
+    box-shadow: 0 0 8px 2px rgba(255,122,26,.55);
+    animation: subir linear infinite;
+  }
+  @keyframes subir {
+    0%   { transform: translateY(0) scale(.7);            opacity: 0; }
+    12%  {                                                opacity: .85; }
+    70%  {                                                opacity: .5; }
+    100% { transform: translateY(-100vh) scale(.25);      opacity: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) { .brasa { animation: none; opacity: 0; } }
+
+  /* ---------- o cartão ---------- */
+  .caixa {
+    width: 100%; max-width: 860px;
+    display: grid; grid-template-columns: 1fr 1fr;
     background: linear-gradient(168deg, var(--card), var(--card-2));
     border: 1px solid var(--line); border-radius: var(--r-xl);
-    padding: 34px 30px 30px;
-    box-shadow: 0 30px 70px -30px #000;
+    overflow: hidden;
+    box-shadow: 0 40px 90px -40px #000, 0 0 0 1px rgba(255,176,58,.05);
   }
 
-  .mark {
-    width: 52px; height: 52px; margin: 0 auto 18px;
-    display: grid; place-items: center; font-size: 24px;
+  /* lado da marca */
+  .lado-marca {
+    padding: 44px 38px;
+    border-right: 1px solid var(--line-soft);
+    background:
+      radial-gradient(420px 300px at 20% 0%, rgba(255,122,26,.13), transparent 62%),
+      linear-gradient(180deg, rgba(255,176,58,.04), transparent 55%);
+    display: flex; flex-direction: column;
+  }
+  .selo {
+    width: 58px; height: 58px; display: grid; place-items: center; font-size: 27px;
     border-radius: var(--r-md);
     background: linear-gradient(160deg, rgba(255,176,58,.22), rgba(255,45,45,.10));
     border: 1px solid rgba(255,176,58,.32);
     box-shadow: inset 0 0 22px -6px rgba(255,122,26,.7);
   }
-
   h1 {
-    font-family: 'Bungee', sans-serif; font-weight: 400; font-size: 23px;
-    text-align: center; margin: 0 0 6px; line-height: 1.15;
+    font-family: 'Bungee', sans-serif; font-weight: 400; font-size: 30px;
+    margin: 22px 0 10px; line-height: 1.1;
     background: linear-gradient(180deg, #ffe9b0 0%, var(--gold) 30%, var(--ember1) 65%, #a3230f 100%);
     -webkit-background-clip: text; background-clip: text; color: transparent;
   }
-  p.sub { text-align: center; color: var(--ink-faint); font-size: 13px; margin: 0 0 26px; }
+  .lema { color: var(--ink-dim); font-size: 14.5px; line-height: 1.5; margin: 0; }
 
-  .field + .field { margin-top: 16px; }
+  .vantagens { list-style: none; margin: 28px 0 0; padding: 0; }
+  .vantagens li {
+    display: flex; gap: 10px; align-items: flex-start;
+    font-size: 13px; color: var(--ink-dim); line-height: 1.45;
+  }
+  .vantagens li + li { margin-top: 12px; }
+  .vantagens .ponto {
+    flex: none; width: 17px; height: 17px; margin-top: 1px; border-radius: 50%;
+    display: grid; place-items: center; font-size: 9px; color: #2a1400;
+    background: var(--grad-fire);
+  }
+
+  .marca-rodape {
+    margin-top: auto; padding-top: 26px;
+    font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  /* lado do formulário */
+  .lado-form { padding: 44px 38px; display: flex; flex-direction: column; justify-content: center; }
+  h2 { font-size: 21px; margin: 0 0 4px; letter-spacing: .01em; }
+  .abre { color: var(--ink-faint); font-size: 13px; margin: 0 0 26px; }
+
+  .campo + .campo { margin-top: 15px; }
   label {
     display: block; font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase;
     font-weight: 700; color: var(--ink-faint); margin: 0 0 7px;
   }
+  .com-botao { position: relative; }
   input {
     width: 100%; padding: 12px 14px; border-radius: var(--r-sm);
     border: 1.5px solid var(--line); background: #0d0907;
@@ -68,11 +124,27 @@
     color: var(--ink); outline: none;
     transition: border-color .15s ease, box-shadow .15s ease;
   }
+  .com-botao input { padding-right: 52px; }
   input::placeholder { color: var(--ink-faint); }
   input:focus { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(255,176,58,.16); }
 
-  button {
-    width: 100%; margin-top: 26px; cursor: pointer;
+  .olho {
+    position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+    background: none; border: none; cursor: pointer; padding: 7px 9px;
+    font-size: 15px; line-height: 1; border-radius: var(--r-sm);
+    color: var(--ink-faint); width: auto; margin: 0; box-shadow: none;
+    letter-spacing: normal; text-transform: none;
+  }
+  .olho:hover { color: var(--gold); filter: none; }
+
+  .dica-caps {
+    display: none; margin-top: 7px; font-size: 11.5px; color: var(--gold);
+    letter-spacing: .04em;
+  }
+  .dica-caps.ver { display: block; }
+
+  button[type=submit] {
+    width: 100%; margin-top: 24px; cursor: pointer;
     background: var(--grad-fire); color: #2a1400;
     font-family: 'Rajdhani', sans-serif; font-weight: 700; font-size: 14px;
     letter-spacing: .04em; text-transform: uppercase;
@@ -80,69 +152,143 @@
     box-shadow: 0 10px 24px -12px rgba(255,122,26,.9);
     transition: filter .15s ease, transform .1s ease;
   }
-  button:hover { filter: brightness(1.06); }
-  button:active { transform: translateY(1px); }
-  button:disabled { opacity: .55; cursor: default; filter: none; }
+  button[type=submit]:hover { filter: brightness(1.06); }
+  button[type=submit]:active { transform: translateY(1px); }
+  button[type=submit]:disabled { opacity: .55; cursor: default; filter: none; }
 
-  .error {
+  .erro {
     display: none; margin-top: 16px;
     background: rgba(90,20,20,.3); border: 1px solid rgba(255,70,70,.32);
     border-radius: var(--r-sm); padding: 10px 13px;
     font-size: 13px; color: #ffb3b3; text-align: center;
   }
-  .error.show { display: block; }
+  .erro.ver { display: block; }
 
-  .foot {
-    margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line-soft);
-    text-align: center; font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
-    color: var(--ink-faint);
+  .rodape-form {
+    margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--line-soft);
+    text-align: center; font-size: 13px; color: var(--ink-faint);
   }
+  .rodape-form a { color: var(--gold); text-decoration: none; font-weight: 700; }
+  .rodape-form a:hover { text-decoration: underline; }
 
-  :where(input, button):focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  :where(input, button, a):focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+  /* No celular o lado da marca vira um cabeçalho curto: a lista de vantagens
+     empurraria o formulário pra fora da primeira tela. */
+  @media (max-width: 720px) {
+    .caixa { grid-template-columns: 1fr; max-width: 420px; }
+    .lado-marca { border-right: none; border-bottom: 1px solid var(--line-soft); padding: 30px 26px 24px; }
+    .vantagens, .marca-rodape { display: none; }
+    h1 { font-size: 25px; margin: 16px 0 8px; }
+    .lado-form { padding: 28px 26px 32px; }
+  }
 </style>
 {{tema}}
 </head>
 <body>
 
-<div class="box">
-  <div class="mark">{{marca.emoji}}</div>
-  <h1>{{marca.titulo}}</h1>
-  <p class="sub">Faça login pra acessar</p>
+<div class="brasas" id="brasas" aria-hidden="true"></div>
 
-  <form id="loginForm">
-    <div class="field">
-      <label for="username">Usuário</label>
-      <input type="text" id="username" autocomplete="username" placeholder="seu usuário" required>
-    </div>
-    <div class="field">
-      <label for="password">Senha</label>
-      <input type="password" id="password" autocomplete="current-password" placeholder="••••••••" required>
-    </div>
-    <div class="error" id="errorMsg"></div>
-    <button type="submit" id="submitBtn">Entrar</button>
-  </form>
+<main class="caixa">
+  <section class="lado-marca">
+    <div class="selo">{{marca.emoji}}</div>
+    <h1>{{marca.titulo}}</h1>
+    <p class="lema">{{marca.sub}}</p>
 
-  <div class="foot">Acesso restrito</div>
-</div>
+    <ul class="vantagens">
+      <li><span class="ponto">✓</span><span>Ranking da tropa ao vivo, direto da sua live</span></li>
+      <li><span class="ponto">✓</span><span>Power-ups do PK contados sozinhos</span></li>
+      <li><span class="ponto">✓</span><span>A cara da página é sua: cores, nome e emoji</span></li>
+    </ul>
+
+    <div class="marca-rodape">Acesso restrito</div>
+  </section>
+
+  <section class="lado-form">
+    <h2>Entrar</h2>
+    <p class="abre">Use o login que você criou.</p>
+
+    <form id="formLogin" novalidate>
+      <div class="campo">
+        <label for="usuario">Usuário</label>
+        <input type="text" id="usuario" autocomplete="username" placeholder="seu usuário"
+               autocapitalize="none" spellcheck="false" required>
+      </div>
+
+      <div class="campo">
+        <label for="senha">Senha</label>
+        <div class="com-botao">
+          <input type="password" id="senha" autocomplete="current-password" placeholder="••••••••" required>
+          <button type="button" class="olho" id="olho" aria-label="Mostrar a senha" title="Mostrar a senha">👁</button>
+        </div>
+        <span class="dica-caps" id="dicaCaps">⇪ Caps Lock está ligado</span>
+      </div>
+
+      <div class="erro" id="erro" role="alert"></div>
+      <button type="submit" id="entrar">Entrar</button>
+    </form>
+
+    <div class="rodape-form">
+      Recebeu uma chave de acesso? <a href="/ativar.html">Ativar minha conta</a>
+    </div>
+  </section>
+</main>
 
 <script>
-  const form = document.getElementById('loginForm');
-  const errorMsg = document.getElementById('errorMsg');
-  const submitBtn = document.getElementById('submitBtn');
+  const $ = id => document.getElementById(id);
 
-  form.addEventListener('submit', async (e) => {
+  // brasinhas: posição, tamanho e ritmo sorteados, senão as 9 sobem em fila
+  const brasas = $('brasas');
+  for (let i = 0; i < 9; i++) {
+    const b = document.createElement('span');
+    b.className = 'brasa';
+    const tamanho = 2 + Math.random() * 3;
+    b.style.left = (Math.random() * 100) + '%';
+    b.style.width = b.style.height = tamanho.toFixed(1) + 'px';
+    b.style.animationDuration = (9 + Math.random() * 11).toFixed(1) + 's';
+    b.style.animationDelay = (-Math.random() * 14).toFixed(1) + 's';
+    brasas.appendChild(b);
+  }
+
+  // mostrar/esconder a senha
+  const senha = $('senha');
+  $('olho').addEventListener('click', () => {
+    const vendo = senha.type === 'text';
+    senha.type = vendo ? 'password' : 'text';
+    $('olho').textContent = vendo ? '👁' : '🙈';
+    $('olho').setAttribute('aria-label', vendo ? 'Mostrar a senha' : 'Esconder a senha');
+    senha.focus();
+  });
+
+  // Caps Lock: com a senha escondida, errar por causa disso é invisível —
+  // a pessoa jura que digitou certo e o servidor só diz "inválido".
+  const dicaCaps = $('dicaCaps');
+  const olharCaps = e => {
+    if (typeof e.getModifierState !== 'function') return;
+    dicaCaps.classList.toggle('ver', e.getModifierState('CapsLock'));
+  };
+  senha.addEventListener('keydown', olharCaps);
+  senha.addEventListener('keyup', olharCaps);
+  senha.addEventListener('blur', () => dicaCaps.classList.remove('ver'));
+
+  const erro = $('erro');
+  const mostrarErro = texto => { erro.textContent = texto; erro.classList.add('ver'); };
+
+  $('formLogin').addEventListener('submit', async e => {
     e.preventDefault();
-    errorMsg.classList.remove('show');
-    submitBtn.disabled = true;
-    submitBtn.textContent = 'Entrando...';
+    erro.classList.remove('ver');
+
+    const usuario = $('usuario').value.trim();
+    if (!usuario || !senha.value) return mostrarErro('Preencha usuário e senha.');
+
+    const botao = $('entrar');
+    botao.disabled = true;
+    botao.textContent = 'Entrando...';
     try {
       const res = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: document.getElementById('username').value.trim(),
-          password: document.getElementById('password').value
-        })
+        body: JSON.stringify({ username: usuario, password: senha.value })
       });
       if (res.ok) {
         const params = new URLSearchParams(location.search);
@@ -153,17 +299,17 @@
         location.href = params.get('next') || dados.destino || '/';
         return;
       }
-      const data = await res.json().catch(() => ({}));
-      errorMsg.textContent = data.error || 'Usuário ou senha inválidos.';
-      errorMsg.classList.add('show');
+      const dados = await res.json().catch(() => ({}));
+      mostrarErro(dados.error || 'Usuário ou senha inválidos.');
     } catch (e) {
-      errorMsg.textContent = 'Erro ao conectar com o servidor.';
-      errorMsg.classList.add('show');
+      mostrarErro('Erro ao conectar com o servidor.');
     } finally {
-      submitBtn.disabled = false;
-      submitBtn.textContent = 'Entrar';
+      botao.disabled = false;
+      botao.textContent = 'Entrar';
     }
   });
+
+  $('usuario').focus();
 </script>
 </body>
 </html>
