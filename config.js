@@ -21,6 +21,13 @@ const FILE = process.env.RAILWAY_ENVIRONMENT ? '/data/config.json' : 'config.jso
 // O padrão é o site como ele sempre foi. Trocar qualquer coisa aqui muda o
 // visual de quem ainda não configurou nada.
 const PADRAO = {
+  // A CASA que vende o site. Nada a ver com a marca de cada cliente: isto
+  // aparece no login e na tela de ativar, que são a porta do produto. Quem
+  // chega ali ainda não pertence a live nenhuma.
+  produto: {
+    nome: 'Painel de Lives',
+    lema: 'Ranking, tropa e power-ups da sua live do TikTok.'
+  },
   marca: {
     emoji:  '🔥',
     titulo: 'Ranking da Live',
@@ -108,12 +115,17 @@ function escaparHtml(t) {
 function normalizar(bruto, base) {
   const b = (bruto && typeof bruto === 'object') ? bruto : {};
   const p = base || PADRAO;
+  const pr = (b.produto && typeof b.produto === 'object') ? b.produto : {};
   const m = (b.marca && typeof b.marca === 'object') ? b.marca : {};
   const u = (b.mural && typeof b.mural === 'object') ? b.mural : {};
   const t = (b.tema  && typeof b.tema  === 'object') ? b.tema  : {};
   const l = (b.live  && typeof b.live  === 'object') ? b.live  : {};
 
   return {
+    produto: {
+      nome: texto(pr.nome, LIMITE.titulo) || p.produto.nome,
+      lema: texto(pr.lema, LIMITE.sub)    || p.produto.lema
+    },
     marca: {
       emoji:  texto(m.emoji,  LIMITE.emoji)  || p.marca.emoji,
       titulo: texto(m.titulo, LIMITE.titulo) || p.marca.titulo,
@@ -283,7 +295,12 @@ function aplicar(html, ctx) {
   const c = get(ctx && ctx.dono);
   const ehAdmin = !!(ctx && ctx.ehAdmin);
   const espiando = !!(ctx && ctx.espiando);
+  // O produto vem SEMPRE da instalação, nunca do cliente: se viesse do `c`,
+  // um cliente com config própria reescreveria o nome de quem vende o site.
+  const casa = get();
   const mapa = {
+    '{{produto.nome}}': escaparHtml(casa.produto.nome),
+    '{{produto.lema}}': escaparHtml(casa.produto.lema),
     '{{marca.emoji}}':  escaparHtml(c.marca.emoji),
     '{{marca.titulo}}': escaparHtml(c.marca.titulo),
     '{{marca.sub}}':    escaparHtml(c.marca.sub),

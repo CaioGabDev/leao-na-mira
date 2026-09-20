@@ -3,163 +3,217 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Ativar conta — {{marca.titulo}}</title>
+<title>Ativar conta — {{produto.nome}}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bungee&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@700&display=swap" rel="stylesheet">
 <style>
-  /* Mesma regra do login: esta tela roda ANTES de existir conta, e o gate só
-     libera ela e as APIs de ativação — CSS externo seria redirecionado. */
+  /* ===========================================================================
+     Mesma regra do login: esta tela é DO PRODUTO, não de um streamer.
+     Não recebe o bloco de tema do cliente nem os marcadores de marca — quem
+     chega aqui ainda não tem conta nenhuma, muito menos live.
+
+     (E o nome daqueles marcadores não se escreve aqui: o template troca eles
+     em qualquer lugar do arquivo, INCLUSIVE dentro de comentário. Escrever o
+     de tema numa explicação como esta despeja o CSS do cliente no meio do
+     comentário, fecha o <style> cedo e a tela vem branca — já aconteceu.)
+
+     Também não usa /assets/theme.css: o gate só libera esta página e a de
+     login, então CSS externo seria redirecionado.
+     =========================================================================== */
   :root {
-    --bg: #0a0807; --card: #150f0b; --card-2: #0f0b08; --line: #2b2119; --line-soft: #201810;
-    --ink: #f3e9dc; --ink-dim: #9c8b7d; --ink-faint: #5a4c40;
-    --gold: #ffb03a; --ember1: #ff7a1a; --ember2: #ff2d2d;
-    --grad-fire: linear-gradient(180deg, var(--gold), var(--ember1));
-    --r-sm: 10px; --r-md: 14px; --r-lg: 18px; --r-xl: 22px; --r-pill: 999px;
+    --preto:    #05070c;
+    --painel:   #0c111c;
+    --painel-2: #0a0e18;
+    --linha:    #1a2333;
+    --linha-luz:#232f44;
+
+    --ink:      #e9eefb;
+    --ink-dim:  #94a3bd;
+    --ink-fraco:#5d6b85;
+
+    --azul:     #3b82f6;
+    --azul-luz: #7aa7ff;
+    --azul-esc: #1d4ed8;
+    --verde:    #34d399;
+
+    --r-sm: 10px; --r-md: 14px; --r-lg: 20px; --r-xl: 26px;
   }
   * { box-sizing: border-box; }
-  html { height: 100%; background: var(--bg); }
+  html { height: 100%; background: var(--preto); }
   body {
     margin: 0; min-height: 100%;
-    color: var(--ink); font-family: 'Rajdhani', sans-serif; font-weight: 600;
-    -webkit-font-smoothing: antialiased;
+    font-family: 'Inter', system-ui, sans-serif;
+    color: var(--ink); -webkit-font-smoothing: antialiased;
     display: grid; place-items: center; padding: 24px;
   }
   body::before {
-    content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+    content: ''; position: fixed; inset: 0; z-index: -2; pointer-events: none;
     background:
-      radial-gradient(700px 420px at 12% -6%, rgba(255,122,26,.14), transparent 60%),
-      radial-gradient(900px 600px at 100% 0%, rgba(255,45,45,.08), transparent 55%);
+      radial-gradient(900px 560px at 15% -10%, rgba(59,130,246,.16), transparent 62%),
+      radial-gradient(760px 620px at 100% 8%,  rgba(29,78,216,.13),  transparent 58%);
+  }
+  body::after {
+    content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(122,167,255,.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(122,167,255,.045) 1px, transparent 1px);
+    background-size: 54px 54px;
+    -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, #000 20%, transparent 78%);
+            mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, #000 20%, transparent 78%);
   }
 
   .caixa {
-    width: 100%; max-width: 440px;
-    background: linear-gradient(168deg, var(--card), var(--card-2));
-    border: 1px solid var(--line); border-radius: var(--r-xl);
-    padding: 36px 32px 30px;
-    box-shadow: 0 40px 90px -40px #000;
+    width: 100%; max-width: 460px;
+    background: linear-gradient(170deg, var(--painel), var(--painel-2));
+    border: 1px solid var(--linha); border-radius: var(--r-xl);
+    padding: 38px 34px 30px;
+    box-shadow:
+      0 50px 110px -45px #000,
+      inset 0 1px 0 rgba(122,167,255,.09);
   }
 
   .selo {
-    width: 54px; height: 54px; margin: 0 auto 16px;
-    display: grid; place-items: center; font-size: 25px;
-    border-radius: var(--r-md);
-    background: linear-gradient(160deg, rgba(255,176,58,.22), rgba(255,45,45,.10));
-    border: 1px solid rgba(255,176,58,.32);
-    box-shadow: inset 0 0 22px -6px rgba(255,122,26,.7);
+    width: 44px; height: 44px; margin: 0 auto; border-radius: 13px;
+    display: grid; place-items: center;
+    background: linear-gradient(155deg, var(--azul-luz), var(--azul-esc));
+    box-shadow: 0 10px 26px -10px rgba(59,130,246,.85), inset 0 1px 0 rgba(255,255,255,.28);
   }
+  .selo svg { width: 21px; height: 21px; display: block; }
+
   h1 {
-    font-family: 'Bungee', sans-serif; font-weight: 400; font-size: 21px;
-    text-align: center; margin: 0 0 6px; line-height: 1.15;
-    background: linear-gradient(180deg, #ffe9b0 0%, var(--gold) 30%, var(--ember1) 65%, #a3230f 100%);
-    -webkit-background-clip: text; background-clip: text; color: transparent;
+    font-size: 22px; font-weight: 700; letter-spacing: -.02em;
+    text-align: center; margin: 20px 0 6px;
   }
-  .abre { text-align: center; color: var(--ink-faint); font-size: 13px; margin: 0 0 24px; }
+  .abre { text-align: center; color: var(--ink-fraco); font-size: 13.5px; margin: 0 0 26px; font-weight: 400; }
 
   /* ---------- passos ---------- */
-  .passos { display: flex; align-items: center; gap: 8px; margin: 0 0 26px; justify-content: center; }
+  .passos { display: flex; align-items: center; gap: 10px; margin: 0 0 26px; justify-content: center; }
   .passo {
-    display: flex; align-items: center; gap: 7px;
-    font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
-    color: var(--ink-faint); font-weight: 700;
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; color: var(--ink-fraco); font-weight: 600;
   }
   .passo .bolha {
-    width: 21px; height: 21px; border-radius: 50%; display: grid; place-items: center;
-    font-size: 11px; border: 1.5px solid var(--line); background: #0d0907;
+    width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
+    font-size: 11px; font-weight: 700;
+    border: 1px solid var(--linha-luz); background: #070b13;
+    transition: all .2s ease;
   }
-  .passo.ativo { color: var(--gold); }
-  .passo.ativo .bolha { border-color: var(--gold); color: var(--gold); }
-  .passo.feito .bolha { background: var(--grad-fire); border-color: transparent; color: #2a1400; }
-  .traco { width: 26px; height: 1.5px; background: var(--line); }
+  .passo.ativo { color: var(--azul-luz); }
+  .passo.ativo .bolha {
+    border-color: var(--azul); color: #fff;
+    background: rgba(59,130,246,.18);
+    box-shadow: 0 0 0 3.5px rgba(59,130,246,.13);
+  }
+  .passo.feito { color: var(--ink-dim); }
+  .passo.feito .bolha {
+    background: linear-gradient(155deg, var(--azul-luz), var(--azul-esc));
+    border-color: transparent; color: #fff;
+  }
+  .traco { width: 30px; height: 1px; background: var(--linha-luz); }
 
-  .campo + .campo { margin-top: 15px; }
+  .campo + .campo { margin-top: 16px; }
   label {
-    display: block; font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase;
-    font-weight: 700; color: var(--ink-faint); margin: 0 0 7px;
+    display: block; font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
+    font-weight: 600; color: var(--ink-fraco); margin: 0 0 8px;
   }
   input {
-    width: 100%; padding: 12px 14px; border-radius: var(--r-sm);
-    border: 1.5px solid var(--line); background: #0d0907;
-    font-family: 'Rajdhani', sans-serif; font-weight: 600; font-size: 15px;
+    width: 100%; padding: 13px 15px; border-radius: var(--r-sm);
+    border: 1px solid var(--linha-luz); background: #070b13;
+    font-family: 'Inter', system-ui, sans-serif; font-weight: 500; font-size: 14.5px;
     color: var(--ink); outline: none;
-    transition: border-color .15s ease, box-shadow .15s ease;
+    transition: border-color .16s ease, box-shadow .16s ease, background .16s ease;
   }
-  input::placeholder { color: var(--ink-faint); }
-  input:focus { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(255,176,58,.16); }
+  input::placeholder { color: #465468; font-weight: 400; }
+  input:focus {
+    border-color: var(--azul); background: #080d17;
+    box-shadow: 0 0 0 3.5px rgba(59,130,246,.17);
+  }
+  /* A chave é digitada olhando um print. Monoespaçada porque aqui cada
+     caractere conta — e o alfabeto dela já não tem I, L, O, 0 nem 1. */
   input#chave {
-    text-transform: uppercase; letter-spacing: .22em; text-align: center;
-    font-size: 18px; font-weight: 700;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    text-transform: uppercase; letter-spacing: .18em; text-align: center;
+    font-size: 19px; font-weight: 700; padding: 15px;
   }
 
-  .dica { display: block; margin-top: 7px; font-size: 11.5px; color: var(--ink-faint); line-height: 1.45; }
+  .dica { display: block; margin-top: 8px; font-size: 12px; color: var(--ink-fraco); line-height: 1.5; font-weight: 400; }
 
   /* força da senha */
-  .forca { display: flex; gap: 4px; margin-top: 8px; }
-  .forca i { flex: 1; height: 3px; border-radius: 2px; background: var(--line); transition: background .2s ease; }
-  .forca.n1 i:nth-child(1) { background: var(--ember2); }
-  .forca.n2 i:nth-child(-n+2) { background: var(--ember1); }
-  .forca.n3 i:nth-child(-n+3) { background: var(--gold); }
-  .forca.n4 i { background: #6ee787; }
+  .forca { display: flex; gap: 4px; margin-top: 9px; }
+  .forca i { flex: 1; height: 3px; border-radius: 2px; background: var(--linha-luz); transition: background .2s ease; }
+  .forca.n1 i:nth-child(1) { background: #f87171; }
+  .forca.n2 i:nth-child(-n+2) { background: #fbbf24; }
+  .forca.n3 i:nth-child(-n+3) { background: var(--azul); }
+  .forca.n4 i { background: var(--verde); }
 
   button {
-    width: 100%; margin-top: 24px; cursor: pointer;
-    background: var(--grad-fire); color: #2a1400;
-    font-family: 'Rajdhani', sans-serif; font-weight: 700; font-size: 14px;
-    letter-spacing: .04em; text-transform: uppercase;
-    padding: 13px 16px; border-radius: var(--r-pill); border: none;
-    box-shadow: 0 10px 24px -12px rgba(255,122,26,.9);
-    transition: filter .15s ease, transform .1s ease;
+    width: 100%; margin-top: 26px; cursor: pointer;
+    font-family: 'Inter', system-ui, sans-serif; font-weight: 600; font-size: 14.5px;
+    padding: 14px 18px; border-radius: var(--r-sm); border: none; color: #fff;
+    background: linear-gradient(180deg, var(--azul-luz) -10%, var(--azul) 45%, var(--azul-esc));
+    box-shadow: 0 12px 28px -14px rgba(59,130,246,.95), inset 0 1px 0 rgba(255,255,255,.22);
+    transition: filter .16s ease, transform .1s ease;
   }
-  button:hover { filter: brightness(1.06); }
+  button:hover { filter: brightness(1.08); }
   button:active { transform: translateY(1px); }
-  button:disabled { opacity: .55; cursor: default; filter: none; }
+  button:disabled { opacity: .5; cursor: default; filter: none; box-shadow: none; }
   button.fantasma {
-    background: none; color: var(--ink-dim); border: 1.5px solid var(--line);
-    box-shadow: none; margin-top: 10px;
+    background: none; color: var(--ink-dim); border: 1px solid var(--linha-luz);
+    box-shadow: none; margin-top: 10px; font-weight: 500;
   }
-  button.fantasma:hover { color: var(--ink); border-color: var(--ink-faint); filter: none; }
+  button.fantasma:hover { color: var(--ink); border-color: #2e3d56; background: rgba(122,167,255,.05); filter: none; }
 
   .aviso {
-    display: none; margin-top: 16px; border-radius: var(--r-sm);
-    padding: 10px 13px; font-size: 13px; text-align: center; line-height: 1.45;
+    display: none; margin-top: 18px; border-radius: var(--r-sm);
+    padding: 11px 14px; font-size: 13px; text-align: center; line-height: 1.5; font-weight: 450;
   }
   .aviso.ver { display: block; }
-  .aviso.ruim { background: rgba(90,20,20,.3); border: 1px solid rgba(255,70,70,.32); color: #ffb3b3; }
-  .aviso.bom  { background: rgba(20,70,35,.28); border: 1px solid rgba(110,231,135,.3); color: #a6e9ba; }
+  .aviso.ruim { background: rgba(127,29,29,.26); border: 1px solid rgba(248,113,113,.3); color: #fca5a5; }
+  .aviso.bom  { background: rgba(6,78,59,.3);   border: 1px solid rgba(52,211,153,.3);  color: #6ee7b7; }
 
-  /* o cartão que mostra de qual live é a chave */
+  /* de qual live é a chave */
   .alvo {
-    margin: 0 0 20px; padding: 13px 15px; border-radius: var(--r-md);
-    background: rgba(255,176,58,.07); border: 1px solid rgba(255,176,58,.22);
+    margin: 0 0 22px; padding: 15px 16px; border-radius: var(--r-md);
+    background: linear-gradient(180deg, rgba(59,130,246,.11), rgba(59,130,246,.05));
+    border: 1px solid rgba(122,167,255,.22);
     text-align: center;
   }
   .alvo .rotulo {
-    font-size: 10px; letter-spacing: .16em; text-transform: uppercase;
-    color: var(--ink-faint); font-weight: 700;
+    font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--ink-fraco); font-weight: 600;
   }
-  /* Sem Bungee aqui de propósito: nela o zero sai idêntico ao "O", e num @
-     isso vira "essa não é a minha live". @vitorb0rba tem zero. */
+  /* Fonte normal, e não uma display: em fonte display o zero sai igual ao
+     "O", e num @ isso vira "essa não é a minha live". @vitorb0rba tem zero. */
   .alvo .arroba {
-    font-weight: 700; font-size: 20px; letter-spacing: .03em;
-    color: var(--gold); margin-top: 4px; word-break: break-all;
+    font-size: 20px; font-weight: 700; letter-spacing: .01em;
+    color: var(--azul-luz); margin-top: 5px; word-break: break-all;
   }
 
   .rodape {
-    margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line-soft);
-    text-align: center; font-size: 13px; color: var(--ink-faint);
+    margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--linha);
+    text-align: center; font-size: 13.5px; color: var(--ink-fraco); font-weight: 400;
   }
-  .rodape a { color: var(--gold); text-decoration: none; font-weight: 700; }
+  .rodape a { color: var(--azul-luz); text-decoration: none; font-weight: 600; }
   .rodape a:hover { text-decoration: underline; }
 
   [hidden] { display: none !important; }
-  :where(input, button, a):focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  :where(input, button, a):focus-visible { outline: 2px solid var(--azul-luz); outline-offset: 2px; }
+
+  @media (max-width: 520px) {
+    .caixa { padding: 30px 24px 26px; }
+  }
 </style>
-{{tema}}
 </head>
 <body>
 
 <main class="caixa">
-  <div class="selo">{{marca.emoji}}</div>
+  <div class="selo" aria-hidden="true">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round">
+      <path d="M5 20V12M12 20V5M19 20v-6"/>
+    </svg>
+  </div>
+
   <h1>Ativar sua conta</h1>
   <p class="abre">Sua chave vale uma vez só.</p>
 
