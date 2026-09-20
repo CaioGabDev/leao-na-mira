@@ -991,9 +991,9 @@ function criarLive({ dono, db, emitir }) {
     // Um prêmio chega sem dizer o item. Se o TikTok conta isso pra alguém, é numa
     // mensagem que chega por perto — então aqui a gente grava TUDO que passar
     // logo depois, sem filtro de tipo nenhum, e marca o que cheirar a item.
-    const JANELA_MS = 20000;
+    const JANELA_MS = 30000;
     const LIMITE_DE_JANELAS = 6;
-    const TETO_JSON = 1800;        // por mensagem
+    const TETO_JSON = 6000;        // por mensagem (sem avatar, cabe muita coisa)
     const TETO_JSON_BARULHO = 240; // tipos que a gente ja conhece de cor
     const PEDACO = 300;            // uma linha do diagnostico
     const QUANTAS_ANTES = 15;
@@ -1014,9 +1014,18 @@ function criarLive({ dono, db, emitir }) {
     // JSON quando um premio acontece, entao nao custa nada na live normal.
     const ultimasMensagens = [];
 
+    // Avatar e 80% do peso de qualquer mensagem do TikTok: sao 6 URLs assinadas
+    // por pessoa. Tirando eles, uma mensagem de 18 mil chars vira uma que cabe
+    // inteira no despejo. cardImage NAO entra aqui de proposito -- se a carta
+    // tiver imagem propria, o nome do item pode estar no caminho dela.
+    const SEM_GRACA = new Set(['avatarThumb', 'avatarLarge', 'avatarMedium', 'avatar']);
+
     function jsonDaMensagem(d) {
       try {
-        return JSON.stringify(d, (k, v) => (typeof v === 'bigint' ? String(v) : v));
+        return JSON.stringify(d, (k, v) => {
+          if (SEM_GRACA.has(k)) return '[avatar cortado]';
+          return typeof v === 'bigint' ? String(v) : v;
+        });
       } catch (e) {
         return '(nao deu pra serializar: ' + e.message + ')';
       }
@@ -1028,20 +1037,25 @@ function criarLive({ dono, db, emitir }) {
       if (!obj || typeof obj !== 'object' || nivel > 8) return achados;
       if (ArrayBuffer.isView(obj)) return achados;
       for (const [chave, valor] of Object.entries(obj)) {
+        if (SEM_GRACA.has(chave)) continue;   // 6 URLs por pessoa, zero conteudo
         if (typeof valor === 'string') {
           const t = valor.trim();
           if (t && t.length <= 160 && !/^https?:/i.test(t)) achados.push(chave + '=' + t);
         } else if (valor && typeof valor === 'object') {
           textosParaInvestigar(valor, achados, nivel + 1);
         }
-        if (achados.length > 200) break;
+        if (achados.length > 400) break;
       }
       return achados;
     }
 
     function despejarMensagem(marca, tipo, dados) {
       const textos = textosParaInvestigar(dados);
-      const comItem = textos.filter(t => tipoPelasPalavras(t.split('=').slice(1).join('=')));
+      // NOME_FORTE e nao tipoPelasPalavras: os padroes de contagem ("no. 2",
+      // "top 3") so fazem sentido dentro da frase da carta. Soltos na sonda,
+      // casaram com "defaultPattern=No. 3" de um LikeMessage (posicao no
+      // ranking de espectador) e com "idc=no1a" no fim de uma URL de avatar.
+      const comItem = textos.filter(t => NOME_FORTE.test(t));
 
       if (comItem.length) {
         registrarDiagnostico('premio', `  [${marca}] >>> ${tipo} CITA ITEM <<<`);
@@ -1068,7 +1082,17 @@ function criarLive({ dono, db, emitir }) {
       }
     }
 
-    function abrirJanelaDoPremio(quem) {
+    // O premio e A mensagem do caso: vai inteira, sem teto nenhum.
+    function despejarPremioInteiro(dados) {
+      const json = jsonDaMensagem(dados);
+      registrarDiagnostico('premio',
+        `  >>> O PREMIO, INTEIRO e sem avatar (${json.length} chars) <<<`);
+      for (let i = 0; i < json.length; i += PEDACO) {
+        registrarDiagnostico('premio', '    ' + json.slice(i, i + PEDACO));
+      }
+    }
+
+    function abrirJanelaDoPremio(quem, dadosDoPremio) {
       if (janelaNum >= LIMITE_DE_JANELAS) return;
       janelaNum++;
       janelaAte = Date.now() + JANELA_MS;
@@ -1076,6 +1100,7 @@ function criarLive({ dono, db, emitir }) {
 
       registrarDiagnostico('premio',
         `===== JANELA ${janelaNum}/${LIMITE_DE_JANELAS}: "${quem}" ganhou algo =====`);
+      if (dadosDoPremio) despejarPremioInteiro(dadosDoPremio);
 
       // ANTES: o item pode ser anunciado antes do aviso de premio, e a sonda
       // velha so olhava pra frente.
@@ -1426,7 +1451,8 @@ function criarLive({ dono, db, emitir }) {
       if (msgType === PK_MSG_GANHOU) {
         const premiados = data?.awardCardNotice?.awardedUsers || [];
         // grava o que vier logo depois: e a chance de achar quem nomeia o item
-        abrirJanelaDoPremio(premiados.map(b => b?.user?.nickName).filter(Boolean).join(', ') || '?');
+        abrirJanelaDoPremio(
+          premiados.map(b => b?.user?.nickName).filter(Boolean).join(', ') || '?', data);
         // quantidade da mensagem toda: só vale se o texto disser mesmo; senão a
         // varredura tenta achar a frase, e no fim assume 1.
         const qtdGanha = quantidadeDoTextoOuNada(textosDoDisplayContent(data?.awardCardNotice?.displayContent))
