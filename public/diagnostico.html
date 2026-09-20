@@ -122,6 +122,13 @@
   .linha.nivel-entrou { border-left-color: var(--gold); background: rgba(255,176,58,.07); }
   .linha.banner { border-left-color: var(--blue); }
   .linha.powerup { border-left-color: #c64ff2; background: rgba(198,79,242,.07); }
+  /* a janela do prêmio: verde, porque é a investigação em curso */
+  .linha.premio { border-left-color: #6ee787; background: rgba(110,231,135,.07); }
+  /* a linha que encontrou um item grita */
+  .linha.premio-achou {
+    border-left-color: #ffb03a; background: rgba(255,176,58,.14);
+    font-weight: 700; color: var(--ink);
+  }
   .vazio { text-align: center; color: var(--ink-faint); padding: 46px 0; font-size: 14px; font-family: 'Rajdhani', sans-serif; }
 </style>
 {{tema}}
@@ -168,6 +175,7 @@
       <button class="btn" data-filtro="nivel">Decisões do mural</button>
       <button class="btn" data-filtro="farejador">Tipos de mensagem</button>
       <button class="btn" data-filtro="powerup">🎴 Power-ups</button>
+      <button class="btn" data-filtro="premio">🎁 Janela do prêmio</button>
     </div>
     <span class="contador" id="contador">0 linhas</span>
     <button class="btn destaque" id="copiarBtn">📋 Copiar tudo</button>
@@ -202,6 +210,8 @@
     if (linha.canal === 'subida') return 'subida';
     if (linha.canal === 'banner') return 'banner';
     if (linha.canal === 'powerup') return 'powerup';
+    // a linha que achou um item é a resposta que a gente procura: destaque nela
+    if (linha.canal === 'premio') return /CITA ITEM/.test(linha.texto) ? 'premio premio-achou' : 'premio';
     if (linha.canal === 'nivel' && /ENTROU no mural/.test(linha.texto)) return 'nivel-entrou';
     return '';
   }

@@ -608,6 +608,34 @@ function criarBanco(dono, opcoes) {
   // O uso é exato: a carta, a pessoa e a quantidade vêm no evento. É o lado do
   // GASTO do estoque — o lado do GANHO vem de definirItensDaPremiacao, porque o
   // TikTok não diz quais cartas nem quantas cada premiação deu.
+  // A premiação não diz qual carta foi — isso está provado com payload de
+  // produção: `tags` e `pieces` vêm vazios e o texto é genérico. O USO diz,
+  // porque é a única hora em que o TikTok manda o nome do item.
+  //
+  // Então a premiação pendente mais antiga é resolvida com o item jogado.
+  // Mais antiga porque as cartas vencem em 5 dias e quem joga tende a gastar
+  // a que está pra vencer. Isso escolhe QUAL premiação recebe um item que o
+  // TikTok já afirmou — nunca inventa o item.
+  function resolverPendenteComUso(ficha, tipo, quantas) {
+    if (!tipo || !ficha || !Array.isArray(ficha.ganhas)) return 0;
+    const agora = Date.now();
+
+    const pendentes = ficha.ganhas
+      .filter(c => !c.itens || !Object.keys(c.itens).length)
+      .filter(c => agora - c.em < VALIDADE_CARTA_MS)   // vencida não conta
+      .sort((a, b) => a.em - b.em);
+
+    let resolvidas = 0;
+    for (const premio of pendentes) {
+      if (resolvidas >= quantas) break;
+      premio.itens = { [tipo]: 1 };
+      premio.tipo = tipo;
+      premio.deduzido = true;   // veio do uso, não de alguém marcando
+      resolvidas++;
+    }
+    return resolvidas;
+  }
+
   function registrarCartaUsada(uniqueId, nickname, avatar, tipo, handle, qtd = 1) {
     const ficha = garantirFichaDeCarta(uniqueId, nickname, avatar, handle);
     if (!ficha) return false;
@@ -617,6 +645,14 @@ function criarBanco(dono, opcoes) {
     ficha.usos = ficha.usos || {};
     ficha.usos[chave] = (ficha.usos[chave] || 0) + n;
     ficha.usadas += n;
+
+    // o uso ensina o que a premiação era
+    if (tipo) resolverPendenteComUso(ficha, tipo, n);
+
+    // O que ESTA pessoa costuma jogar. Não vira palpite de estoque: serve pra
+    // tela ajudar na hora de escolher quem chamar pra batalha.
+    ficha.jogou = ficha.jogou || {};
+    if (tipo) ficha.jogou[tipo] = (ficha.jogou[tipo] || 0) + n;
 
     ficha.ultimaEm = Date.now();
     dirty = true;
@@ -671,11 +707,16 @@ function criarBanco(dono, opcoes) {
             : Math.max(0, VALIDADE_CARTA_MS - (agora - maisAntiga)),
           // Uma entrada por PREMIAÇÃO: a hora é exata (vem do evento) e os itens
           // são os informados. `pendente` = ainda ninguém disse o que veio nela.
+          // o que ESTA pessoa costuma jogar (ajuda a decidir quem chamar)
+          jogou: ficha.jogou || {},
           cartas: ficha.ganhas
             .map(c => ({
               ganhaEm: c.em,
               expiraEmMs: Math.max(0, VALIDADE_CARTA_MS - (agora - c.em)),
               itens: c.itens || {},
+              // deduzido = o item veio do uso (o TikTok afirmou), não de
+              // alguém marcando na mão
+              deduzido: !!c.deduzido,
               pendente: !c.itens || Object.keys(c.itens).length === 0
             }))
             .sort((a, b) => a.expiraEmMs - b.expiraEmMs),

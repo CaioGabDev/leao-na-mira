@@ -985,6 +985,70 @@ function criarLive({ dono, db, emitir }) {
     });
 
     // ---------- SONDA DOS POWER-UPS DO PK ----------
+    // ---------- JANELA DO PRÊMIO ----------
+    // Um prêmio chega sem dizer o item. Se o TikTok conta isso pra alguém, é numa
+    // mensagem que chega por perto — então aqui a gente grava TUDO que passar
+    // logo depois, sem filtro de tipo nenhum, e marca o que cheirar a item.
+    const JANELA_MS = 10000;
+    const LIMITE_POR_JANELA = 80;
+    const LIMITE_DE_JANELAS = 6;
+
+    let janelaAte = 0;
+    let janelaNum = 0;
+    let capturadasNaJanela = 0;
+
+    function abrirJanelaDoPremio(quem) {
+      if (janelaNum >= LIMITE_DE_JANELAS) return;
+      janelaNum++;
+      janelaAte = Date.now() + JANELA_MS;
+      capturadasNaJanela = 0;
+      registrarDiagnostico('premio',
+        `===== JANELA ${janelaNum}/${LIMITE_DE_JANELAS}: "${quem}" ganhou algo. ` +
+        `Gravando TODAS as mensagens dos proximos ${JANELA_MS / 1000}s =====`);
+    }
+
+    // Todo texto legível da mensagem, em qualquer profundidade. Diferente da
+    // varredura do estoque, aqui não filtra nada: é investigação, não decisão.
+    function textosParaInvestigar(obj, achados = [], nivel = 0) {
+      if (!obj || typeof obj !== 'object' || nivel > 7) return achados;
+      if (ArrayBuffer.isView(obj)) return achados;
+      for (const [chave, valor] of Object.entries(obj)) {
+        if (typeof valor === 'string') {
+          const t = valor.trim();
+          // URL e id não interessam; texto curto e legível sim
+          if (t && t.length <= 120 && !/^https?:/i.test(t) && !/^\d+$/.test(t)) {
+            achados.push(chave + '=' + t);
+          }
+        } else if (valor && typeof valor === 'object') {
+          textosParaInvestigar(valor, achados, nivel + 1);
+        }
+        if (achados.length > 60) break;
+      }
+      return achados;
+    }
+
+    connection.on('decodedData', (metodo, decodificada) => {
+      if (myId !== activeConnectionId) return;
+      if (Date.now() > janelaAte) return;
+      if (capturadasNaJanela >= LIMITE_POR_JANELA) return;
+      capturadasNaJanela++;
+
+      const tipo = decodificada?.type || metodo;
+      const dados = decodificada?.data ?? decodificada;
+      const textos = textosParaInvestigar(dados);
+
+      // o que interessa: alguma dessas frases nomeia um item?
+      const comItem = textos.filter(t => tipoPelasPalavras(t.split('=').slice(1).join('=')));
+
+      if (comItem.length) {
+        registrarDiagnostico('premio', `  >>> ${tipo} CITA ITEM <<<`);
+        comItem.slice(0, 6).forEach(t => registrarDiagnostico('premio', '      ' + t));
+      } else {
+        registrarDiagnostico('premio',
+          `  ${tipo}` + (textos.length ? ' :: ' + textos.slice(0, 4).join(' | ').slice(0, 220) : ' (sem texto)'));
+      }
+    });
+
     // Listener próprio, separado do farejador de propósito: o farejador só mostra
     // UMA linha por tipo de mensagem, e aqui eu preciso do JSON inteiro de TODA
     // carta pra descobrir uma coisa que o schema não responde: qual power-up foi
@@ -1147,6 +1211,8 @@ function criarLive({ dono, db, emitir }) {
       // carta entra na fila com tipo null e o abatimento cai pra "mais antiga".
       if (msgType === PK_MSG_GANHOU) {
         const premiados = data?.awardCardNotice?.awardedUsers || [];
+        // grava o que vier logo depois: e a chance de achar quem nomeia o item
+        abrirJanelaDoPremio(premiados.map(b => b?.user?.nickName).filter(Boolean).join(', ') || '?');
         // quantidade da mensagem toda: só vale se o texto disser mesmo; senão a
         // varredura tenta achar a frase, e no fim assume 1.
         const qtdGanha = quantidadeDoTextoOuNada(textosDoDisplayContent(data?.awardCardNotice?.displayContent))
