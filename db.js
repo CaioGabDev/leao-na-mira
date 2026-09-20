@@ -111,6 +111,19 @@ function criarBanco(dono, opcoes) {
 
   let dirty = false;
 
+  // Buffer da série temporal: os pontos vão pro banco junto com o resto, no
+  // saveToDisk. Fica FORA do `state` de propósito — o state é reescrito
+  // inteiro a cada gravação, e amostra é append-only.
+  //
+  // Declarado AQUI, e não junto das funções que usam: o saveToDisk roda uma
+  // vez na subida (pra o dono já existir no banco) e `let` mais embaixo
+  // deixava ele batendo na zona morta.
+  const PASSO_AMOSTRA_MS = 60 * 1000;      // um ponto por minuto
+  const GUARDAR_AMOSTRAS_DIAS = 90;
+  let amostrasPendentes = [];
+  let ultimaAmostraEm = 0;
+  let ultimaPoda = 0;
+
   // A marca de superfã foi gravada por um evento que, na verdade, avisa quando um
   // superfã ENTRA na live — não quando alguém vira superfã. Como isso marcou
   // gente que já era superfã há tempo, a marca é apagada pra não bloquear o
@@ -166,6 +179,10 @@ function criarBanco(dono, opcoes) {
   }
 
   function saveToDisk() {
+    // a amostra vai junto mesmo sem `dirty`: o relógio da gravação é o mesmo
+    // que empurra a série temporal pro disco
+    amostrar();
+    gravarAmostras();
     if (!dirty) return;
     banco.gravar(dono, state);
     dirty = false;
@@ -917,6 +934,10 @@ function criarBanco(dono, opcoes) {
     state.global.startedAt = now;
     state.global.sessionPeakViewers = 0;
 
+    // um ponto no instante em que a live sobe: sem ele a curva começa
+    // no primeiro minuto cheio e o começo fica sem base de comparação
+    amostrar(true);
+
     state.currentSessionSnapshot = {
       startedAt: now,
       totalDiamonds: state.global.totalDiamonds,
@@ -956,6 +977,10 @@ function criarBanco(dono, opcoes) {
         state.global.lastLiveDurationSeconds = durationSeconds;
       }
     }
+    // e um ponto no fim, antes de marcar como fora do ar: senão o último
+    // trecho da live (do penúltimo minuto até o fim) some da curva
+    amostrar(true);
+
     state.global.liveActive = false;
     state.currentSessionSnapshot = null;
     dirty = true;
@@ -1071,6 +1096,231 @@ function criarBanco(dono, opcoes) {
     if (!state.currentBattle) return;
     state.currentBattle = null;
     dirty = true;
+  }
+
+  // ---------- SÉRIE TEMPORAL ----------
+  // Um ponto por minuto enquanto a live está no ar. É o que permite ver a
+  // CURVA da live em vez de só o total no fim.
+  function amostrar(forcado) {
+    if (!state.global.liveActive && !forcado) return false;
+    const agora = Date.now();
+    if (!forcado && agora - ultimaAmostraEm < PASSO_AMOSTRA_MS) return false;
+
+    // arredonda pro minuto: dois pontos no mesmo minuto são o mesmo ponto, e
+    // é isso que faz um restart no meio da live não duplicar a curva
+    const t = Math.floor(agora / PASSO_AMOSTRA_MS) * PASSO_AMOSTRA_MS;
+    ultimaAmostraEm = agora;
+
+    const g = state.global;
+    const ponto = {
+      t,
+      v: g.currentViewers || 0,      // espectadores NAQUELE instante
+      d: g.totalDiamonds || 0,       // daqui pra baixo é acumulado
+      l: g.totalLikes || 0,
+      c: g.totalComments || 0,
+      f: g.totalFollows || 0
+    };
+
+    // um restart no mesmo minuto substitui o ponto em vez de empilhar
+    const igual = amostrasPendentes.findIndex(p => p.t === t);
+    if (igual >= 0) amostrasPendentes[igual] = ponto;
+    else amostrasPendentes.push(ponto);
+    return true;
+  }
+
+  function gravarAmostras() {
+    if (!amostrasPendentes.length) return;
+    const lote = amostrasPendentes;
+    amostrasPendentes = [];
+    try {
+      banco.anexarAmostras(dono, lote);
+    } catch (e) {
+      // não perde o lote: volta pra fila e tenta na próxima gravação
+      amostrasPendentes = lote.concat(amostrasPendentes);
+      console.error('[banco] não consegui gravar as amostras:', e.message);
+      return;
+    }
+
+    // poda uma vez por dia, não a cada gravação
+    const agora = Date.now();
+    if (agora - ultimaPoda > 24 * 60 * 60 * 1000) {
+      ultimaPoda = agora;
+      try {
+        banco.podarAmostras(dono, agora - GUARDAR_AMOSTRAS_DIAS * 24 * 60 * 60 * 1000);
+      } catch (e) {
+        console.error('[banco] não consegui podar as amostras:', e.message);
+      }
+    }
+  }
+
+  // A curva, já com os DELTAS calculados: o ponto guarda o acumulado, mas
+  // quem desenha quer "quanto rendeu neste minuto".
+  //
+  // `agrupar` junta N minutos num ponto só — uma live de 6 horas tem 360
+  // pontos, e num gráfico de 900px isso é menos de 3 pixels por ponto.
+  function getSerie({ desde, ate, agrupar } = {}) {
+    const de = Number(desde) || (Date.now() - 6 * 60 * 60 * 1000);
+    const ateQuando = Number(ate) || Date.now();
+
+    let pontos;
+    try {
+      pontos = banco.lerAmostras(dono, de, ateQuando);
+    } catch (e) {
+      return { pontos: [], erro: e.message };
+    }
+    // o que ainda não foi gravado também conta: sem isto o último minuto da
+    // live só aparece depois da próxima gravação
+    amostrasPendentes.forEach(p => {
+      if (p.t >= de && p.t <= ateQuando && !pontos.some(q => q.t === p.t)) pontos.push(p);
+    });
+    pontos.sort((a, b) => a.t - b.t);
+
+    const passo = Math.max(1, Math.floor(Number(agrupar) || 1));
+    const saida = [];
+    for (let i = 0; i < pontos.length; i += passo) {
+      const bloco = pontos.slice(i, i + passo);
+      const primeiro = bloco[0];
+      const ultimo = bloco[bloco.length - 1];
+      // o anterior ao bloco é a base do delta; sem ele o primeiro ponto da
+      // série não tem contra o que comparar e vale 0
+      const antes = i === 0 ? null : pontos[i - 1];
+      const base = antes || primeiro;
+
+      saida.push({
+        t: primeiro.t,
+        // pico de espectadores dentro do bloco: a média esconderia o momento
+        v: Math.max(...bloco.map(p => p.v || 0)),
+        d: Math.max(0, (ultimo.d || 0) - (base.d || 0)),
+        l: Math.max(0, (ultimo.l || 0) - (base.l || 0)),
+        c: Math.max(0, (ultimo.c || 0) - (base.c || 0)),
+        f: Math.max(0, (ultimo.f || 0) - (base.f || 0)),
+        // acumulado no fim do bloco, pra quem quiser a linha crescente
+        dTotal: ultimo.d || 0
+      });
+    }
+    return { pontos: saida, passoMinutos: passo, de, ate: ateQuando };
+  }
+
+  // ---------- REGISTROS ----------
+  // O olhar longo: quais dias renderam mais, qual dia da semana, qual horário,
+  // e os recordes. Tudo calculado das sessões, que já existem.
+
+  const DIA_MS = 24 * 60 * 60 * 1000;
+  const NOME_DO_DIA = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+
+  // A chave do dia vem do fuso de quem lê, não de UTC: uma live que começa
+  // 22h de sexta e vai até 1h de sábado é "sexta" pro streamer.
+  function chaveDoDia(ms) {
+    const d = new Date(ms);
+    return d.getFullYear() + '-'
+      + String(d.getMonth() + 1).padStart(2, '0') + '-'
+      + String(d.getDate()).padStart(2, '0');
+  }
+
+  function somarSessao(alvo, s) {
+    alvo.diamantes += s.totalDiamonds || 0;
+    alvo.likes += s.totalLikes || 0;
+    alvo.comentarios += s.totalComments || 0;
+    alvo.seguidores += s.totalFollows || 0;
+    alvo.compartilhou += s.totalShares || 0;
+    alvo.segundos += s.durationSeconds || 0;
+    alvo.lives += 1;
+    if ((s.peakViewers || 0) > alvo.pico) alvo.pico = s.peakViewers || 0;
+    return alvo;
+  }
+
+  const balde = extra => ({
+    diamantes: 0, likes: 0, comentarios: 0, seguidores: 0, compartilhou: 0,
+    segundos: 0, lives: 0, pico: 0, ...extra
+  });
+
+  function getRegistros({ dias } = {}) {
+    const sessoes = getSessions();          // mais recente primeiro
+    const limite = Number(dias) > 0 ? Date.now() - Number(dias) * DIA_MS : 0;
+    const noPrazo = sessoes.filter(s => s.startedAt >= limite);
+
+    // ---------- por dia ----------
+    const porDia = new Map();
+    noPrazo.forEach(s => {
+      const k = chaveDoDia(s.startedAt);
+      if (!porDia.has(k)) porDia.set(k, balde({ dia: k, em: s.startedAt }));
+      somarSessao(porDia.get(k), s);
+    });
+    const dias_ = [...porDia.values()].sort((a, b) => a.em - b.em);
+
+    // ---------- por dia da semana ----------
+    const porSemana = NOME_DO_DIA.map((nome, i) => balde({ indice: i, nome }));
+    noPrazo.forEach(s => somarSessao(porSemana[new Date(s.startedAt).getDay()], s));
+    // a média é o que importa aqui: quem faz live toda sexta soma mais que
+    // quem fez uma terça, e isso não quer dizer que sexta rende mais
+    porSemana.forEach(b => {
+      b.mediaPorLive = b.lives ? Math.round(b.diamantes / b.lives) : null;
+    });
+
+    // ---------- por hora de início ----------
+    const porHora = Array.from({ length: 24 }, (_, h) => balde({ hora: h }));
+    noPrazo.forEach(s => somarSessao(porHora[new Date(s.startedAt).getHours()], s));
+    porHora.forEach(b => {
+      b.mediaPorLive = b.lives ? Math.round(b.diamantes / b.lives) : null;
+    });
+
+    // ---------- recordes ----------
+    // Sobre TODAS as sessões, não só as do período: recorde é recorde.
+    const maiorPor = campo => sessoes.reduce(
+      (melhor, s) => (!melhor || (s[campo] || 0) > (melhor[campo] || 0) ? s : melhor), null);
+
+    const melhorDia = dias_.reduce(
+      (melhor, d) => (!melhor || d.diamantes > melhor.diamantes ? d : melhor), null);
+
+    const ranking = getRanking();
+    const maiorPagante = ranking.reduce(
+      (melhor, u) => (!melhor || u.gifts_value > melhor.gifts_value ? u : melhor), null);
+
+    const recordes = {
+      melhorLive: maiorPor('totalDiamonds'),
+      maiorPico: maiorPor('peakViewers'),
+      liveMaisLonga: maiorPor('durationSeconds'),
+      melhorDia,
+      maiorPagante: maiorPagante && maiorPagante.gifts_value > 0 ? {
+        uniqueId: maiorPagante.uniqueId, nickname: maiorPagante.nickname,
+        avatar: maiorPagante.avatar, diamantes: maiorPagante.gifts_value
+      } : null
+    };
+
+    // ---------- sequência de dias com live ----------
+    // Mostra constância, que é o que faz a audiência voltar.
+    const diasComLive = [...porDia.keys()].sort();
+    let sequencia = 0;
+    if (diasComLive.length) {
+      const umDia = d => { const x = new Date(d + 'T12:00:00'); return x.getTime(); };
+      sequencia = 1;
+      for (let i = diasComLive.length - 1; i > 0; i--) {
+        const diff = Math.round((umDia(diasComLive[i]) - umDia(diasComLive[i - 1])) / DIA_MS);
+        if (diff === 1) sequencia++; else break;
+      }
+      // a sequência só vale se ela chega até hoje ou ontem
+      const ultimo = umDia(diasComLive[diasComLive.length - 1]);
+      const faltando = Math.round((Date.now() - ultimo) / DIA_MS);
+      if (faltando > 1) sequencia = 0;
+    }
+
+    const total = noPrazo.reduce((t, s) => somarSessao(t, s), balde());
+
+    return {
+      periodoDias: Number(dias) > 0 ? Number(dias) : null,
+      total,
+      mediaPorLive: total.lives ? {
+        diamantes: Math.round(total.diamantes / total.lives),
+        segundos: Math.round(total.segundos / total.lives),
+        pico: Math.round(noPrazo.reduce((t, s) => t + (s.peakViewers || 0), 0) / total.lives)
+      } : null,
+      dias: dias_,
+      porSemana,
+      porHora,
+      recordes,
+      sequencia,
+      lives: noPrazo.slice(0, 60)
+    };
   }
 
   // ---------- DASHBOARD DO STREAMER ----------
@@ -1308,7 +1558,7 @@ function criarBanco(dono, opcoes) {
     heartbeat,
     registrarSuperfa, removerDaTropa, registrarSubidaDeNivel, setLogListener,
     iniciarBatalha, atualizarPlacarBatalha, finalizarBatalha, fecharBatalhaAbandonada,
-    cancelarBatalhaEmAndamento, getBattleStats, getDashboard,
+    cancelarBatalhaEmAndamento, getBattleStats, getDashboard, getSerie, getRegistros, amostrar,
     saveToDisk, fechar, dono, espelharNoJson
   };
 }

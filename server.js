@@ -600,6 +600,25 @@ app.get('/api/dashboard', (req, res) => {
   res.json(db.getDashboard());
 });
 
+// A curva da live, minuto a minuto. `agrupar` junta N minutos num ponto só —
+// quem desenha sabe quantos pixels tem, o servidor não.
+app.get('/api/serie', (req, res) => {
+  const { db } = clientes.doPedido(req);
+  const q = req.query || {};
+  res.json(db.getSerie({
+    desde: Number(q.desde) || undefined,
+    ate: Number(q.ate) || undefined,
+    agrupar: Number(q.agrupar) || undefined
+  }));
+});
+
+// O olhar longo: melhores dias, dia da semana, horário e recordes.
+app.get('/api/registros', (req, res) => {
+  const { db } = clientes.doPedido(req);
+  const dias = Number(req.query && req.query.dias);
+  res.json(db.getRegistros({ dias: dias > 0 ? Math.min(dias, 400) : undefined }));
+});
+
 app.get('/api/batalhas', (req, res) => {
   res.json(clientes.doPedido(req).db.getBattleStats());
 });

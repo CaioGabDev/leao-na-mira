@@ -73,6 +73,16 @@ function criarTabelas(bd) {
       PRIMARY KEY (dono, pos)
     ) WITHOUT ROWID`);
   }
+  // A série temporal. Fora do LISTAS de propósito: ver o comentário em
+  // anexarAmostras(). Chave (dono, t) porque dois pontos no mesmo instante
+  // são o mesmo ponto — reconectar no meio não pode duplicar a curva.
+  bd.exec(`CREATE TABLE IF NOT EXISTS amostras (
+    dono  TEXT    NOT NULL,
+    t     INTEGER NOT NULL,
+    dados TEXT    NOT NULL,
+    PRIMARY KEY (dono, t)
+  ) WITHOUT ROWID`);
+
   bd.exec(`CREATE TABLE IF NOT EXISTS chaves (
     dono  TEXT NOT NULL,
     chave TEXT NOT NULL,
@@ -195,13 +205,72 @@ function gravar(dono, estado) {
   }
 }
 
+// ---------- AMOSTRAS (série temporal) ----------
+// Append-only: o gravar() lá de cima apaga e reinsere a lista inteira a cada
+// 5 segundos, o que serve pra centenas de linhas e não pra dezenas de
+// milhares de pontos. Aqui só entra o que é novo.
+
+function anexarAmostras(dono, lista) {
+  if (!Array.isArray(lista) || !lista.length) return 0;
+  const b = abrir();
+  const d = String(dono);
+  // OR REPLACE: se a mesma marca de tempo voltar (um restart no mesmo minuto),
+  // o ponto é atualizado em vez de estourar a chave primária
+  const inserir = b.prepare('INSERT OR REPLACE INTO amostras (dono, t, dados) VALUES (?, ?, ?)');
+  b.exec('BEGIN IMMEDIATE');
+  try {
+    for (const ponto of lista) {
+      const t = Math.floor(Number(ponto && ponto.t));
+      if (!Number.isFinite(t)) continue;
+      const { t: _, ...resto } = ponto;
+      inserir.run(d, t, JSON.stringify(resto));
+    }
+    b.exec('COMMIT');
+  } catch (err) {
+    try { b.exec('ROLLBACK'); } catch (e2) { /* já caiu */ }
+    throw err;
+  }
+  return lista.length;
+}
+
+function lerAmostras(dono, desde, ate) {
+  const b = abrir();
+  const de = Number.isFinite(Number(desde)) ? Math.floor(Number(desde)) : 0;
+  const ateQuando = Number.isFinite(Number(ate)) ? Math.floor(Number(ate)) : Number.MAX_SAFE_INTEGER;
+  const linhas = b.prepare(
+    'SELECT t, dados FROM amostras WHERE dono = ? AND t >= ? AND t <= ? ORDER BY t'
+  ).all(String(dono), de, ateQuando);
+
+  const saida = [];
+  for (const l of linhas) {
+    try { saida.push({ t: Number(l.t), ...JSON.parse(l.dados) }); } catch (e) { /* linha torta: pula */ }
+  }
+  return saida;
+}
+
+// Joga fora o que é velho demais pra interessar. Sem isto a tabela cresce pra
+// sempre — e é a única que cresce sozinha, sem ninguém mandar.
+function podarAmostras(dono, antesDe) {
+  const corte = Math.floor(Number(antesDe));
+  if (!Number.isFinite(corte)) return 0;
+  const b = abrir();
+  const r = b.prepare('DELETE FROM amostras WHERE dono = ? AND t < ?').run(String(dono), corte);
+  return Number(r.changes || 0);
+}
+
+function contarAmostras(dono) {
+  const b = abrir();
+  const r = b.prepare('SELECT COUNT(*) AS n FROM amostras WHERE dono = ?').get(String(dono));
+  return Number((r && r.n) || 0);
+}
+
 // Apaga tudo de um dono só — os outros clientes nem ficam sabendo.
 function apagarDono(dono) {
   const b = abrir();
   const d = String(dono);
   b.exec('BEGIN IMMEDIATE');
   try {
-    for (const tabela of [...Object.keys(MAPAS), ...Object.keys(LISTAS), 'chaves']) {
+    for (const tabela of [...Object.keys(MAPAS), ...Object.keys(LISTAS), 'chaves', 'amostras']) {
       b.prepare(`DELETE FROM ${tabela} WHERE dono = ?`).run(d);
     }
     b.exec('COMMIT');
@@ -218,5 +287,6 @@ function listarDonos() {
 
 module.exports = {
   ARQUIVO, LISTAS, CHAVES, MAPAS,
-  abrir, fechar, carregar, gravar, temDados, apagarDono, listarDonos, estadoVazio
+  abrir, fechar, carregar, gravar, temDados, apagarDono, listarDonos, estadoVazio,
+  anexarAmostras, lerAmostras, podarAmostras, contarAmostras
 };

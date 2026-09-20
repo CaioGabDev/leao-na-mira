@@ -140,6 +140,80 @@
     background: var(--card-3); border: 1px solid var(--line-soft); color: var(--ink-faint);
   }
 
+  /* ---------- abas ---------- */
+  .abas {
+    display: flex; gap: 4px; margin-bottom: 18px;
+    border-bottom: 1px solid var(--line);
+  }
+  .abas button {
+    border: none; background: none; cursor: pointer;
+    font-family: 'Rajdhani', sans-serif; font-weight: 700; font-size: 14px;
+    letter-spacing: .04em; color: var(--ink-faint);
+    padding: 11px 18px; border-bottom: 2px solid transparent; margin-bottom: -1px;
+    transition: color .15s, border-color .15s;
+  }
+  .abas button:hover { color: var(--ink-dim); }
+  .abas button.ligado { color: var(--gold); border-bottom-color: var(--gold); }
+
+  /* ---------- gráfico de área (a curva da live) ---------- */
+  .curva { width: 100%; height: 210px; display: block; }
+  .curva .malha { stroke: var(--line); stroke-width: 1; }
+  .curva .rot { fill: var(--ink-faint); font-size: 10px; font-family: 'Rajdhani', sans-serif; }
+  .curva .area { fill: url(#gradCurva); }
+  .curva .linha { fill: none; stroke: var(--gold); stroke-width: 2; stroke-linejoin: round; }
+  .curva .gente { fill: none; stroke: var(--ink-faint); stroke-width: 1.5; stroke-dasharray: 3 3; }
+  .curva .marca { fill: var(--ember1); }
+
+  .legenda { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 10px; font-size: 12px; color: var(--ink-faint); }
+  .legenda span { display: flex; align-items: center; gap: 6px; }
+  .legenda i { width: 14px; height: 2.5px; border-radius: 2px; display: block; }
+
+  /* ---------- barras deitadas (dia da semana, horário) ---------- */
+  .deitadas { display: flex; flex-direction: column; gap: 7px; }
+  .deitada { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+  .deitada .rotulo { flex: none; width: 64px; color: var(--ink-dim); font-weight: 600; }
+  .deitada .trilho { flex: 1; height: 16px; border-radius: 4px; background: var(--card-3); overflow: hidden; }
+  /* display:block porque estes dois sao <span>: o .trilho vira bloco sozinho
+     (e item de um flex), mas o .cheia fica INLINE, e em elemento inline
+     width/height nao valem -- a barra ficava sempre vazia. */
+  .deitada .cheia {
+    display: block; height: 100%; border-radius: 4px;
+    background: var(--grad-fire); transition: width .5s;
+  }
+  .deitada .valor { flex: none; width: 88px; text-align: right; color: var(--gold); font-weight: 700; }
+  .deitada .conta { flex: none; width: 58px; font-size: 11.5px; color: var(--ink-faint); }
+  .deitada.apagada .rotulo, .deitada.apagada .valor { color: var(--ink-faint); opacity: .6; }
+
+  /* ---------- recordes ---------- */
+  .recordes { display: grid; gap: 11px; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+  .recorde {
+    padding: 14px 15px; border-radius: var(--r-md);
+    background: var(--card-3); border: 1px solid var(--line-soft);
+  }
+  .recorde .que {
+    font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase;
+    font-weight: 700; color: var(--ink-faint); margin-bottom: 7px;
+  }
+  .recorde .quanto {
+    font-family: 'Bungee', sans-serif; font-size: 21px; color: var(--gold); line-height: 1;
+    white-space: nowrap;
+  }
+  .recorde .quando { margin-top: 6px; font-size: 12px; color: var(--ink-faint); }
+
+  /* ---------- tabela de lives ---------- */
+  .tabela { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  .tabela th {
+    text-align: left; padding: 8px 10px; font-size: 10.5px;
+    letter-spacing: .12em; text-transform: uppercase; color: var(--ink-faint);
+    border-bottom: 1px solid var(--line);
+  }
+  .tabela td { padding: 9px 10px; border-bottom: 1px solid var(--line-soft); }
+  .tabela tr:last-child td { border-bottom: none; }
+  .tabela tr:hover td { background: var(--card-3); }
+  .tabela .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .tabela .destaque { color: var(--gold); font-weight: 700; }
+  .rolagem { overflow-x: auto; }
+
   /* ---------- lista de gente ---------- */
   .gente { display: flex; flex-direction: column; gap: 2px; }
   .pessoa-linha {
@@ -193,6 +267,11 @@
   .graf .eixo { stroke: var(--line); stroke-width: 1; }
   .graf .rotulo { fill: var(--ink-faint); font-size: 10px; font-family: 'Rajdhani', sans-serif; }
   .graf .col { fill: url(#fogo); transition: opacity .15s; }
+  /* O gráfico do histórico tem degradê PRÓPRIO: o #fogo mora dentro do SVG
+     da aba "Agora", e aba escondida não renderiza — o degradê dela não pinta
+     nada aqui. */
+  .graf .col2 { fill: url(#fogo2); transition: opacity .15s; }
+  .graf .col2:hover { opacity: .75; }
   .graf .col:hover { opacity: .75; }
 
   /* ---------- pizza de engajamento ---------- */
@@ -279,8 +358,28 @@
     <button class="app-btn" id="btAtualizar">🔄 Atualizar</button>
   </nav>
 
+  <div class="abas" role="tablist">
+    <button id="abaBtAgora" class="ligado">Agora</button>
+    <button id="abaBtHistorico">Histórico</button>
+  </div>
+
+<div id="abaAgora">
+
   <!-- ================= NÚMEROS ================= -->
   <div class="numeros" id="numeros"></div>
+
+  <!-- ================= A CURVA DA LIVE ================= -->
+  <div class="bloco" id="blocoCurva">
+    <div class="bloco-topo">
+      <h2>Como foi a live, minuto a minuto</h2>
+      <span class="meta" id="metaCurva"></span>
+    </div>
+    <div id="curva"></div>
+    <div class="legenda">
+      <span><i style="background:var(--gold)"></i> diamantes no período</span>
+      <span><i style="background:var(--ink-faint)"></i> gente assistindo</span>
+    </div>
+  </div>
 
   <!-- ================= LINHA DO TEMPO ================= -->
   <div class="bloco" id="blocoHistorico">
@@ -357,6 +456,74 @@
   </div>
 
   <p class="rodape-nota" id="rodapeNota"></p>
+</div><!-- /abaAgora -->
+
+<!-- ================= HISTÓRICO ================= -->
+<div id="abaHistorico" hidden>
+
+  <div class="cabeca" style="margin-bottom:16px">
+    <div class="janela" role="group" aria-label="Período">
+      <button data-dias="7">7 dias</button>
+      <button data-dias="30" class="ligado">30 dias</button>
+      <button data-dias="90">90 dias</button>
+      <button data-dias="0">Tudo</button>
+    </div>
+    <span class="meta" id="resumoPeriodo" style="color:var(--ink-faint);font-size:13px"></span>
+  </div>
+
+  <div class="numeros" id="numerosHistorico"></div>
+
+  <div class="bloco">
+    <div class="bloco-topo">
+      <h2>Recordes</h2>
+      <span class="escopo" title="O melhor de sempre, não só do período escolhido">de sempre</span>
+    </div>
+    <div class="recordes" id="recordes"></div>
+  </div>
+
+  <div class="bloco">
+    <div class="bloco-topo">
+      <h2>Melhores dias</h2>
+      <span class="meta" id="metaDias"></span>
+    </div>
+    <div id="grafDias"></div>
+  </div>
+
+  <div class="grade dois">
+    <div class="bloco">
+      <div class="bloco-topo">
+        <h2>Dia da semana</h2>
+        <span class="meta">média por live</span>
+      </div>
+      <div class="deitadas" id="porSemana"></div>
+      <p class="rodape-nota" style="text-align:left">
+        A <b>média</b>, e não a soma: quem faz live toda sexta soma mais que quem fez
+        uma terça — e isso não quer dizer que sexta rende mais.
+      </p>
+    </div>
+
+    <div class="bloco">
+      <div class="bloco-topo">
+        <h2>Horário de começar</h2>
+        <span class="meta">média por live</span>
+      </div>
+      <div class="deitadas" id="porHora"></div>
+      <p class="rodape-nota" style="text-align:left">
+        Pela hora em que a live <b>começou</b>. Só aparecem os horários em que
+        você já entrou ao vivo.
+      </p>
+    </div>
+  </div>
+
+  <div class="bloco">
+    <div class="bloco-topo">
+      <h2>Todas as lives</h2>
+      <span class="meta" id="metaLives"></span>
+    </div>
+    <div class="rolagem" id="tabelaLives"></div>
+  </div>
+
+</div><!-- /abaHistorico -->
 </div>
 
 <script>
@@ -377,6 +544,18 @@
   }
 
   const dia = ms => new Date(ms).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+
+  // O clamp() do CSS só enxerga a LARGURA DA TELA, não a do cartão — e
+  // "1.650.513" em Bungee 33px não cabe num cartão de 178px. Quem sabe quantos
+  // caracteres o número tem é aqui, então o tamanho sai daqui.
+  function estiloDoValor(texto, destaque) {
+    const n = String(texto).length;
+    const teto = destaque ? 33 : 27;
+    // ~0.62em por caractere no Bungee, com ~144px úteis dentro do cartão
+    const cabe = Math.floor(144 / (n * 0.62));
+    const tam = Math.max(15, Math.min(teto, cabe));
+    return tam >= teto ? '' : ' style="font-size:' + tam + 'px"';
+  }
 
   // A seta de variação. `null` não vira 0: "não tem com o que comparar" é
   // diferente de "ficou igual", e desenhar 0% nos dois casos mentiria.
@@ -411,7 +590,7 @@
     const cartao = (rotulo, icone, valor, pe, destaque) =>
       '<div class="num-card' + (destaque ? ' destaque' : '') + '">'
       + '<div class="rotulo">' + icone + ' ' + rotulo + '</div>'
-      + '<div class="valor">' + valor + '</div>'
+      + '<div class="valor"' + estiloDoValor(valor, destaque) + '>' + valor + '</div>'
       + (pe ? '<div class="pe">' + pe + '</div>' : '') + '</div>';
 
     const ritmo = dados.porHora !== null && dados.porHora !== undefined
@@ -635,6 +814,345 @@
       : '<div class="vazio">Nenhuma carta identificada ainda.</div>') + pendentes;
   }
 
+  // ================================================================
+  //  A CURVA DA LIVE (série temporal)
+  // ================================================================
+  let serie = null;
+
+  const hora = ms => new Date(ms).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+  // Uma escala "redonda" pro topo do eixo: 8.437 vira 10.000, não 8.437.
+  function tetoBonito(v) {
+    if (v <= 0) return 1;
+    const ordem = Math.pow(10, Math.floor(Math.log10(v)));
+    return Math.ceil(v / ordem) * ordem;
+  }
+
+  function desenharCurva() {
+    const bloco = $('blocoCurva');
+    const pontos = (serie && serie.pontos) || [];
+
+    // Menos de dois pontos não é curva, é um ponto solto.
+    if (pontos.length < 2) {
+      bloco.hidden = !dados.aoVivo && !pontos.length;
+      $('curva').innerHTML = '<div class="vazio">'
+        + (dados.aoVivo
+            ? 'Juntando os primeiros minutos da live...'
+            : 'Sem curva ainda. Ela é desenhada enquanto a live está no ar.')
+        + '</div>';
+      $('metaCurva').textContent = '';
+      return;
+    }
+    bloco.hidden = false;
+
+    const passo = (serie.passoMinutos || 1);
+    $('metaCurva').textContent = pontos.length + ' pontos · '
+      + (passo === 1 ? 'a cada minuto' : 'a cada ' + passo + ' min');
+
+    const L = 52, R = 10, T = 14, B = 26, A = 210;
+    const larg = 900;
+    const util = A - T - B;
+    const dentro = larg - L - R;
+
+    const maxD = tetoBonito(Math.max(...pontos.map(p => p.d), 1));
+    const maxV = Math.max(...pontos.map(p => p.v), 1);
+
+    const x = i => L + (pontos.length === 1 ? dentro / 2 : (i / (pontos.length - 1)) * dentro);
+    const yD = v => T + util - (v / maxD) * util;
+    const yV = v => T + util - (v / maxV) * util;
+
+    let malha = '';
+    for (let i = 0; i <= 2; i++) {
+      const y = T + util - (util * i / 2);
+      malha += '<line class="malha" x1="' + L + '" y1="' + y + '" x2="' + (larg - R) + '" y2="' + y + '"/>'
+        + '<text class="rot" x="' + (L - 6) + '" y="' + (y + 3) + '" text-anchor="end">'
+        + numero(Math.round(maxD * i / 2)) + '</text>';
+    }
+
+    const caminho = pontos.map((p, i) => (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + yD(p.d).toFixed(1)).join(' ');
+    const area = caminho + ' L' + x(pontos.length - 1).toFixed(1) + ' ' + (T + util)
+      + ' L' + x(0).toFixed(1) + ' ' + (T + util) + ' Z';
+    const gente = pontos.map((p, i) => (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + yV(p.v).toFixed(1)).join(' ');
+
+    // O MOMENTO que mais rendeu: é a informação que o streamer usa pra saber
+    // o que funcionou. Um gráfico sem isso ele teria que achar no olho.
+    let melhor = 0;
+    pontos.forEach((p, i) => { if (p.d > pontos[melhor].d) melhor = i; });
+    const marca = pontos[melhor].d > 0
+      ? '<circle class="marca" cx="' + x(melhor).toFixed(1) + '" cy="' + yD(pontos[melhor].d).toFixed(1) + '" r="4">'
+        + '<title>' + hora(pontos[melhor].t) + ' — o pico: ' + numero(pontos[melhor].d) + ' diamantes</title></circle>'
+      : '';
+
+    // rótulos de hora: no máximo 6, pra não virar um borrão
+    const salto = Math.max(1, Math.ceil(pontos.length / 6));
+    let horas = '';
+    pontos.forEach((p, i) => {
+      if (i % salto && i !== pontos.length - 1) return;
+      horas += '<text class="rot" x="' + x(i).toFixed(1) + '" y="' + (A - 8) + '" text-anchor="middle">'
+        + hora(p.t) + '</text>';
+    });
+
+    // um alvo invisível por ponto, só pro balão do navegador
+    const alvos = pontos.map((p, i) =>
+      '<rect x="' + (x(i) - dentro / pontos.length / 2).toFixed(1) + '" y="' + T + '" '
+      + 'width="' + (dentro / pontos.length).toFixed(1) + '" height="' + util + '" fill="transparent">'
+      + '<title>' + hora(p.t) + ' — ' + numero(p.d) + ' diamantes, ' + numero(p.v) + ' assistindo</title>'
+      + '</rect>').join('');
+
+    $('curva').innerHTML =
+      '<svg class="curva" viewBox="0 0 ' + larg + ' ' + A + '" preserveAspectRatio="none" '
+      + 'role="img" aria-label="Diamantes e espectadores ao longo da live">'
+      + '<defs><linearGradient id="gradCurva" x1="0" y1="0" x2="0" y2="1">'
+      + '<stop offset="0%" stop-color="var(--gold)" stop-opacity=".35"/>'
+      + '<stop offset="100%" stop-color="var(--gold)" stop-opacity="0"/>'
+      + '</linearGradient></defs>'
+      + malha
+      + '<path class="area" d="' + area + '"/>'
+      + '<path class="gente" d="' + gente + '"/>'
+      + '<path class="linha" d="' + caminho + '"/>'
+      + marca + horas + alvos
+      + '</svg>';
+  }
+
+  async function carregarSerie() {
+    // a janela é a live atual; sem live, as últimas 6 horas
+    const a = dados && dados.atual;
+    const desde = a ? a.comecouEm : Date.now() - 6 * 3600000;
+    const minutos = Math.max(1, Math.round((Date.now() - desde) / 60000));
+    // no máximo ~90 pontos: mais que isso não cabe em 900px sem virar borrão
+    const agrupar = Math.max(1, Math.ceil(minutos / 90));
+    const res = await fetch('/api/serie?desde=' + desde + '&agrupar=' + agrupar);
+    if (!res.ok) throw new Error('falhou');
+    serie = await res.json();
+    desenharCurva();
+  }
+
+  // ================================================================
+  //  HISTÓRICO
+  // ================================================================
+  let registros = null;
+  let periodoDias = 30;
+
+  // Barra deitada com rótulo, valor e contagem. Serve pro dia da semana e pro
+  // horário — os dois querem a mesma coisa.
+  function barrasDeitadas(alvo, itens, vazio) {
+    const comDado = itens.filter(i => i.valor !== null && i.valor !== undefined);
+    if (!comDado.length) {
+      $(alvo).innerHTML = '<div class="vazio">' + vazio + '</div>';
+      return;
+    }
+    const maior = Math.max(...comDado.map(i => i.valor), 1);
+    $(alvo).innerHTML = itens.map(i => {
+      const tem = i.valor !== null && i.valor !== undefined;
+      return '<div class="deitada' + (tem ? '' : ' apagada') + '">'
+        + '<span class="rotulo">' + esc(i.rotulo) + '</span>'
+        + '<span class="trilho"><span class="cheia" style="width:'
+        + (tem ? ((i.valor / maior) * 100).toFixed(1) : 0) + '%"></span></span>'
+        + '<span class="valor">' + (tem ? numero(i.valor) + ' 💎' : '—') + '</span>'
+        + '<span class="conta">' + (i.lives ? i.lives + (i.lives === 1 ? ' live' : ' lives') : '') + '</span>'
+        + '</div>';
+    }).join('');
+  }
+
+  // Chamava-se desenharHistorico e colidia com a função de mesmo nome que
+  // desenha "Suas últimas lives" — a segunda declaração apagava a primeira
+  // sem um aviso sequer, e os dois blocos sumiam.
+  function desenharRegistros() {
+    const r = registros;
+    const t = r.total;
+
+    $('resumoPeriodo').textContent = t.lives
+      ? t.lives + (t.lives === 1 ? ' live' : ' lives') + ' em ' + r.dias.length
+        + (r.dias.length === 1 ? ' dia' : ' dias')
+      : 'nenhuma live no período';
+
+    // ---------- números do período ----------
+    const cartao = (rotulo, icone, valor, pe, destaque) =>
+      '<div class="num-card' + (destaque ? ' destaque' : '') + '">'
+      + '<div class="rotulo">' + icone + ' ' + rotulo + '</div>'
+      + '<div class="valor"' + estiloDoValor(valor, destaque) + '>' + valor + '</div>'
+      + (pe ? '<div class="pe">' + pe + '</div>' : '') + '</div>';
+
+    const m = r.mediaPorLive;
+    $('numerosHistorico').innerHTML = [
+      cartao('Diamantes no período', '💎', numero(t.diamantes),
+             m ? numero(m.diamantes) + ' por live' : '', true),
+      cartao('Lives', '🎥', numero(t.lives), r.dias.length + ' dias com live'),
+      cartao('Tempo no ar', '⏱️', duracao(t.segundos),
+             m ? duracao(m.segundos) + ' por live' : ''),
+      cartao('Novos seguidores', '➕', numero(t.seguidores), ''),
+      cartao('Maior pico', '👀', numero(t.pico), m ? 'média de ' + numero(m.pico) : ''),
+      cartao('Dias seguidos', '🔥', numero(r.sequencia),
+             r.sequencia > 1 ? 'sem falhar' : (r.sequencia ? 'comece uma sequência' : 'sem sequência ativa'))
+    ].join('');
+
+    // ---------- recordes ----------
+    const rec = r.recordes;
+    const quadro = (que, quanto, quando) =>
+      '<div class="recorde"><div class="que">' + que + '</div>'
+      + '<div class="quanto">' + quanto + '</div>'
+      + '<div class="quando">' + quando + '</div></div>';
+
+    const dataDe = ms => new Date(ms).toLocaleDateString('pt-BR',
+      { day: '2-digit', month: '2-digit', year: '2-digit' });
+
+    const caixas = [];
+    if (rec.melhorLive) {
+      caixas.push(quadro('Melhor live', numero(rec.melhorLive.totalDiamonds) + ' 💎',
+        dataDe(rec.melhorLive.startedAt) + ' · ' + duracao(rec.melhorLive.durationSeconds)));
+    }
+    if (rec.melhorDia) {
+      caixas.push(quadro('Melhor dia', numero(rec.melhorDia.diamantes) + ' 💎',
+        dataDe(rec.melhorDia.em) + ' · ' + rec.melhorDia.lives
+        + (rec.melhorDia.lives === 1 ? ' live' : ' lives')));
+    }
+    if (rec.maiorPico) {
+      caixas.push(quadro('Maior plateia', numero(rec.maiorPico.peakViewers) + ' 👀',
+        dataDe(rec.maiorPico.startedAt)));
+    }
+    if (rec.liveMaisLonga) {
+      caixas.push(quadro('Live mais longa', duracao(rec.liveMaisLonga.durationSeconds),
+        dataDe(rec.liveMaisLonga.startedAt)));
+    }
+    if (rec.maiorPagante) {
+      caixas.push(quadro('Quem mais mandou', numero(rec.maiorPagante.diamantes) + ' 💎',
+        esc(rec.maiorPagante.nickname || '')));
+    }
+    $('recordes').innerHTML = caixas.length ? caixas.join('')
+      : '<div class="vazio">Nenhuma live terminada ainda — os recordes aparecem depois da primeira.</div>';
+
+    // ---------- melhores dias (colunas) ----------
+    desenharDias(r.dias);
+
+    // ---------- dia da semana ----------
+    barrasDeitadas('porSemana', r.porSemana.map(d => ({
+      rotulo: d.nome, valor: d.mediaPorLive, lives: d.lives
+    })), 'Nenhuma live no período.');
+
+    // ---------- horário ----------
+    // Só as horas em que ele já entrou ao vivo: 24 barras com 20 vazias não
+    // ajudam ninguém a decidir nada.
+    const horasComLive = r.porHora.filter(h => h.lives > 0);
+    barrasDeitadas('porHora', horasComLive.map(h => ({
+      rotulo: String(h.hora).padStart(2, '0') + 'h', valor: h.mediaPorLive, lives: h.lives
+    })), 'Nenhuma live no período.');
+
+    // ---------- tabela ----------
+    $('metaLives').textContent = r.lives.length
+      ? r.lives.length + (r.lives.length === 1 ? ' live' : ' lives') : '';
+    $('tabelaLives').innerHTML = r.lives.length
+      ? '<table class="tabela"><thead><tr>'
+        + '<th>Quando</th><th class="num">Diamantes</th><th class="num">Pico</th>'
+        + '<th class="num">Curtidas</th><th class="num">Comentários</th>'
+        + '<th class="num">Seguidores</th><th class="num">Duração</th>'
+        + '</tr></thead><tbody>'
+        + r.lives.map(l => '<tr>'
+            + '<td>' + new Date(l.startedAt).toLocaleString('pt-BR',
+                { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) + '</td>'
+            + '<td class="num destaque">' + numero(l.totalDiamonds) + '</td>'
+            + '<td class="num">' + numero(l.peakViewers) + '</td>'
+            + '<td class="num">' + numero(l.totalLikes) + '</td>'
+            + '<td class="num">' + numero(l.totalComments) + '</td>'
+            + '<td class="num">' + numero(l.totalFollows) + '</td>'
+            + '<td class="num">' + duracao(l.durationSeconds) + '</td>'
+            + '</tr>').join('')
+        + '</tbody></table>'
+      : '<div class="vazio">Nenhuma live terminada no período.</div>';
+  }
+
+  function desenharDias(dias) {
+    $('metaDias').textContent = dias.length
+      ? dias.length + (dias.length === 1 ? ' dia' : ' dias') : '';
+    if (!dias.length) {
+      $('grafDias').innerHTML = '<div class="vazio">Nenhuma live no período.</div>';
+      return;
+    }
+    const maior = tetoBonito(Math.max(...dias.map(d => d.diamantes), 1));
+    const L = 56, T = 12, B = 30, A = 200;
+    const larg = Math.max(340, dias.length * 46);
+    const util = A - T - B;
+    const passo = (larg - L - 12) / dias.length;
+
+    let guias = '';
+    for (let i = 0; i <= 2; i++) {
+      const y = T + util - (util * i / 2);
+      guias += '<line class="eixo" x1="' + L + '" y1="' + y + '" x2="' + (larg - 6) + '" y2="' + y + '"/>'
+        + '<text class="rotulo" x="' + (L - 6) + '" y="' + (y + 3) + '" text-anchor="end">'
+        + numero(Math.round(maior * i / 2)) + '</text>';
+    }
+
+    // o melhor dia vai marcado: é a informação que o streamer procura aqui
+    const melhor = dias.reduce((m, d, i) => (d.diamantes > dias[m].diamantes ? i : m), 0);
+    const curto = d => d.dia.slice(8) + '/' + d.dia.slice(5, 7);
+
+    const colunas = dias.map((d, i) => {
+      const alt = Math.max(2, (d.diamantes / maior) * util);
+      const x = L + i * passo + passo * 0.2;
+      const w = passo * 0.6;
+      const y = T + util - alt;
+      return '<rect class="col2" x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" '
+        + 'width="' + w.toFixed(1) + '" height="' + alt.toFixed(1) + '" rx="3"'
+        + (i === melhor ? ' stroke="var(--gold)" stroke-width="1.5"' : '') + '>'
+        + '<title>' + esc(curto(d)) + ' — ' + numero(d.diamantes) + ' diamantes em '
+        + d.lives + (d.lives === 1 ? ' live' : ' lives') + ', ' + duracao(d.segundos)
+        + ', pico de ' + numero(d.pico) + '</title></rect>'
+        + (i === melhor || dias.length <= 14 || i % Math.ceil(dias.length / 10) === 0
+            ? '<text class="rotulo" x="' + (x + w / 2).toFixed(1) + '" y="' + (A - 12) + '" '
+              + 'text-anchor="middle">' + esc(curto(d)) + '</text>'
+            : '');
+    }).join('');
+
+    $('grafDias').innerHTML =
+      '<div style="overflow-x:auto"><svg class="graf" viewBox="0 0 ' + larg + ' ' + A + '" '
+      + 'style="min-width:' + larg + 'px" role="img" aria-label="Diamantes por dia">'
+      + '<defs><linearGradient id="fogo2" x1="0" y1="0" x2="0" y2="1">'
+      + '<stop offset="0%" stop-color="var(--gold)"/><stop offset="100%" stop-color="var(--ember1)"/>'
+      + '</linearGradient></defs>'
+      + guias + colunas + '</svg></div>';
+  }
+
+  async function carregarRegistros() {
+    const res = await fetch('/api/registros' + (periodoDias ? '?dias=' + periodoDias : ''));
+    if (!res.ok) throw new Error('falhou');
+    registros = await res.json();
+    desenharRegistros();
+  }
+
+  // ---------------------------------------------------------------- abas
+  let abaAtual = 'agora';
+  function trocarAba(qual) {
+    abaAtual = qual;
+    $('abaAgora').hidden = qual !== 'agora';
+    $('abaHistorico').hidden = qual !== 'historico';
+    $('abaBtAgora').classList.toggle('ligado', qual === 'agora');
+    $('abaBtHistorico').classList.toggle('ligado', qual === 'historico');
+    // só busca o histórico quando ele é aberto: são consultas pesadas pra
+    // deixar rodando num relógio de fundo
+    if (qual === 'historico' && !registros) carregarRegistros().catch(() => {});
+  }
+  // A aba fica no endereço: dá pra salvar o link direto do histórico, e o
+  // botão de voltar do navegador faz o que a pessoa espera.
+  $('abaBtAgora').addEventListener('click', () => {
+    trocarAba('agora');
+    history.replaceState(null, '', location.pathname);
+  });
+  $('abaBtHistorico').addEventListener('click', () => {
+    trocarAba('historico');
+    history.replaceState(null, '', location.pathname + '#historico');
+  });
+  window.addEventListener('hashchange', () => {
+    trocarAba(location.hash === '#historico' ? 'historico' : 'agora');
+  });
+
+  document.querySelectorAll('[data-dias]').forEach(b => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('[data-dias]').forEach(o => o.classList.remove('ligado'));
+      b.classList.add('ligado');
+      periodoDias = Number(b.dataset.dias);
+      carregarRegistros().catch(() => {});
+    });
+  });
+
   // ------------------------------------------------ desenha tudo
   function desenhar() {
     const estado = $('estado');
@@ -678,11 +1196,17 @@
     if (!res.ok) throw new Error('falhou');
     dados = await res.json();
     desenhar();
+    // a curva depende de saber quando a live começou, então vem depois
+    await carregarSerie().catch(() => {});
+    // o histórico só se atualiza se estiver aberto
+    if (abaAtual === 'historico') await carregarRegistros().catch(() => {});
   }
 
   $('btAtual').addEventListener('click', () => { vendoAtual = true; desenhar(); });
   $('btTudo').addEventListener('click', () => { vendoAtual = false; desenhar(); });
   $('btAtualizar').addEventListener('click', () => carregar().catch(() => {}));
+
+  if (location.hash === '#historico') trocarAba('historico');
 
   carregar().catch(() => {
     $('numeros').innerHTML = '<div class="vazio">Não deu pra carregar os números. '
