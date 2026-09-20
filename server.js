@@ -520,9 +520,9 @@ app.get('/api/espiar/sair', (req, res) => {
 // express.static de propósito: senão ele entrega o arquivo cru.
 // Lista fechada de nomes — nada de montar caminho com o que veio na URL.
 const PAGINAS = new Set(['index.html', 'mural.html', 'login.html', 'ativar.html',
-                         'diagnostico.html', 'admin.html', 'config.html']);
+                         'painel.html', 'diagnostico.html', 'admin.html', 'config.html']);
 // as telas que pertencem a UMA live — o administrador não mora nelas
-const PAGINAS_DE_CLIENTE = new Set(['index.html', 'mural.html', 'diagnostico.html']);
+const PAGINAS_DE_CLIENTE = new Set(['index.html', 'mural.html', 'painel.html', 'diagnostico.html']);
 const cachePagina = new Map();   // nome|variante -> { mtimeMs, versao, html }
 
 app.use((req, res, next) => {
@@ -591,6 +591,13 @@ app.post('/api/tropa/remover', (req, res) => {
   const removeu = db.removerDaTropa(nome, tipo);
   if (removeu) io.to(sala).emit('tropa_removida', { nome, tipo });
   res.json({ ok: true, removeu });
+});
+
+// Tudo que o streamer quer ver da live dele, num pedido só. O escopo vem do
+// clientes.doPedido: cada um enxerga a própria live e nada mais.
+app.get('/api/dashboard', (req, res) => {
+  const { db } = clientes.doPedido(req);
+  res.json(db.getDashboard());
 });
 
 app.get('/api/batalhas', (req, res) => {

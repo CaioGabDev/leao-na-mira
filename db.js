@@ -772,11 +772,22 @@ function criarBanco(dono, opcoes) {
     state.currentBattle = null;
     state.currentSessionSnapshot = null;
     state.cartas = {};
+    // As marcas de migração NÃO são dado da live: são "isto já foi corrigido
+    // uma vez". Reconstruir o global sem elas rearmava as migrações de uso
+    // único, e a do pico começa zerando o peakViewers — então resetar + dar
+    // restart fazia o pico sumir sozinho no dia seguinte.
+    const jaMigrado = {
+      superfaRemarcado: state.global.superfaRemarcado,
+      picoCorrigido: state.global.picoCorrigido
+    };
     state.global = {
       totalDiamonds: 0, totalLikes: 0, totalComments: 0, totalFollows: 0, totalShares: 0,
       peakViewers: 0, currentViewers: 0, uniqueViewers: 0, startedAt: Date.now(),
       lastLiveDurationSeconds: 0, sessionPeakViewers: 0
     };
+    Object.entries(jaMigrado).forEach(([marca, valor]) => {
+      if (valor) state.global[marca] = valor;
+    });
     Object.keys(pendingLikes).forEach(k => delete pendingLikes[k]);
     Object.keys(likeActionRef).forEach(k => delete likeActionRef[k]);
     Object.keys(giftActionRef).forEach(k => delete giftActionRef[k]);
@@ -1062,6 +1073,166 @@ function criarBanco(dono, opcoes) {
     dirty = true;
   }
 
+  // ---------- DASHBOARD DO STREAMER ----------
+  // Junta num lugar só o que ele quer saber. Tudo daqui já existia espalhado
+  // (global, ranking, actions, sessions, battles, cartas) — o que faltava era
+  // o corte: separar ESTA live do acumulado, e responder perguntas que o
+  // número cru não responde ("quem sustenta a live", "melhorou ou piorou").
+
+  // Os números só DESTA live: o acumulado menos o retrato tirado quando ela
+  // subiu. Sem live no ar devolve null, e a tela mostra o acumulado.
+  function numerosDaLiveAtual() {
+    const snap = state.currentSessionSnapshot;
+    if (!snap || !state.global.liveActive) return null;
+    const g = state.global;
+    return {
+      comecouEm: snap.startedAt,
+      duracaoSegundos: Math.floor((Date.now() - snap.startedAt) / 1000),
+      diamantes:     Math.max(0, g.totalDiamonds  - snap.totalDiamonds),
+      likes:         Math.max(0, g.totalLikes     - snap.totalLikes),
+      comentarios:   Math.max(0, g.totalComments  - snap.totalComments),
+      seguidores:    Math.max(0, g.totalFollows   - snap.totalFollows),
+      compartilhou:  Math.max(0, g.totalShares    - snap.totalShares),
+      pico:          g.sessionPeakViewers || 0
+    };
+  }
+
+  // Variação contra a live anterior, em %. null quando não dá pra comparar —
+  // e null NÃO é zero: "não tem com o que comparar" é diferente de "ficou
+  // igual", e a tela precisa saber a diferença pra não desenhar uma seta.
+  function variacao(agora, antes) {
+    if (typeof antes !== 'number' || antes <= 0) return null;
+    return Math.round(((agora - antes) / antes) * 100);
+  }
+
+  function getDashboard() {
+    const g = getGlobalStats();
+    const sessoes = getSessions();          // mais recente primeiro
+    const ranking = getRanking();
+    const atual = numerosDaLiveAtual();
+
+    // ---------- presentes, agrupados por tipo ----------
+    // As actions guardam UM registro por pessoa+presente, com quantos e quanto.
+    // Somando por `detail` sai o que mais deu dinheiro na live.
+    const porPresente = new Map();
+    state.actions.forEach(a => {
+      if (a.type !== 'gift' || !a.detail) return;
+      let p = porPresente.get(a.detail);
+      if (!p) porPresente.set(a.detail, p = { nome: a.detail, envios: 0, diamantes: 0, pessoas: new Set() });
+      p.envios += a.count || 0;
+      p.diamantes += a.value || 0;
+      p.pessoas.add(a.uniqueId);
+    });
+    const presentes = [...porPresente.values()]
+      .map(p => ({ nome: p.nome, envios: p.envios, diamantes: p.diamantes, pessoas: p.pessoas.size }))
+      .sort((a, b) => b.diamantes - a.diamantes);
+
+    // ---------- gente ----------
+    const pagantes = ranking.filter(u => u.gifts_value > 0);
+    const resumir = u => ({
+      uniqueId: u.uniqueId, nickname: u.nickname, avatar: u.avatar,
+      diamantes: u.gifts_value, presentes: u.gifts_count,
+      likes: u.likes, comentarios: u.comments || 0,
+      gifterLevel: u.gifterLevel || 0
+    });
+
+    const topDiamantes = [...pagantes].sort((a, b) => b.gifts_value - a.gifts_value).slice(0, 10).map(resumir);
+    const topLikes = [...ranking].filter(u => u.likes > 0)
+      .sort((a, b) => b.likes - a.likes).slice(0, 10).map(resumir);
+    const topComentarios = [...ranking].filter(u => (u.comments || 0) > 0)
+      .sort((a, b) => (b.comments || 0) - (a.comments || 0)).slice(0, 10).map(resumir);
+
+    // QUEM SUSTENTA A LIVE. Um total alto pode vir de uma pessoa só — e isso
+    // muda tudo pro streamer, que precisa saber se depende de alguém.
+    const soma = (lista, campo) => lista.reduce((t, u) => t + (u[campo] || 0), 0);
+    const diamantesDeTodos = soma(ranking, 'gifts_value');
+    const top3 = soma([...pagantes].sort((a, b) => b.gifts_value - a.gifts_value).slice(0, 3), 'gifts_value');
+    const concentracao = diamantesDeTodos > 0 ? Math.round((top3 / diamantesDeTodos) * 100) : null;
+
+    // ---------- engajamento ----------
+    // De cada 100 que apareceram, quantos fizeram alguma coisa. `uniqueViewers`
+    // conta quem gerou QUALQUER evento — quem só assistiu calado nunca entra
+    // em nenhuma das duas contas, então isto é "dos que apareceram", não
+    // "dos que assistiram". A tela precisa dizer isso.
+    const pct = (parte, todo) => (todo > 0 ? Math.round((parte / todo) * 100) : null);
+    const apareceram = ranking.length;
+    const engajamento = {
+      apareceram,
+      presentearam: pagantes.length,
+      comentaram: ranking.filter(u => (u.comments || 0) > 0).length,
+      seguiram: ranking.filter(u => u.followed).length,
+      curtiram: ranking.filter(u => u.likes > 0).length,
+      pctPresentearam: pct(pagantes.length, apareceram),
+      pctComentaram: pct(ranking.filter(u => (u.comments || 0) > 0).length, apareceram),
+      pctCurtiram: pct(ranking.filter(u => u.likes > 0).length, apareceram)
+    };
+
+    // gente que apareceu pela primeira vez nesta live
+    const inicio = atual ? atual.comecouEm : null;
+    const novos = inicio === null ? null : ranking.filter(u => (u.firstSeenAt || 0) >= inicio).length;
+
+    // ---------- ritmo ----------
+    const horas = (atual ? atual.duracaoSegundos : g.uptimeSeconds) / 3600;
+    const diamantesDaJanela = atual ? atual.diamantes : g.totalDiamonds;
+    const porHora = horas > 0.02 ? Math.round(diamantesDaJanela / horas) : null;
+
+    // ---------- comparação com a live anterior ----------
+    const anterior = sessoes[0] || null;
+    const comparar = anterior && atual ? {
+      diamantes:   variacao(atual.diamantes,   anterior.totalDiamonds),
+      likes:       variacao(atual.likes,       anterior.totalLikes),
+      comentarios: variacao(atual.comentarios, anterior.totalComments),
+      seguidores:  variacao(atual.seguidores,  anterior.totalFollows),
+      pico:        variacao(atual.pico,        anterior.peakViewers)
+    } : null;
+
+    // ---------- power-ups ----------
+    const fichas = getEstoqueCartas();
+    const estoqueTotal = {};
+    fichas.forEach(f => {
+      Object.entries(f.estoque || {}).forEach(([tipo, n]) => {
+        estoqueTotal[tipo] = (estoqueTotal[tipo] || 0) + n;
+      });
+    });
+
+    return {
+      aoVivo: !!g.liveActive,
+      atual,                       // null quando não tem live no ar
+      acumulado: {
+        diamantes: g.totalDiamonds,
+        likes: g.totalLikes,
+        comentarios: g.totalComments,
+        seguidores: g.totalFollows,
+        compartilhou: g.totalShares,
+        pico: g.peakViewers,
+        agora: g.currentViewers,
+        pessoas: g.uniqueViewers,
+        duracaoSegundos: g.uptimeSeconds
+      },
+      comparar,
+      porHora,
+      novos,
+      concentracao,
+      engajamento,
+      presentes: presentes.slice(0, 12),
+      presentesTipos: presentes.length,
+      topDiamantes,
+      topLikes,
+      topComentarios,
+      // as últimas lives, da mais antiga pra mais nova: é assim que um gráfico
+      // de linha do tempo lê
+      historico: sessoes.slice(0, 14).reverse(),
+      batalhas: getBattleStats(),
+      powerups: {
+        estoque: estoqueTotal,
+        pessoasComCarta: fichas.filter(f => f.premiacoes > 0).length,
+        premiacoes: fichas.reduce((t, f) => t + f.premiacoes, 0),
+        pendentes: fichas.reduce((t, f) => t + f.pendentes, 0)
+      },
+      tropa: state.tropa.length
+    };
+  }
+
   function getBattleStats() {
     const batalhas = state.battles;
     const conta = r => batalhas.filter(b => b.resultado === r).length;
@@ -1137,7 +1308,7 @@ function criarBanco(dono, opcoes) {
     heartbeat,
     registrarSuperfa, removerDaTropa, registrarSubidaDeNivel, setLogListener,
     iniciarBatalha, atualizarPlacarBatalha, finalizarBatalha, fecharBatalhaAbandonada,
-    cancelarBatalhaEmAndamento, getBattleStats,
+    cancelarBatalhaEmAndamento, getBattleStats, getDashboard,
     saveToDisk, fechar, dono, espelharNoJson
   };
 }

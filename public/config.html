@@ -9,6 +9,96 @@
 <link href="https://fonts.googleapis.com/css2?family=Bungee&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/assets/theme.css">
 <link rel="stylesheet" href="/assets/painel.css">
+<style>
+  /* ---------- amostra grande ---------- */
+  .amostra-grande {
+    padding: 18px; border-radius: var(--r-lg);
+    background: var(--bg);              /* o FUNDO configurado, de verdade */
+    border: 1px solid var(--line);
+  }
+  .amostra-card {
+    padding: 15px; border-radius: var(--r-md);
+    background: var(--card);            /* e a cor das CAIXAS */
+    border: 1px solid var(--line);
+  }
+  .amostra-topo { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .amostra-titulo {
+    font-family: Bungee, system-ui, sans-serif; font-size: 15px;
+    background: var(--grad-ink);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .amostra-linha {
+    display: flex; align-items: center; gap: 10px;
+    padding: 7px 4px; font-size: 14px;
+  }
+  .amostra-pos {
+    width: 20px; text-align: center;
+    font-family: Bungee, system-ui, sans-serif; font-size: 13px; color: var(--gold);
+  }
+  .amostra-bolha {
+    width: 26px; height: 26px; border-radius: 50%;
+    background: var(--grad-fire);
+  }
+  .amostra-nome { flex: 1; color: var(--ink); font-weight: 600; }
+  .amostra-num { font-family: Bungee, system-ui, sans-serif; color: var(--gold); font-size: 14px; }
+  .amostra-rodape { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+  .amostra-rodape .barra {
+    flex: 1; height: 8px; border-radius: 4px; background: var(--grad-fire);
+  }
+
+  /* ---------- temas prontos ---------- */
+  .temas-prontos { margin-top: 16px; }
+  .temas-rotulo {
+    display: block; font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
+    font-weight: 700; color: var(--ink-faint); margin-bottom: 9px;
+  }
+  .temas-lista { display: flex; flex-wrap: wrap; gap: 8px; }
+  .tema-pronto {
+    display: flex; align-items: center; gap: 9px; cursor: pointer;
+    padding: 7px 13px 7px 8px; border-radius: var(--r-pill);
+    background: var(--card-2); border: 1px solid var(--line);
+    font-family: inherit; font-size: 13px; font-weight: 600; color: var(--ink-dim);
+    transition: border-color .15s, color .15s;
+  }
+  .tema-pronto:hover { border-color: var(--ink-faint); color: var(--ink); }
+  .tema-pronto .bolinhas { display: flex; }
+  .tema-pronto .bolinhas i {
+    width: 15px; height: 15px; border-radius: 50%;
+    border: 1.5px solid var(--card-2); margin-left: -5px;
+  }
+  .tema-pronto .bolinhas i:first-child { margin-left: 0; }
+
+  /* ---------- cada cor ---------- */
+  .cores { display: grid; grid-template-columns: repeat(auto-fit, minmax(255px, 1fr)); gap: 10px; margin-top: 20px; }
+  .cor-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 11px 13px; border-radius: var(--r-md);
+    background: var(--card-2); border: 1px solid var(--line-soft);
+  }
+  /* A amostra é o próprio seletor: clicar na cor grande abre o escolhedor.
+     Antes o quadradinho era pequeno e ficava longe do nome. */
+  .cor-item input[type="color"] {
+    flex: none; width: 46px; height: 46px; padding: 0; cursor: pointer;
+    border: 1px solid var(--line); border-radius: var(--r-sm); background: none;
+  }
+  .cor-item input[type="color"]::-webkit-color-swatch-wrapper { padding: 3px; }
+  .cor-item input[type="color"]::-webkit-color-swatch { border: none; border-radius: 7px; }
+  /* os tres sao <span>: sem display:block eles saem colados numa linha so */
+  .cor-texto { flex: 1; min-width: 0; }
+  .cor-nome { display: block; font-weight: 700; font-size: 14px; color: var(--ink); }
+  .cor-onde { display: block; font-size: 12px; color: var(--ink-faint); line-height: 1.35; margin-top: 2px; }
+  .cor-hex {
+    display: block; font-size: 12px; color: var(--ink-dim); font-variant-numeric: tabular-nums;
+    margin-top: 3px; letter-spacing: .04em;
+  }
+  .cor-voltar {
+    flex: none; border: none; background: none; cursor: pointer; padding: 6px;
+    border-radius: var(--r-sm); color: var(--ink-faint); font-size: 14px; line-height: 1;
+  }
+  .cor-voltar:hover { color: var(--gold); background: var(--card-3); }
+  .cor-voltar[hidden] { display: none !important; }
+</style>
+
 {{tema}}
 </head>
 <body>
@@ -81,52 +171,41 @@
       <span class="app-panel-meta">muda ao vivo aqui na tela</span>
     </div>
 
-    <div class="amostra">
-      <span class="titulo">Assim vai ficar</span>
-      <span class="app-pill"><span class="dot"></span>Ao vivo agora</span>
-      <button class="app-btn app-btn--primary" type="button">Botão</button>
-      <span class="barra"></span>
-    </div>
-
-    <div class="cores" style="margin-top:14px">
-      <div class="cor">
-        <label for="corGold">Destaque</label>
-        <div class="linha"><input type="color" id="corGold"><span class="hex" id="hexGold"></span></div>
-      </div>
-      <div class="cor">
-        <label for="corEmber1">Brasa 1</label>
-        <div class="linha"><input type="color" id="corEmber1"><span class="hex" id="hexEmber1"></span></div>
-      </div>
-      <div class="cor">
-        <label for="corEmber2">Brasa 2</label>
-        <div class="linha"><input type="color" id="corEmber2"><span class="hex" id="hexEmber2"></span></div>
-      </div>
-      <div class="cor">
-        <label for="corBg">Fundo</label>
-        <div class="linha"><input type="color" id="corBg"><span class="hex" id="hexBg"></span></div>
-      </div>
-      <div class="cor">
-        <label for="corCard">Caixas</label>
-        <div class="linha"><input type="color" id="corCard"><span class="hex" id="hexCard"></span></div>
+    <!-- A amostra tem que mostrar o FUNDO e os CARDS, não só um botão
+         solto: é ali que duas das cinco cores aparecem. -->
+    <div class="amostra-grande" id="amostra">
+      <div class="amostra-card">
+        <div class="amostra-topo">
+          <span class="amostra-titulo">Assim vai ficar</span>
+          <span class="app-pill"><span class="dot"></span>Ao vivo agora</span>
+        </div>
+        <div class="amostra-linha">
+          <span class="amostra-pos">1</span>
+          <span class="amostra-bolha"></span>
+          <span class="amostra-nome">Alguém da tropa</span>
+          <span class="amostra-num">12.400</span>
+        </div>
+        <div class="amostra-linha">
+          <span class="amostra-pos">2</span>
+          <span class="amostra-bolha"></span>
+          <span class="amostra-nome">Outra pessoa</span>
+          <span class="amostra-num">8.120</span>
+        </div>
+        <div class="amostra-rodape">
+          <button class="app-btn app-btn--primary" type="button">Botão</button>
+          <span class="barra"></span>
+        </div>
       </div>
     </div>
 
-    <div style="margin-top:18px; padding-top:16px; border-top:1px solid var(--line-soft)">
-      <div class="cores">
-        <div class="cor">
-          <label for="corBrasa1">Brasinha (miolo)</label>
-          <div class="linha"><input type="color" id="corBrasa1"><span class="hex" id="hexBrasa1"></span></div>
-        </div>
-        <div class="cor">
-          <label for="corBrasa2">Brasinha (borda)</label>
-          <div class="linha"><input type="color" id="corBrasa2"><span class="hex" id="hexBrasa2"></span></div>
-        </div>
-      </div>
-      <span class="dica" style="margin-top:8px; display:block">
-        São as partículas que sobem no fundo do ranking. O miolo é o brilho do
-        meio; a borda é a cor pra onde ela desaparece.
-      </span>
+    <!-- TEMAS PRONTOS: quem não é designer não quer escolher 7 cores no
+         escuro. Um clique põe um conjunto que combina, e daí ele ajusta. -->
+    <div class="temas-prontos">
+      <span class="temas-rotulo">Começar de um pronto</span>
+      <div class="temas-lista" id="temasProntos"></div>
     </div>
+
+    <div class="cores" id="listaCores"></div>
   </section>
 
   <!-- ---------- MURAL ---------- -->
@@ -180,15 +259,35 @@
   const $ = id => document.getElementById(id);
   const statusEl = $('status');
 
+  // O nome tem que dizer ONDE a cor aparece. "Destaque", "Brasa 1", "Caixas"
+  // só fazem sentido pra quem escreveu o CSS — e "Brasa 1" vs "Brasinha
+  // (miolo)" eram duas coisas diferentes com nomes quase iguais.
   const CORES = [
-    ['gold', 'corGold', 'hexGold'],
-    ['ember1', 'corEmber1', 'hexEmber1'],
-    ['ember2', 'corEmber2', 'hexEmber2'],
-    ['bg', 'corBg', 'hexBg'],
-    ['card', 'corCard', 'hexCard'],
-    ['brasa1', 'corBrasa1', 'hexBrasa1'],
-    ['brasa2', 'corBrasa2', 'hexBrasa2']
+    ['gold',   'Cor principal', 'Números, posições do ranking e o contorno dos botões.'],
+    ['ember1', 'Fogo (começo)', 'O topo do degradê: botões, barras e o brilho dos nomes.'],
+    ['ember2', 'Fogo (fim)',    'A ponta do degradê. Junto com a de cima, é o fogo do site.'],
+    ['bg',     'Fundo da página', 'A cor de trás de tudo. Escura funciona melhor.'],
+    ['card',   'Fundo das caixas', 'Os blocos que ficam por cima do fundo.'],
+    ['brasa1', 'Partícula (miolo)', 'As bolinhas que sobem no fundo. Esta é o brilho do meio.'],
+    ['brasa2', 'Partícula (borda)', 'A cor pra onde a bolinha desaparece.']
   ];
+
+  // Conjuntos que combinam, pra quem não quer escolher sete cores no escuro.
+  // O primeiro é o padrão do site.
+  const TEMAS_PRONTOS = [
+    ['Fogo',    { gold:'#ffb03a', ember1:'#ff7a1a', ember2:'#ff2d2d', bg:'#0a0807', card:'#150f0b', brasa1:'#ffaa3c', brasa2:'#ff3c14' }],
+    ['Gelo',    { gold:'#7dd3fc', ember1:'#38bdf8', ember2:'#2563eb', bg:'#050810', card:'#0c1320', brasa1:'#a5e8ff', brasa2:'#1e5fd0' }],
+    ['Veneno',  { gold:'#a3e635', ember1:'#4ade80', ember2:'#10b981', bg:'#060b07', card:'#0d1710', brasa1:'#c4f36a', brasa2:'#12a06a' }],
+    ['Roxo',    { gold:'#c084fc', ember1:'#a855f7', ember2:'#6d28d9', bg:'#0a0710', card:'#150e1f', brasa1:'#d8b4fe', brasa2:'#7c2fd9' }],
+    ['Sangue',  { gold:'#fb7185', ember1:'#e11d48', ember2:'#881337', bg:'#0c0507', card:'#1a0c11', brasa1:'#ff8fa3', brasa2:'#9f1239' }],
+    ['Dourado', { gold:'#fcd34d', ember1:'#f59e0b', ember2:'#b45309', bg:'#0b0906', card:'#171208', brasa1:'#ffe08a', brasa2:'#c2760a' }]
+  ];
+
+  const idDaCor = chave => 'cor_' + chave;
+
+  // O seletor de cor do navegador só aceita #rrggbb. Um valor torto travava o
+  // campo no preto sem dizer nada.
+  const corValida = v => /^#[0-9a-fA-F]{6}$/.test(String(v || ''));
 
   let padrao = null;
   let alvoAtual = '';      // '' = a instalação; senão o @ do cliente
@@ -205,15 +304,41 @@
     }[c]));
   }
 
+  function montarCores() {
+    $('listaCores').innerHTML = CORES.map(([chave, nome, onde]) =>
+      '<div class="cor-item">'
+      + '<input type="color" id="' + idDaCor(chave) + '" aria-label="' + esc(nome) + '">'
+      + '<span class="cor-texto">'
+      + '<span class="cor-nome">' + esc(nome) + '</span>'
+      + '<span class="cor-onde">' + esc(onde) + '</span>'
+      + '<span class="cor-hex" id="hex_' + chave + '"></span>'
+      + '</span>'
+      + '<button type="button" class="cor-voltar" data-voltar="' + chave + '" hidden '
+      + 'title="Voltar esta cor ao padrão">↩</button>'
+      + '</div>').join('');
+
+    $('temasProntos').innerHTML = TEMAS_PRONTOS.map(([nome, cores], i) =>
+      '<button type="button" class="tema-pronto" data-tema="' + i + '">'
+      + '<span class="bolinhas">'
+      + ['bg', 'card', 'gold', 'ember1', 'ember2']
+          .map(k => '<i style="background:' + cores[k] + '"></i>').join('')
+      + '</span>' + esc(nome) + '</button>').join('');
+  }
+
   // Aplica as cores do formulário nesta página, pra ver o resultado antes de salvar.
   function espelhar() {
     const raiz = document.documentElement;
-    CORES.forEach(([chave, idCor, idHex]) => {
-      const v = $(idCor).value;
+    CORES.forEach(([chave]) => {
+      const v = $(idDaCor(chave)).value;
       // brasa1/brasa2 viram --brasa-1/--brasa-2 (o canvas lê nesse nome)
       raiz.style.setProperty(
         chave.startsWith('brasa') ? '--brasa-' + chave.slice(5) : '--' + chave, v);
-      $(idHex).textContent = v;
+      $('hex_' + chave).textContent = v;
+
+      // A setinha só aparece quando ESTA cor está diferente do padrão: um
+      // botão que não faz nada é pior que botão nenhum.
+      const voltar = document.querySelector('[data-voltar="' + chave + '"]');
+      if (voltar) voltar.hidden = !padrao || padrao.tema[chave] === v;
     });
   }
 
@@ -246,14 +371,19 @@
     $('marcaSub').value    = c.marca.sub;
     $('muralTitulo').value = c.mural.titulo;
     $('muralSub').value    = c.mural.sub;
-    CORES.forEach(([chave, idCor]) => { $(idCor).value = c.tema[chave]; });
+    CORES.forEach(([chave]) => {
+      // cor torta trava o seletor no preto sem avisar; cai no padrão
+      const v = corValida(c.tema[chave]) ? c.tema[chave]
+        : (padrao && corValida(padrao.tema[chave]) ? padrao.tema[chave] : '#000000');
+      $(idDaCor(chave)).value = v;
+    });
     $('liveUsuario').value = c.live.usuario;
     espelhar();
   }
 
   function montarEnvio() {
     const tema = {};
-    CORES.forEach(([chave, idCor]) => { tema[chave] = $(idCor).value; });
+    CORES.forEach(([chave]) => { tema[chave] = $(idDaCor(chave)).value; });
     return {
       dono: alvoAtual,
       marca: { emoji: $('marcaEmoji').value, titulo: $('marcaTitulo').value, sub: $('marcaSub').value },
@@ -280,7 +410,25 @@
     if ($('alvo').value !== antes) { alvoAtual = ''; $('alvo').value = ''; }
   }
 
-  CORES.forEach(([, idCor]) => $(idCor).addEventListener('input', espelhar));
+  montarCores();
+  CORES.forEach(([chave]) => $(idDaCor(chave)).addEventListener('input', espelhar));
+
+  $('temasProntos').addEventListener('click', e => {
+    const botao = e.target.closest('[data-tema]');
+    if (!botao) return;
+    const cores = TEMAS_PRONTOS[Number(botao.dataset.tema)][1];
+    Object.entries(cores).forEach(([chave, v]) => { $(idDaCor(chave)).value = v; });
+    espelhar();
+    aviso('Tema aplicado aqui na tela — clique em Salvar pra valer.');
+  });
+
+  $('listaCores').addEventListener('click', e => {
+    const botao = e.target.closest('[data-voltar]');
+    if (!botao || !padrao) return;
+    const chave = botao.dataset.voltar;
+    $(idDaCor(chave)).value = padrao.tema[chave];
+    espelhar();
+  });
 
   $('alvo').addEventListener('change', async () => {
     alvoAtual = $('alvo').value;
