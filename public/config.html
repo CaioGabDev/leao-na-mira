@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aparência — {{marca.titulo}}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bungee&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/theme.css">
+<link rel="stylesheet" href="/assets/painel.css">
+{{tema}}
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <div class="brand-mark">🎨</div>
+      <div>
+        <h1>Aparência</h1>
+        <p class="sub">A cara do site — da casa ou de um cliente</p>
+      </div>
+    </div>
+    <span class="spacer"></span>
+    <a class="app-btn" href="/admin.html" id="linkPainel" hidden>📊 Painel</a>
+    <a class="app-btn" href="/index.html" id="linkRanking">⬅️ Ranking</a>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="aviso">
+    Isto muda só a <b>aparência e os textos</b>. Nada aqui mexe na contagem da live,
+    no ranking, nas batalhas ou nos power-ups — esses continuam funcionando igual.
+  </div>
+
+  <!-- ---------- DE QUEM É A CARA QUE EU ESTOU MEXENDO ---------- -->
+  <!-- só o administrador escolhe: o cliente mexe na dele e pronto -->
+  <section class="app-panel" id="painelAlvo" hidden>
+    <div class="app-panel-head">
+      <h2 class="app-panel-title">Configurando</h2>
+      <span class="app-panel-meta" id="alvoAviso"></span>
+    </div>
+    <div class="campo">
+      <label for="alvo">Quem</label>
+      <select class="app-select" id="alvo"></select>
+      <span class="dica">
+        A instalação é a cara padrão: vale pra todo mundo que não mexeu na sua.
+        Escolhendo um cliente, você mexe só na dele.
+      </span>
+    </div>
+  </section>
+
+  <!-- ---------- MARCA ---------- -->
+  <section class="app-panel">
+    <div class="app-panel-head">
+      <h2 class="app-panel-title">Marca</h2>
+      <span class="app-panel-meta">topo do site e aba do navegador</span>
+    </div>
+    <div class="campos">
+      <div class="campo">
+        <label for="marcaEmoji">Emoji</label>
+        <input class="app-input" type="text" id="marcaEmoji" maxlength="8" style="width:110px">
+      </div>
+      <div class="campo">
+        <label for="marcaTitulo">Título</label>
+        <input class="app-input" type="text" id="marcaTitulo" maxlength="60">
+      </div>
+      <div class="campo">
+        <label for="marcaSub">Frase de baixo</label>
+        <input class="app-input" type="text" id="marcaSub" maxlength="160">
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- CORES ---------- -->
+  <section class="app-panel">
+    <div class="app-panel-head">
+      <h2 class="app-panel-title">Cores</h2>
+      <span class="app-panel-meta">muda ao vivo aqui na tela</span>
+    </div>
+
+    <div class="amostra">
+      <span class="titulo">Assim vai ficar</span>
+      <span class="app-pill"><span class="dot"></span>Ao vivo agora</span>
+      <button class="app-btn app-btn--primary" type="button">Botão</button>
+      <span class="barra"></span>
+    </div>
+
+    <div class="cores" style="margin-top:14px">
+      <div class="cor">
+        <label for="corGold">Destaque</label>
+        <div class="linha"><input type="color" id="corGold"><span class="hex" id="hexGold"></span></div>
+      </div>
+      <div class="cor">
+        <label for="corEmber1">Brasa 1</label>
+        <div class="linha"><input type="color" id="corEmber1"><span class="hex" id="hexEmber1"></span></div>
+      </div>
+      <div class="cor">
+        <label for="corEmber2">Brasa 2</label>
+        <div class="linha"><input type="color" id="corEmber2"><span class="hex" id="hexEmber2"></span></div>
+      </div>
+      <div class="cor">
+        <label for="corBg">Fundo</label>
+        <div class="linha"><input type="color" id="corBg"><span class="hex" id="hexBg"></span></div>
+      </div>
+      <div class="cor">
+        <label for="corCard">Caixas</label>
+        <div class="linha"><input type="color" id="corCard"><span class="hex" id="hexCard"></span></div>
+      </div>
+    </div>
+
+    <div class="campo" style="margin-top:16px">
+      <label for="girarBrasa">Girar a cor das brasinhas do fundo</label>
+      <div class="faixa">
+        <input type="range" id="girarBrasa" min="0" max="360" step="5">
+        <span class="valor" id="girarValor">0°</span>
+      </div>
+      <span class="dica">
+        As brasinhas são desenhadas em laranja fixo pelo código da página. Este giro
+        é o que faz elas combinarem com um tema de outra cor.
+      </span>
+    </div>
+  </section>
+
+  <!-- ---------- MURAL ---------- -->
+  <section class="app-panel">
+    <div class="app-panel-head">
+      <h2 class="app-panel-title">Mural da Tropa</h2>
+      <span class="app-panel-meta">cabeçalho da página do mural</span>
+    </div>
+    <div class="campos">
+      <div class="campo">
+        <label for="muralTitulo">Título</label>
+        <input class="app-input" type="text" id="muralTitulo" maxlength="60">
+      </div>
+      <div class="campo">
+        <label for="muralSub">Frase de baixo</label>
+        <input class="app-input" type="text" id="muralSub" maxlength="160">
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- LIVE ---------- -->
+  <section class="app-panel">
+    <div class="app-panel-head">
+      <h2 class="app-panel-title">Live acompanhada</h2>
+      <span class="app-panel-meta" id="liveAtual"></span>
+    </div>
+    <div class="campos">
+      <div class="campo">
+        <label for="liveUsuario">@ da live</label>
+        <input class="app-input" type="text" id="liveUsuario" maxlength="32" placeholder="sem o @">
+        <span class="dica" id="liveDica"></span>
+      </div>
+    </div>
+    <div class="aviso" style="margin-top:14px">
+      Trocar o @ <b>só passa a valer quando o servidor reiniciar</b>. É de propósito:
+      trocar de live com a coisa rodando misturaria os dados das duas no mesmo lugar.
+    </div>
+  </section>
+
+  <div class="rodape">
+    <button class="app-btn app-btn--primary" id="salvarBtn">💾 Salvar</button>
+    <button class="app-btn" id="padraoBtn">↩️ Voltar ao padrão</button>
+    <span class="spacer"></span>
+    <span class="status" id="status"></span>
+  </div>
+
+</div>
+
+<script>
+(function () {
+  const $ = id => document.getElementById(id);
+  const statusEl = $('status');
+
+  const CORES = [
+    ['gold', 'corGold', 'hexGold'],
+    ['ember1', 'corEmber1', 'hexEmber1'],
+    ['ember2', 'corEmber2', 'hexEmber2'],
+    ['bg', 'corBg', 'hexBg'],
+    ['card', 'corCard', 'hexCard']
+  ];
+
+  let padrao = null;
+  let alvoAtual = '';      // '' = a instalação; senão o @ do cliente
+  let souAdmin = false;    // o servidor decide; a tela só se ajusta
+
+  function aviso(texto, tipo) {
+    statusEl.textContent = texto;
+    statusEl.className = 'status' + (tipo ? ' ' + tipo : '');
+  }
+
+  function esc(t) {
+    return String(t === undefined || t === null ? '' : t).replace(/[&<>"']/g, c => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+  }
+
+  // Aplica as cores do formulário nesta página, pra ver o resultado antes de salvar.
+  function espelhar() {
+    const raiz = document.documentElement;
+    CORES.forEach(([chave, idCor, idHex]) => {
+      const v = $(idCor).value;
+      raiz.style.setProperty('--' + chave, v);
+      $(idHex).textContent = v;
+    });
+    const giro = Number($('girarBrasa').value) || 0;
+    $('girarValor').textContent = giro + '°';
+  }
+
+  // O painel "Live acompanhada" é da instalação: um cliente não escolhe o @
+  // dele por aqui — o @ dele É o cadastro.
+  // Quem é admin escolhe a live e volta pro painel; quem é cliente mexe na
+  // dele e volta pro ranking.
+  function ajustarPapel() {
+    $('painelAlvo').hidden = !souAdmin;
+    $('linkPainel').hidden = !souAdmin;
+    $('linkRanking').hidden = souAdmin;
+    document.querySelector('.brand .sub').textContent = souAdmin
+      ? 'A cara do site — da casa ou de um cliente'
+      : 'A cara da sua live';
+  }
+
+  function ajustarPainelDaLive() {
+    // o @ da live da casa é assunto do dono do negócio, e só quando ele está
+    // mexendo na instalação
+    const painel = $('liveUsuario').closest('.app-panel');
+    if (painel) painel.style.display = (souAdmin && !alvoAtual) ? '' : 'none';
+    $('alvoAviso').textContent = alvoAtual
+      ? 'a cara de @' + alvoAtual
+      : 'a cara padrão, que todo mundo herda';
+  }
+
+  function preencher(c) {
+    $('marcaEmoji').value  = c.marca.emoji;
+    $('marcaTitulo').value = c.marca.titulo;
+    $('marcaSub').value    = c.marca.sub;
+    $('muralTitulo').value = c.mural.titulo;
+    $('muralSub').value    = c.mural.sub;
+    CORES.forEach(([chave, idCor]) => { $(idCor).value = c.tema[chave]; });
+    $('girarBrasa').value  = c.tema.girarBrasa;
+    $('liveUsuario').value = c.live.usuario;
+    espelhar();
+  }
+
+  function montarEnvio() {
+    const tema = { girarBrasa: Number($('girarBrasa').value) || 0 };
+    CORES.forEach(([chave, idCor]) => { tema[chave] = $(idCor).value; });
+    return {
+      dono: alvoAtual,
+      marca: { emoji: $('marcaEmoji').value, titulo: $('marcaTitulo').value, sub: $('marcaSub').value },
+      mural: { titulo: $('muralTitulo').value, sub: $('muralSub').value },
+      tema:  tema,
+      live:  { usuario: $('liveUsuario').value }
+    };
+  }
+
+  // A lista de quem dá pra configurar vem do painel: são as lives que existem,
+  // não só as que já têm cara própria. Só o administrador pode pedir essa
+  // lista — pro cliente nem é chamada.
+  async function carregarAlvos() {
+    if (!souAdmin) return;
+    const res = await fetch('/api/clientes');
+    if (!res.ok) throw new Error('falhou');
+    const dados = await res.json();
+    const antes = alvoAtual;
+    $('alvo').innerHTML =
+      '<option value="">A instalação (cara padrão)</option>' +
+      dados.clientes.filter(c => !c.daCasa)
+        .map(c => `<option value="${esc(c.dono)}">@${esc(c.dono)}</option>`).join('');
+    $('alvo').value = antes;
+    if ($('alvo').value !== antes) { alvoAtual = ''; $('alvo').value = ''; }
+  }
+
+  CORES.forEach(([, idCor]) => $(idCor).addEventListener('input', espelhar));
+  $('girarBrasa').addEventListener('input', espelhar);
+
+  $('alvo').addEventListener('change', async () => {
+    alvoAtual = $('alvo').value;
+    await carregar();
+  });
+
+  $('padraoBtn').addEventListener('click', () => {
+    if (!padrao) return;
+    // só preenche o formulário: nada muda de verdade até clicar em Salvar
+    preencher(padrao);
+    aviso('Formulário voltou ao padrão — clique em Salvar pra valer.');
+  });
+
+  $('salvarBtn').addEventListener('click', async () => {
+    const btn = $('salvarBtn');
+    btn.disabled = true;
+    aviso('Salvando...');
+    try {
+      const res = await fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(montarEnvio())   // vai com o `dono` do alvo dentro
+      });
+      if (!res.ok) throw new Error('falhou');
+      const dados = await res.json();
+      preencher(dados.config);   // mostra o que o servidor realmente gravou
+      await carregarAlvos();
+      aviso(dados.precisaReiniciar
+        ? 'Salvo. O @ da live só muda quando o servidor reiniciar.'
+        : (alvoAtual ? 'Salvo para @' + alvoAtual + '. Ele vê na próxima recarga.'
+                     : 'Salvo. Recarregue as outras páginas pra ver.'), 'ok');
+    } catch (e) {
+      aviso('Não deu pra salvar. Tente de novo.', 'err');
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  async function carregar() {
+    try {
+      const res = await fetch('/api/config?dono=' + encodeURIComponent(alvoAtual));
+      if (!res.ok) throw new Error('falhou');
+      const dados = await res.json();
+
+      // O papel vem do servidor: a tela não decide quem é admin, só se ajusta.
+      if (souAdmin !== dados.ehAdmin) {
+        souAdmin = dados.ehAdmin;
+        ajustarPapel();
+        if (souAdmin) await carregarAlvos();
+      }
+      // o cliente não escolhe alvo: o servidor devolve a live dele e é essa
+      // que a tela edita
+      if (!souAdmin) alvoAtual = dados.dono || '';
+
+      // o botão "voltar ao padrão" de um cliente devolve a cara da INSTALAÇÃO,
+      // que é o que ele herda quando não mexe em nada
+      padrao = (alvoAtual || !souAdmin) ? dados.instalacao : dados.padrao;
+      preencher(dados.config);
+      ajustarPainelDaLive();
+      $('liveAtual').textContent = '@' + dados.liveEmUso + ' agora';
+      $('liveDica').textContent = dados.config.live.usuario
+        ? 'Configurado aqui. Deixe vazio pra usar a variável de ambiente.'
+        : (dados.liveDoAmbiente
+            ? 'Vazio: usando @' + dados.liveDoAmbiente + ' da variável TIKTOK_USERNAME.'
+            : 'Vazio: usando o @ padrão do código.');
+      aviso('');
+    } catch (e) {
+      aviso('Não deu pra carregar a configuração.', 'err');
+    }
+  }
+
+  (async function comecar() {
+    // a primeira carga já diz o papel, e a partir dela a tela se monta
+    await carregar();
+  })();
+})();
+</script>
+
+</body>
+</html>

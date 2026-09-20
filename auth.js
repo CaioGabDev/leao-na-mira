@@ -139,6 +139,14 @@ function seedFromEnv() {
   console.log(`Usuário "${username}" criado a partir de ADMIN_USER/ADMIN_PASSWORD.`);
 }
 
+// A conta ainda existe? Apagar alguém tem que valer pra quem já está logado,
+// então isto é conferido a cada requisição. O arquivo é pequeno (dezenas de
+// linhas), então ler e parsear sai mais barato que manter cache coerente.
+function existe(username) {
+  if (!username) return false;
+  return loadUsers().some(u => u.username === username);
+}
+
 // De qual live este usuário é. null = usa o dono padrão da instalação.
 function donoDoUsuario(username) {
   if (!username) return null;
@@ -158,5 +166,5 @@ function setDono(username, dono) {
   return true;
 }
 
-module.exports = { USERS_FILE, loadUsers, saveUsers, hashPassword, upsertUser, setAdmin, ehAdmin, garantirDono,
+module.exports = { USERS_FILE, loadUsers, saveUsers, hashPassword, upsertUser, setAdmin, ehAdmin, existe, garantirDono,
                    donoDoUsuario, setDono, verifyCredentials, seedFromEnv };

@@ -23,6 +23,12 @@ function criarLive({ dono, db, emitir }) {
   if (typeof emitir !== 'function') throw new Error('criarLive precisa de uma função emitir().');
 
   let liveOnline = false;
+
+  // Como foi a última tentativa de conectar. Sem isto, "não aparece online"
+  // é indistinguível de "@ escrito errado", "streamer ainda não subiu" e
+  // "o assinador recusou" — e o dono fica sem saber o que fazer.
+  let ultimaTentativa = null;   // { em, ok, motivo, recado }
+  let tentativasSeguidas = 0;
   let currentConnection = null;
   let lastEventAt = Date.now();
   let reconnecting = false;
@@ -564,12 +570,16 @@ function criarLive({ dono, db, emitir }) {
       // Se já estava "ao vivo" (foi só uma reconexão rápida), mantém a mesma
       // sessão rodando — só abre uma sessão nova quando a live tinha mesmo
       // sido dada como encerrada.
+      ultimaTentativa = { em: Date.now(), ok: true, motivo: 'conectado', recado: '' };
+      tentativasSeguidas = 0;
       if (!liveOnline) {
         liveOnline = true;
         db.markLiveOnline();
         broadcastLiveStatus();
       }
     }).catch(err => {
+      tentativasSeguidas++;
+      ultimaTentativa = { em: Date.now(), ok: false, ...classificarFalha(err) };
       console.error('Erro ao conectar na live:', err?.message || err);
 
       // Falha de assinatura não é queda de rede: a rede pode estar ótima e a
@@ -1291,6 +1301,24 @@ function criarLive({ dono, db, emitir }) {
     }
   }
 
+  // Traduz a falha pra algo acionável. São três coisas bem diferentes que o
+  // log tratava igual, e cada uma pede uma atitude do dono.
+  function classificarFalha(err) {
+    const msg = String((err && err.message) || err || '');
+    const nome = String((err && err.name) || '');
+
+    if (/UserOffline|isn't online|nao esta online/i.test(nome + ' ' + msg)) {
+      return { motivo: 'offline', recado: 'O streamer não está ao vivo agora. Assim que subir, conecta sozinho.' };
+    }
+    if (assinatura.ehErroDeAssinatura(err)) {
+      return { motivo: 'assinatura', recado: assinatura.explicar(err) };
+    }
+    if (/Room ID|room_id/i.test(msg)) {
+      return { motivo: 'arroba', recado: 'Não achei essa live. Confira se o @ está escrito exatamente como no TikTok.' };
+    }
+    return { motivo: 'erro', recado: msg.slice(0, 200) };
+  }
+
   // ---------- liga e desliga ----------
   let relogios = [];
 
@@ -1318,6 +1346,13 @@ function criarLive({ dono, db, emitir }) {
     broadcastRanking, broadcastBattles, broadcastPowerUps,
     broadcastGlobalStats, broadcastLiveStatus,
     estaOnline: () => liveOnline,
+    // o que contar pro painel sobre a conexão desta live
+    estadoDaConexao: () => ({
+      online: liveOnline,
+      ligado: relogios.length > 0,
+      tentativasSeguidas,
+      ultimaTentativa
+    }),
     feed: () => liveFeed,
     diagnostico: () => diagnostico
   };

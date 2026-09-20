@@ -80,20 +80,35 @@ function criarRegistro({ io, donoPadrao }) {
     return abrir(dono || donoPadrao);
   }
 
+  // O administrador não tem live. Quando ele precisa olhar a de um cliente
+  // (suporte, conferir se está contando), ele ESPIA: a sessão guarda de quem
+  // é a live que ele está vendo, e sai disso com um clique.
+  //
+  // Só vale pra administrador: um cliente com `espiando` na sessão continua
+  // caindo na live dele, porque a marca de admin é conferida aqui.
+  function daSessao(sessao) {
+    const usuario = sessao && sessao.user;
+    if (usuario && sessao.espiando) {
+      let ehDono = false;
+      try { ehDono = auth.ehAdmin(usuario); } catch (e) { ehDono = false; }
+      if (ehDono) return abrir(sessao.espiando);
+    }
+    return doUsuario(usuario);
+  }
+
   function doPedido(req) {
-    return doUsuario(req && req.session && req.session.user);
+    return daSessao(req && req.session);
   }
 
   function doSocket(socket) {
-    const sessao = socket && socket.request && socket.request.session;
-    return doUsuario(sessao && sessao.user);
+    return daSessao(socket && socket.request && socket.request.session);
   }
 
   function listar() {
     return [...abertos.values()];
   }
 
-  return { abrir, iniciar, fechar, doUsuario, doPedido, doSocket, listar, salaDe, donoPadrao };
+  return { abrir, iniciar, fechar, doUsuario, daSessao, doPedido, doSocket, listar, salaDe, donoPadrao };
 }
 
 module.exports = criarRegistro;

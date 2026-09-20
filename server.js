@@ -61,7 +61,9 @@ app.use(express.json());
 // mesma sessão do Express também vale pra conexão de socket
 io.engine.use(sessionMiddleware);
 io.use((socket, next) => {
-  if (socket.request.session && socket.request.session.user) return next();
+  // mesma regra do HTTP: a conta precisa existir, não só a sessão
+  const usuario = socket.request.session && socket.request.session.user;
+  if (usuario && auth.existe(usuario)) return next();
   next(new Error('unauthorized'));
 });
 
@@ -76,7 +78,8 @@ app.post('/api/login', (req, res) => {
     req.session.user = username;
     req.session.save(err2 => {
       if (err2) return res.status(500).json({ error: 'Erro ao iniciar a sessão.' });
-      res.json({ ok: true });
+      // o administrador não cai no ranking: a casa dele é o painel
+      res.json({ ok: true, destino: auth.ehAdmin(username) ? '/admin.html' : '/index.html' });
     });
   });
 });
@@ -86,7 +89,14 @@ app.post('/api/logout', (req, res) => {
 });
 
 function requireAuth(req, res, next) {
-  if (req.session && req.session.user) return next();
+  const usuario = req.session && req.session.user;
+
+  // Sessão aberta não basta: a conta pode ter sido apagada depois do login.
+  // Sem esta conferência, "tirar o acesso" só impedia entrar DE NOVO — quem
+  // já estava com a aba aberta seguia navegando até o cookie vencer.
+  if (usuario && auth.existe(usuario)) return next();
+
+  if (usuario) req.session.destroy(() => {});   // sessão órfã não serve pra nada
   if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'unauthorized' });
   return res.redirect('/login.html?next=' + encodeURIComponent(req.originalUrl));
 }
@@ -133,18 +143,35 @@ function requireAdmin(req, res, next) {
     '<p>Sua conta não tem acesso à configuração.</p>' +
     '<p><a style="color:#ffb03a" href="/">Voltar</a></p>');
 }
-app.use(['/admin.html', '/api/config', '/api/clientes'], requireAdmin);
+// O painel e o cadastro são do dono do negócio. A APARÊNCIA não: o cliente
+// mexe na cara da live dele (o /api/config decide o escopo por quem pediu).
+app.use(['/admin.html', '/api/clientes', '/api/espiar'], requireAdmin);
 
-// `?dono=@fulano` edita a cara daquele cliente; sem ele, a da instalação.
-function donoDoPedido(req) {
+// De quem é a cara que esta requisição pode mexer.
+//
+// Administrador escolhe: `?dono=@fulano` pra um cliente, vazio pra a
+// instalação. Cliente só mexe na live DELE — e se pedir outra, leva 403 em
+// vez de ter o pedido redirecionado calado (redirecionar fazia ele
+// sobrescrever a própria cara com um texto destinado a outro lugar).
+function escopoDoPedido(req) {
+  const usuario = (req.session && req.session.user) || null;
   const bruto = (req.query && req.query.dono) || (req.body && req.body.dono) || '';
-  return config.usuarioTikTok(bruto);
+  const pedido = config.usuarioTikTok(bruto);
+
+  if (auth.ehAdmin(usuario)) return { dono: pedido, permitido: true };
+
+  const meu = clientes.doPedido(req).dono;
+  // `dono` vazio quer dizer "a minha", não "a da casa" — então não é recusa
+  const pediuOutra = !!bruto && pedido !== meu;
+  return { dono: meu, permitido: !pediuOutra };
 }
 
 app.get('/api/config', (req, res) => {
-  const dono = donoDoPedido(req);
+  const { dono, permitido } = escopoDoPedido(req);
+  if (!permitido) return res.status(403).json({ error: 'Você só pode ver a cara da sua live.' });
   res.json({
     dono,                                                // '' = a instalação
+    ehAdmin: auth.ehAdmin((req.session && req.session.user) || null),
     config: config.get(dono),
     instalacao: config.get(),                            // o que o cliente herda
     padrao: config.PADRAO,                               // pro botão "voltar ao padrão"
@@ -157,7 +184,8 @@ app.get('/api/config', (req, res) => {
 });
 
 app.post('/api/config', (req, res) => {
-  const dono = donoDoPedido(req);
+  const { dono, permitido } = escopoDoPedido(req);
+  if (!permitido) return res.status(403).json({ error: 'Você só pode mexer na cara da sua live.' });
   let salvo;
   try {
     salvo = config.salvar(req.body || {}, dono);
@@ -206,6 +234,7 @@ app.get('/api/clientes', (req, res) => {
         try {
           const g = c.db.getGlobalStats();
           ficha.aoVivo = c.live.estaOnline();
+          ficha.conexao = c.live.estadoDaConexao();
           ficha.numeros = {
             espectadores: g.currentViewers || 0,
             pico: g.peakViewers || 0,
@@ -309,18 +338,43 @@ app.post('/api/clientes/remover-acesso', (req, res) => {
   res.json({ ok: true });
 });
 
+// ---------- ESPIAR ----------
+// O administrador não tem live própria. Pra dar suporte, ele entra na de um
+// cliente — e isso fica guardado na sessão dele, não na do cliente.
+app.get('/api/espiar', (req, res) => {
+  const dono = config.usuarioTikTok((req.query && req.query.dono) || '');
+  if (!dono) return res.status(400).json({ error: 'Qual live?' });
+  req.session.espiando = dono;
+  req.session.save(() => res.redirect('/index.html'));
+});
+
+app.get('/api/espiar/sair', (req, res) => {
+  delete req.session.espiando;
+  req.session.save(() => res.redirect('/admin.html'));
+});
+
 // ---------- PÁGINAS COM A MARCA DO CLIENTE ----------
 // As páginas continuam sendo arquivos estáticos. A única coisa que acontece
 // aqui é trocar os {{marcadores}} pelo config antes de entregar. Vem ANTES do
 // express.static de propósito: senão ele entrega o arquivo cru.
 // Lista fechada de nomes — nada de montar caminho com o que veio na URL.
-const PAGINAS = new Set(['index.html', 'mural.html', 'login.html', 'diagnostico.html', 'admin.html']);
+const PAGINAS = new Set(['index.html', 'mural.html', 'login.html', 'diagnostico.html', 'admin.html', 'config.html']);
+// as telas que pertencem a UMA live — o administrador não mora nelas
+const PAGINAS_DE_CLIENTE = new Set(['index.html', 'mural.html', 'diagnostico.html']);
 const cachePagina = new Map();   // nome|variante -> { mtimeMs, versao, html }
 
 app.use((req, res, next) => {
   if (req.method !== 'GET' && req.method !== 'HEAD') return next();
   const nome = req.path === '/' ? 'index.html' : req.path.slice(1);
   if (!PAGINAS.has(nome)) return next();
+
+  // A casa do administrador é o painel, não o ranking de uma live: ele é o
+  // dono do negócio, não um streamer. Se quiser ver a live de um cliente,
+  // entra por "espiar" — e aí a sessão diz de quem é a tela.
+  const souDono = !!(req.session && req.session.user && auth.ehAdmin(req.session.user));
+  if (souDono && PAGINAS_DE_CLIENTE.has(nome) && !(req.session && req.session.espiando)) {
+    return res.redirect('/admin.html');
+  }
 
   const arquivo = path.join(__dirname, 'public', nome);
   let stat;
@@ -329,10 +383,11 @@ app.use((req, res, next) => {
   // A cara da página é a do cliente de quem está logado; o link da engrenagem
   // só existe pro dono. O cache guarda uma versão por combinação dos dois,
   // senão um cliente serviria a página pintada do outro.
-  const ehAdmin = !!(req.session && req.session.user && auth.ehAdmin(req.session.user));
+  const ehAdmin = souDono;
+  const espiando = !!(req.session && req.session.espiando);
   let dono = '';
   try { dono = clientes.doPedido(req).dono; } catch (e) { dono = ''; }
-  const chave = nome + '|' + dono + (ehAdmin ? '|dono' : '|comum');
+  const chave = nome + '|' + dono + (ehAdmin ? '|dono' : '|comum') + (espiando ? '|espiando' : '');
 
   const guardado = cachePagina.get(chave);
   if (guardado && guardado.mtimeMs === stat.mtimeMs && guardado.versao === config.getVersao()) {
@@ -342,7 +397,7 @@ app.use((req, res, next) => {
 
   let html;
   try { html = fs.readFileSync(arquivo, 'utf-8'); } catch (e) { return next(); }
-  html = config.aplicar(html, { ehAdmin, dono });
+  html = config.aplicar(html, { ehAdmin, dono, espiando });
   cachePagina.set(chave, { mtimeMs: stat.mtimeMs, versao: config.getVersao(), html });
   res.type('html');
   res.send(html);

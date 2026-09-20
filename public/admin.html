@@ -3,204 +3,52 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Configuração — {{marca.titulo}}</title>
+<title>Painel — {{marca.titulo}}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bungee&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/assets/theme.css">
+<link rel="stylesheet" href="/assets/painel.css">
 <style>
-  /* Página do dono. Usa as primitivas do theme.css; o que está aqui é só o
-     que existe nesta tela. */
-  .topbar {
-    position: sticky; top: 0; z-index: 30;
-    background: rgba(10,8,7,.92);
-    backdrop-filter: blur(10px);
-    border-bottom: 1px solid var(--line);
+  /* Paleta de bastidor. Esta página NÃO recebe o bloco de tema do cliente, de
+     propósito: ela é a área de quem vende, não uma tela do produto. Se pegasse
+     a cara do cliente, dava pra abrir aqui achando que era o site dele.
+     (E o nome daquele marcador não se escreve aqui: o template troca ele em
+     qualquer lugar do arquivo, inclusive dentro de comentário — foi assim que
+     eu quebrei esta página na primeira tentativa.) */
+  :root {
+    --gold:   #7aa2ff;
+    --ember1: #4d7cf0;
+    --ember2: #2f5bd0;
+    --bg:     #0a0c10;
+    --card:   #11141b;
+    --card-2: #0d1016;
+    --card-3: #171c26;
+    --line:   #232a36;
+    --line-soft: #1b212b;
   }
-  .topbar-inner {
-    max-width: 1080px; margin: 0 auto; padding: 14px 20px;
-    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
-  }
-  .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
-  .brand-mark {
-    width: 40px; height: 40px; border-radius: var(--r-md);
-    display: grid; place-items: center; font-size: 20px;
-    background: var(--card-3); border: 1px solid var(--line);
-  }
-  .brand h1 {
-    font-family: Bungee, system-ui, sans-serif; font-size: 20px; margin: 0;
-    background: var(--grad-ink); -webkit-background-clip: text; background-clip: text;
-    -webkit-text-fill-color: transparent; letter-spacing: .02em;
-  }
-  .brand .sub { font-size: 12.5px; color: var(--ink-faint); margin: 2px 0 0; }
-  .topbar-inner .spacer { flex: 1 1 auto; }
-
-  .wrap { max-width: 1080px; margin: 0 auto; padding: 24px 20px 80px; display: grid; gap: 18px; }
-
-  /* O .app-panel do theme.css é só a superfície (fundo, borda, sombra) — o
-     respiro de dentro é de cada página, igual ao .panel do ranking. */
-  .app-panel { padding: 18px 20px 20px; }
-  @media (max-width: 560px) { .app-panel { padding: 16px 14px 18px; } }
-
-  .aviso {
-    border: 1px solid rgba(255,176,58,.35); background: rgba(255,176,58,.06);
-    border-radius: var(--r-md); padding: 14px 16px; font-size: 14px; line-height: 1.55;
-    color: var(--ink-dim);
-  }
-  .aviso b { color: var(--gold); }
-
-  .campos { display: grid; gap: 14px; }
-  .campo { display: grid; gap: 6px; }
-  .campo label { font-size: 12px; font-weight: 700; letter-spacing: .06em;
-                 text-transform: uppercase; color: var(--ink-faint); }
-  .campo .dica { font-size: 12px; color: var(--ink-faint); }
-  .campo input[type="text"] { width: 100%; }
-
-  .cores { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; }
-  .cor { display: grid; gap: 6px; }
-  /* mesmo rótulo miúdo dos outros campos */
-  .cor label { font-size: 12px; font-weight: 700; letter-spacing: .06em;
-               text-transform: uppercase; color: var(--ink-faint); }
-  .cor .linha { display: flex; align-items: center; gap: 10px; }
-  .cor input[type="color"] {
-    width: 46px; height: 34px; padding: 0; border: 1px solid var(--line);
-    border-radius: var(--r-sm); background: var(--card-2); cursor: pointer;
-  }
-  .cor .hex { font-size: 13px; color: var(--ink-dim); font-variant-numeric: tabular-nums; }
-
-  .faixa { display: flex; align-items: center; gap: 12px; }
-  .faixa input[type="range"] { flex: 1 1 auto; accent-color: var(--gold); }
-  .faixa .valor { font-size: 13px; color: var(--ink-dim); min-width: 52px; text-align: right; }
-
-  .rodape {
-    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-    padding: 14px 16px; border-radius: var(--r-lg);
-    background: rgba(15,11,8,.94); border: 1px solid var(--line);
-    backdrop-filter: blur(10px);
-  }
-  .rodape .spacer { flex: 1 1 auto; }
-  .status { font-size: 13px; color: var(--ink-dim); }
-  .status.ok  { color: var(--green); }
-  .status.err { color: var(--red); }
-
-  .amostra {
-    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-    padding: 14px; border-radius: var(--r-md);
-    background: var(--card-2); border: 1px solid var(--line-soft);
-  }
-  .amostra .titulo {
-    font-family: Bungee, system-ui, sans-serif; font-size: 18px;
-    background: var(--grad-ink); -webkit-background-clip: text; background-clip: text;
-    -webkit-text-fill-color: transparent;
-  }
-  .amostra .barra { height: 10px; border-radius: 999px; background: var(--grad-fire); flex: 1 1 120px; }
-
-  .app-select {
-    background: var(--card-2); color: var(--ink); border: 1px solid var(--line);
-    border-radius: var(--r-sm); padding: 9px 12px; font: inherit; font-size: 14px;
-  }
-  .app-select:focus { border-color: var(--gold); outline: none; }
-
-  .lista-clientes { display: grid; gap: 10px; }
-  .cliente {
-    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-    padding: 12px 14px; border-radius: var(--r-md);
-    background: var(--card-2); border: 1px solid var(--line-soft);
-  }
-  .cliente .arroba { font-weight: 700; color: var(--gold); }
-  .cliente .quem { font-size: 13px; color: var(--ink-dim); }
-  .cliente .spacer { flex: 1 1 auto; }
-  /* as duas acoes de uma pessoa andam juntas: soltas, o "promover" de uma
-     ficava colado no nome da vizinha e dava pra clicar achando que era dela */
-  .cliente .pessoa {
-    display: inline-flex; align-items: center; gap: 5px;
-    padding: 3px 4px 3px 10px; border-radius: 999px;
-    background: var(--card); border: 1px solid var(--line-soft);
-  }
-  .cliente .pessoa b { font-size: 13px; font-weight: 600; color: var(--ink-dim); }
-  .cliente .pessoa .app-btn { padding: 3px 8px; font-size: 12px; }
-  .etiqueta {
-    font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
-    padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line);
-    color: var(--ink-faint);
-  }
-  .etiqueta.ligado { color: var(--green); border-color: rgba(110,231,135,.35); }
-  .etiqueta.casa   { color: var(--gold); border-color: rgba(255,176,58,.35); }
-
-  .assinatura {
-    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-    padding: 12px 14px; border-radius: var(--r-md);
-    background: var(--card-2); border: 1px solid var(--line-soft); font-size: 14px;
-  }
-  .assinatura.sem-chave { border-color: rgba(255,176,58,.35); background: rgba(255,176,58,.06); }
-  .assinatura .quem { color: var(--ink-dim); }
-
-  /* visão geral */
-  .painel-lives { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
-  .live-card {
-    padding: 14px; border-radius: var(--r-md);
-    background: var(--card-2); border: 1px solid var(--line-soft);
-    display: grid; gap: 8px; align-content: start;
-  }
-  .live-card.parada { opacity: .6; }
-  .live-card.no-ar { border-color: rgba(110,231,135,.35); }
-  /* uma linha só: com a etiqueta "casa" junto, o estado caía pra linha de
-     baixo e os cards ficavam de alturas diferentes */
-  .live-card .topo { display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; }
-  .live-card .arroba {
-    font-weight: 700; color: var(--gold); font-size: 14px;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
-  }
-  .live-card .etiqueta { white-space: nowrap; }
-  .live-card .grande {
-    font-family: Bungee, system-ui, sans-serif; font-size: 22px; line-height: 1;
-    color: var(--ink); font-variant-numeric: tabular-nums;
-  }
-  .live-card .grande small { font-size: 11px; font-family: inherit; color: var(--ink-faint); }
-  .live-card .linhas { display: grid; gap: 3px; font-size: 12.5px; color: var(--ink-dim); }
-  .live-card .quem { font-size: 12px; color: var(--ink-faint); }
-  .ponto {
-    width: 7px; height: 7px; border-radius: 50%; background: var(--ink-faint); flex-shrink: 0;
-  }
-  .ponto.vivo { background: var(--green); box-shadow: 0 0 8px var(--green); }
-
-  .novo-cliente { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; align-items: end; }
-  .novo-cliente label.caixa {
-    display: flex; align-items: center; gap: 8px; text-transform: none;
-    letter-spacing: 0; font-size: 13px; color: var(--ink-dim); cursor: pointer;
-  }
-  .novo-cliente input[type="checkbox"] { accent-color: var(--gold); width: 16px; height: 16px; }
-  .novo-cliente .campo { margin: 0; }
-
-  @media (max-width: 560px) {
-    .wrap { padding: 16px 14px 70px; }
-    .topbar-inner { padding: 12px 14px; }
-  }
+  /* o fundo de brasa do theme.css é do produto; aqui é liso */
+  body { background: var(--bg); }
 </style>
-{{tema}}
 </head>
 <body>
 
 <header class="topbar">
   <div class="topbar-inner">
     <div class="brand">
-      <div class="brand-mark">⚙️</div>
+      <div class="brand-mark">📊</div>
       <div>
-        <h1>Configuração</h1>
-        <p class="sub">A cara do site desta instalação</p>
+        <h1>Painel</h1>
+        <p class="sub">Todas as lives e quem entra em cada uma</p>
       </div>
     </div>
     <span class="spacer"></span>
-    <a class="app-btn" href="/index.html">⬅️ Voltar pro Ranking</a>
+    <a class="app-btn" href="/config.html">🎨 Aparência</a>
+    <button class="app-btn" id="sairBtn">🚪 Sair</button>
   </div>
 </header>
 
 <div class="wrap">
-
-  <div class="aviso">
-    Isto muda só a <b>aparência e os textos</b>. Nada aqui mexe na contagem da live,
-    no ranking, nas batalhas ou nos power-ups — esses continuam funcionando igual.
-  </div>
 
   <!-- ---------- VISÃO GERAL ---------- -->
   <section class="app-panel">
@@ -210,138 +58,6 @@
     </div>
     <div class="painel-lives" id="painelLives"></div>
   </section>
-
-  <!-- ---------- DE QUEM É A CARA QUE EU ESTOU MEXENDO ---------- -->
-  <section class="app-panel">
-    <div class="app-panel-head">
-      <h2 class="app-panel-title">Configurando</h2>
-      <span class="app-panel-meta" id="alvoAviso"></span>
-    </div>
-    <div class="campo">
-      <label for="alvo">Quem</label>
-      <select class="app-select" id="alvo"></select>
-      <span class="dica">
-        A instalação é a cara padrão: vale pra todo mundo que não mexeu na sua.
-        Escolhendo um cliente, você mexe só na dele.
-      </span>
-    </div>
-  </section>
-
-  <!-- ---------- MARCA ---------- -->
-  <section class="app-panel">
-    <div class="app-panel-head">
-      <h2 class="app-panel-title">Marca</h2>
-      <span class="app-panel-meta">topo do site e aba do navegador</span>
-    </div>
-    <div class="campos">
-      <div class="campo">
-        <label for="marcaEmoji">Emoji</label>
-        <input class="app-input" type="text" id="marcaEmoji" maxlength="8" style="width:110px">
-      </div>
-      <div class="campo">
-        <label for="marcaTitulo">Título</label>
-        <input class="app-input" type="text" id="marcaTitulo" maxlength="60">
-      </div>
-      <div class="campo">
-        <label for="marcaSub">Frase de baixo</label>
-        <input class="app-input" type="text" id="marcaSub" maxlength="160">
-      </div>
-    </div>
-  </section>
-
-  <!-- ---------- CORES ---------- -->
-  <section class="app-panel">
-    <div class="app-panel-head">
-      <h2 class="app-panel-title">Cores</h2>
-      <span class="app-panel-meta">muda ao vivo aqui na tela</span>
-    </div>
-
-    <div class="amostra">
-      <span class="titulo">Assim vai ficar</span>
-      <span class="app-pill"><span class="dot"></span>Ao vivo agora</span>
-      <button class="app-btn app-btn--primary" type="button">Botão</button>
-      <span class="barra"></span>
-    </div>
-
-    <div class="cores" style="margin-top:14px">
-      <div class="cor">
-        <label for="corGold">Destaque</label>
-        <div class="linha"><input type="color" id="corGold"><span class="hex" id="hexGold"></span></div>
-      </div>
-      <div class="cor">
-        <label for="corEmber1">Brasa 1</label>
-        <div class="linha"><input type="color" id="corEmber1"><span class="hex" id="hexEmber1"></span></div>
-      </div>
-      <div class="cor">
-        <label for="corEmber2">Brasa 2</label>
-        <div class="linha"><input type="color" id="corEmber2"><span class="hex" id="hexEmber2"></span></div>
-      </div>
-      <div class="cor">
-        <label for="corBg">Fundo</label>
-        <div class="linha"><input type="color" id="corBg"><span class="hex" id="hexBg"></span></div>
-      </div>
-      <div class="cor">
-        <label for="corCard">Caixas</label>
-        <div class="linha"><input type="color" id="corCard"><span class="hex" id="hexCard"></span></div>
-      </div>
-    </div>
-
-    <div class="campo" style="margin-top:16px">
-      <label for="girarBrasa">Girar a cor das brasinhas do fundo</label>
-      <div class="faixa">
-        <input type="range" id="girarBrasa" min="0" max="360" step="5">
-        <span class="valor" id="girarValor">0°</span>
-      </div>
-      <span class="dica">
-        As brasinhas são desenhadas em laranja fixo pelo código da página. Este giro
-        é o que faz elas combinarem com um tema de outra cor.
-      </span>
-    </div>
-  </section>
-
-  <!-- ---------- MURAL ---------- -->
-  <section class="app-panel">
-    <div class="app-panel-head">
-      <h2 class="app-panel-title">Mural da Tropa</h2>
-      <span class="app-panel-meta">cabeçalho da página do mural</span>
-    </div>
-    <div class="campos">
-      <div class="campo">
-        <label for="muralTitulo">Título</label>
-        <input class="app-input" type="text" id="muralTitulo" maxlength="60">
-      </div>
-      <div class="campo">
-        <label for="muralSub">Frase de baixo</label>
-        <input class="app-input" type="text" id="muralSub" maxlength="160">
-      </div>
-    </div>
-  </section>
-
-  <!-- ---------- LIVE ---------- -->
-  <section class="app-panel">
-    <div class="app-panel-head">
-      <h2 class="app-panel-title">Live acompanhada</h2>
-      <span class="app-panel-meta" id="liveAtual"></span>
-    </div>
-    <div class="campos">
-      <div class="campo">
-        <label for="liveUsuario">@ da live</label>
-        <input class="app-input" type="text" id="liveUsuario" maxlength="32" placeholder="sem o @">
-        <span class="dica" id="liveDica"></span>
-      </div>
-    </div>
-    <div class="aviso" style="margin-top:14px">
-      Trocar o @ <b>só passa a valer quando o servidor reiniciar</b>. É de propósito:
-      trocar de live com a coisa rodando misturaria os dados das duas no mesmo lugar.
-    </div>
-  </section>
-
-  <div class="rodape">
-    <button class="app-btn app-btn--primary" id="salvarBtn">💾 Salvar</button>
-    <button class="app-btn" id="padraoBtn">↩️ Voltar ao padrão</button>
-    <span class="spacer"></span>
-    <span class="status" id="status"></span>
-  </div>
 
   <!-- ---------- CLIENTES ---------- -->
   <section class="app-panel">
@@ -386,14 +102,19 @@
   <section class="app-panel">
     <div class="app-panel-head">
       <h2 class="app-panel-title">Administradores</h2>
-      <span class="app-panel-meta">quem enxerga esta página</span>
+      <span class="app-panel-meta">quem enxerga estas telas</span>
     </div>
     <div class="lista-clientes" id="listaAdmins"></div>
     <span class="dica" style="margin-top:12px; display:block">
-      Administrador não pertence a live nenhuma: ele vê todos os clientes e esta
-      configuração. Marque <b>é administrador</b> no formulário acima para criar um.
+      Administrador não pertence a live nenhuma: ele vê todos os clientes, este painel
+      e a aparência. Marque <b>é administrador</b> no formulário acima para criar um,
+      ou promova alguém que já tem conta pelo botão <b>⬆️ admin</b>.
     </span>
   </section>
+
+  <div class="rodape">
+    <span class="status" id="status"></span>
+  </div>
 
 </div>
 
@@ -402,66 +123,15 @@
   const $ = id => document.getElementById(id);
   const statusEl = $('status');
 
-  const CORES = [
-    ['gold', 'corGold', 'hexGold'],
-    ['ember1', 'corEmber1', 'hexEmber1'],
-    ['ember2', 'corEmber2', 'hexEmber2'],
-    ['bg', 'corBg', 'hexBg'],
-    ['card', 'corCard', 'hexCard']
-  ];
-
-  let padrao = null;
-  let alvoAtual = '';      // '' = a instalação; senão o @ do cliente
-
   function aviso(texto, tipo) {
     statusEl.textContent = texto;
     statusEl.className = 'status' + (tipo ? ' ' + tipo : '');
   }
 
-  // Aplica as cores do formulário nesta página, pra ver o resultado antes de salvar.
-  function espelhar() {
-    const raiz = document.documentElement;
-    CORES.forEach(([chave, idCor, idHex]) => {
-      const v = $(idCor).value;
-      raiz.style.setProperty('--' + chave, v);
-      $(idHex).textContent = v;
-    });
-    const giro = Number($('girarBrasa').value) || 0;
-    $('girarValor').textContent = giro + '°';
-  }
-
-  // O painel "Live acompanhada" é da instalação: um cliente não escolhe o @
-  // dele por aqui — o @ dele É o cadastro.
-  function ajustarPainelDaLive() {
-    const painel = $('liveUsuario').closest('.app-panel');
-    if (painel) painel.style.display = alvoAtual ? 'none' : '';
-    $('alvoAviso').textContent = alvoAtual
-      ? 'a cara de @' + alvoAtual
-      : 'a cara padrão, que todo mundo herda';
-  }
-
-  function preencher(c) {
-    $('marcaEmoji').value  = c.marca.emoji;
-    $('marcaTitulo').value = c.marca.titulo;
-    $('marcaSub').value    = c.marca.sub;
-    $('muralTitulo').value = c.mural.titulo;
-    $('muralSub').value    = c.mural.sub;
-    CORES.forEach(([chave, idCor]) => { $(idCor).value = c.tema[chave]; });
-    $('girarBrasa').value  = c.tema.girarBrasa;
-    $('liveUsuario').value = c.live.usuario;
-    espelhar();
-  }
-
-  function montarEnvio() {
-    const tema = { girarBrasa: Number($('girarBrasa').value) || 0 };
-    CORES.forEach(([chave, idCor]) => { tema[chave] = $(idCor).value; });
-    return {
-      dono: alvoAtual,
-      marca: { emoji: $('marcaEmoji').value, titulo: $('marcaTitulo').value, sub: $('marcaSub').value },
-      mural: { titulo: $('muralTitulo').value, sub: $('muralSub').value },
-      tema:  tema,
-      live:  { usuario: $('liveUsuario').value }
-    };
+  function esc(t) {
+    return String(t === undefined || t === null ? '' : t).replace(/[&<>"']/g, c => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
   }
 
   // ---------- assinatura da conexão ----------
@@ -483,13 +153,6 @@
          Defina ${a.nomesAceitos.map(esc).join(' ou ')} antes de crescer.</span>`;
   }
 
-  // ---------- clientes ----------
-  function esc(t) {
-    return String(t === undefined || t === null ? '' : t).replace(/[&<>"']/g, c => ({
-      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-    }[c]));
-  }
-
   // ---------- visão geral ----------
   function numero(n) {
     return Number(n || 0).toLocaleString('pt-BR');
@@ -500,6 +163,41 @@
     const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
     if (h) return h + 'h' + String(m).padStart(2, '0') + 'm';
     return m + 'm';
+  }
+
+  // Quanto tempo faz, em palavra curta.
+  function faz(ms) {
+    const s = Math.max(0, Math.floor((Date.now() - ms) / 1000));
+    if (s < 60) return 'há ' + s + 's';
+    if (s < 3600) return 'há ' + Math.floor(s / 60) + ' min';
+    return 'há ' + Math.floor(s / 3600) + 'h';
+  }
+
+  // Por que a live não está no ar. É a diferença entre "espera" e "conserta".
+  const TITULO_DO_MOTIVO = {
+    offline:    'Streamer não está ao vivo',
+    arroba:     '@ não encontrado',
+    assinatura: 'Assinatura recusada',
+    erro:       'Não conectou'
+  };
+
+  function explicarConexao(c) {
+    if (c.aoVivo) return '';
+    const con = c.conexao;
+    if (!con) return '<div class="motivo calmo">Motor não está de pé. Reinicie o servidor.</div>';
+    const t = con.ultimaTentativa;
+    if (!t) return '<div class="motivo calmo">Conectando pela primeira vez...</div>';
+    if (t.ok) return '<div class="motivo calmo">Conectado, esperando a live começar.</div>';
+
+    const calmo = t.motivo === 'offline' ? ' calmo' : '';
+    const tentativas = con.tentativasSeguidas > 1
+      ? ` · ${con.tentativasSeguidas} tentativas`
+      : '';
+    return `<div class="motivo${calmo}">
+      <b>${esc(TITULO_DO_MOTIVO[t.motivo] || 'Não conectou')}</b><br>
+      ${esc(t.recado)}<br>
+      <span style="color:var(--ink-faint)">${faz(t.em)}${tentativas}</span>
+    </div>`;
   }
 
   function desenharVisaoGeral(dados) {
@@ -520,7 +218,7 @@
           <span>👀 pico ${numero(n.pico)} · ⏱️ ${duracao(n.duracaoSegundos)}</span>
           <span>💬 ${numero(n.comentarios)} · ➕ ${numero(n.seguiram)}</span>
         </div>`
-        : `<div class="linhas"><span>${c.erro ? 'erro: ' + esc(c.erro) : 'motor não está de pé'}</span></div>`;
+        : `<div class="linhas"><span>${c.erro ? 'erro: ' + esc(c.erro) : 'sem dados ainda'}</span></div>`;
 
       return `
         <div class="live-card ${classe}">
@@ -532,6 +230,7 @@
             <span class="etiqueta ${c.aoVivo ? 'ligado' : ''}">${estado}</span>
           </div>
           ${corpo}
+          ${explicarConexao(c)}
           <div class="quem">${c.usuarios.length ? esc(c.usuarios.join(', ')) : 'sem login ainda'}</div>
         </div>`;
     }).join('');
@@ -598,11 +297,24 @@
     const baixar = e.target.closest('[data-rebaixar]');
     if (baixar) {
       const quem = baixar.dataset.rebaixar;
-      if (!confirm(`Tirar o acesso de administrador de "${quem}"? Ele continua logando, mas não vê mais esta página — e cai na live da casa até alguém amarrar ele noutra.`)) return;
+      if (!confirm(`Tirar o acesso de administrador de "${quem}"? Ele continua logando, mas não vê mais estas telas — e cai na live da casa até alguém amarrar ele noutra.`)) return;
       return mudarAdmin(baixar, quem, false);
     }
     // este botão existia mas não fazia nada: quem ouvia o clique era só o
     // painel dos clientes, e ele é outro elemento
+    const apagar = e.target.closest('[data-remover]');
+    if (apagar) return removerAcesso(apagar, apagar.dataset.remover);
+  });
+
+  $('listaClientes').addEventListener('click', async e => {
+    // Promover é o caminho pra quem JÁ tem conta: o administrador não precisa
+    // ser criado do zero pra deixar de ser a conta que assiste a live.
+    const subir = e.target.closest('[data-promover]');
+    if (subir) {
+      const quem = subir.dataset.promover;
+      if (!confirm(`Tornar "${quem}" administrador? Ele passa a ver todos os clientes e a configuração, e deixa de ficar preso à live dele.`)) return;
+      return mudarAdmin(subir, quem, true);
+    }
     const apagar = e.target.closest('[data-remover]');
     if (apagar) return removerAcesso(apagar, apagar.dataset.remover);
   });
@@ -613,57 +325,8 @@
     $('campoDono').style.display = ehAdmin ? 'none' : '';
     $('criarClienteBtn').textContent = ehAdmin ? '➕ Criar administrador' : '➕ Criar';
     $('criarAviso').textContent = ehAdmin
-      ? 'Administrador não pertence a live nenhuma: ele vê todos os clientes e esta configuração.'
+      ? 'Administrador não pertence a live nenhuma: ele vê todos os clientes e a configuração.'
       : 'Criar cliente já liga a live dele — não precisa reiniciar. Ele entra com esse login e vê só a live dele.';
-  });
-
-  async function carregarClientes() {
-    const res = await fetch('/api/clientes');
-    if (!res.ok) throw new Error('falhou');
-    const dados = await res.json();
-    desenharVisaoGeral(dados);
-    desenharAdmins(dados);
-
-    // o seletor de alvo acompanha a lista
-    const antes = alvoAtual;
-    $('alvo').innerHTML =
-      '<option value="">A instalação (cara padrão)</option>' +
-      dados.clientes.filter(c => !c.daCasa)
-        .map(c => `<option value="${esc(c.dono)}">@${esc(c.dono)}</option>`).join('');
-    $('alvo').value = antes;
-    if ($('alvo').value !== antes) { alvoAtual = ''; $('alvo').value = ''; }
-
-    $('clientesResumo').textContent = dados.clientes.length === 1
-      ? '1 live' : dados.clientes.length + ' lives';
-
-    $('listaClientes').innerHTML = dados.clientes.map(c => `
-      <div class="cliente">
-        <span class="arroba">@${esc(c.dono)}</span>
-        ${c.daCasa ? '<span class="etiqueta casa">da casa</span>' : ''}
-        <span class="etiqueta ${c.ligado ? 'ligado' : ''}">${c.ligado ? 'ligada' : 'parada'}</span>
-        ${c.usuarios.length ? '' : '<span class="quem">ninguém entra nela ainda</span>'}
-        <span class="spacer"></span>
-        ${c.usuarios.map(u => `
-          <span class="pessoa">
-            <b>${esc(u)}</b>
-            <button class="app-btn" data-promover="${esc(u)}" title="Tornar ${esc(u)} administrador">⬆️ admin</button>
-            <button class="app-btn app-btn--danger" data-remover="${esc(u)}" title="Tirar o acesso de ${esc(u)}">🚫</button>
-          </span>`).join('')}
-      </div>
-    `).join('');
-  }
-
-  $('listaClientes').addEventListener('click', async e => {
-    // Promover é o caminho pra quem JÁ tem conta: o administrador não precisa
-    // ser criado do zero pra deixar de ser a conta que assiste a live.
-    const subir = e.target.closest('[data-promover]');
-    if (subir) {
-      const quem = subir.dataset.promover;
-      if (!confirm(`Tornar "${quem}" administrador? Ele passa a ver todos os clientes e esta configuração, e deixa de ficar preso à live dele.`)) return;
-      return mudarAdmin(subir, quem, true);
-    }
-    const apagar = e.target.closest('[data-remover]');
-    if (apagar) return removerAcesso(apagar, apagar.dataset.remover);
   });
 
   $('criarClienteBtn').addEventListener('click', async () => {
@@ -707,80 +370,52 @@
     }
   });
 
-  $('alvo').addEventListener('change', async () => {
-    alvoAtual = $('alvo').value;
-    await carregar();
-  });
+  async function carregarClientes() {
+    const res = await fetch('/api/clientes');
+    if (!res.ok) throw new Error('falhou');
+    const dados = await res.json();
 
-  CORES.forEach(([, idCor]) => $(idCor).addEventListener('input', espelhar));
-  $('girarBrasa').addEventListener('input', espelhar);
+    desenharVisaoGeral(dados);
+    desenharAdmins(dados);
+    mostrarAssinatura(dados.assinatura, dados.livesLigadas);
 
-  $('padraoBtn').addEventListener('click', () => {
-    if (!padrao) return;
-    // só preenche o formulário: nada muda de verdade até clicar em Salvar
-    preencher(padrao);
-    aviso('Formulário voltou ao padrão — clique em Salvar pra valer.');
-  });
+    $('clientesResumo').textContent = dados.clientes.length === 1
+      ? '1 live' : dados.clientes.length + ' lives';
 
-  $('salvarBtn').addEventListener('click', async () => {
-    const btn = $('salvarBtn');
-    btn.disabled = true;
-    aviso('Salvando...');
-    try {
-      const res = await fetch('/api/config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(montarEnvio())   // vai com o `dono` do alvo dentro
-      });
-      if (!res.ok) throw new Error('falhou');
-      const dados = await res.json();
-      preencher(dados.config);   // mostra o que o servidor realmente gravou
-      await carregarClientes();
-      aviso(dados.precisaReiniciar
-        ? 'Salvo. O @ da live só muda quando o servidor reiniciar.'
-        : (alvoAtual ? 'Salvo para @' + alvoAtual + '. Ele vê na próxima recarga.'
-                     : 'Salvo. Recarregue as outras páginas pra ver.'), 'ok');
-    } catch (e) {
-      aviso('Não deu pra salvar. Tente de novo.', 'err');
-    } finally {
-      btn.disabled = false;
-    }
-  });
-
-  async function carregar() {
-    try {
-      const res = await fetch('/api/config?dono=' + encodeURIComponent(alvoAtual));
-      if (!res.ok) throw new Error('falhou');
-      const dados = await res.json();
-      // o botão "voltar ao padrão" de um cliente devolve a cara da INSTALAÇÃO,
-      // que é o que ele herda quando não mexe em nada
-      padrao = alvoAtual ? dados.instalacao : dados.padrao;
-      preencher(dados.config);
-      ajustarPainelDaLive();
-      $('liveAtual').textContent = '@' + dados.liveEmUso + ' agora';
-      mostrarAssinatura(dados.assinatura, dados.livesLigadas);
-      $('liveDica').textContent = dados.config.live.usuario
-        ? 'Configurado aqui. Deixe vazio pra usar a variável de ambiente.'
-        : (dados.liveDoAmbiente
-            ? 'Vazio: usando @' + dados.liveDoAmbiente + ' da variável TIKTOK_USERNAME.'
-            : 'Vazio: usando o @ padrão do código.');
-      aviso('');
-    } catch (e) {
-      aviso('Não deu pra carregar a configuração.', 'err');
-    }
+    $('listaClientes').innerHTML = dados.clientes.map(c => `
+      <div class="cliente">
+        <span class="arroba">@${esc(c.dono)}</span>
+        ${c.daCasa ? '<span class="etiqueta casa">da casa</span>' : ''}
+        <span class="etiqueta ${c.ligado ? 'ligado' : ''}">${c.ligado ? 'ligada' : 'parada'}</span>
+        ${c.usuarios.length ? '' : '<span class="quem">ninguém entra nela ainda</span>'}
+        <span class="spacer"></span>
+        <a class="app-btn" href="/api/espiar?dono=${encodeURIComponent(c.dono)}"
+           title="Abrir o site como se você fosse um espectador dessa live">👁️ Ver a live</a>
+        ${c.usuarios.map(u => `
+          <span class="pessoa">
+            <b>${esc(u)}</b>
+            <button class="app-btn" data-promover="${esc(u)}" title="Tornar ${esc(u)} administrador">⬆️ admin</button>
+            <button class="app-btn app-btn--danger" data-remover="${esc(u)}" title="Tirar o acesso de ${esc(u)}">🚫</button>
+          </span>`).join('')}
+      </div>
+    `).join('');
   }
+
+  $('sairBtn').addEventListener('click', async () => {
+    try { await fetch('/api/logout', { method: 'POST' }); } catch (e) { /* segue */ }
+    location.href = '/login.html';
+  });
 
   (async function comecar() {
     try {
       await carregarClientes();
+      aviso('');
     } catch (e) {
       aviso('Não deu pra listar os clientes.', 'err');
     }
-    await carregar();
 
-    // A visão geral é um painel de acompanhamento: se atualiza sozinha, mas
-    // devagar — não é tela de tempo real, e cada atualização lê o estado de
-    // todas as lives.
+    // O painel é de acompanhamento: se atualiza sozinho, mas devagar — não é
+    // tela de tempo real, e cada atualização lê o estado de todas as lives.
     setInterval(() => {
       // não atrapalha quem está no meio de um formulário
       if (document.activeElement && document.activeElement.tagName === 'INPUT') return;

@@ -265,9 +265,20 @@ function blocoDeTema(dono) {
 
 // Troca os {{marcadores}} do HTML. Marcador desconhecido fica como está, de
 // propósito: some sem avisar é pior que aparecer errado na tela.
+// Tarja de quem está espiando: sem ela, o administrador olha a tela de um
+// cliente e não tem como saber de quem ela é — nem como voltar.
+function barraDeEspiar(dono) {
+  return '<div style="background:var(--card-3);border-bottom:1px solid var(--line);' +
+    'padding:8px 16px;font-size:13px;color:var(--ink-dim);display:flex;gap:10px;' +
+    'align-items:center;flex-wrap:wrap;justify-content:center">' +
+    '<span>👁️ Você está vendo a live de <b style="color:var(--gold)">@' + escaparHtml(dono) + '</b></span>' +
+    '<a class="app-btn" href="/api/espiar/sair">⬅️ Voltar ao painel</a></div>';
+}
+
 function aplicar(html, ctx) {
   const c = get(ctx && ctx.dono);
   const ehAdmin = !!(ctx && ctx.ehAdmin);
+  const espiando = !!(ctx && ctx.espiando);
   const mapa = {
     '{{marca.emoji}}':  escaparHtml(c.marca.emoji),
     '{{marca.titulo}}': escaparHtml(c.marca.titulo),
@@ -275,9 +286,12 @@ function aplicar(html, ctx) {
     '{{mural.titulo}}': escaparHtml(c.mural.titulo),
     '{{mural.sub}}':    escaparHtml(c.mural.sub),
     '{{tema}}':         blocoDeTema(ctx && ctx.dono),
+    // o atalho do topo muda com o papel: o dono vai pro painel, o cliente
+    // vai mexer na cara da live dele
     '{{linkAdmin}}':    ehAdmin
-      ? '<a class="app-btn" href="/admin.html" title="Configurar o site">⚙️ Configurar</a>'
-      : ''
+      ? '<a class="app-btn" href="/admin.html" title="Painel do administrador">📊 Painel</a>'
+      : '<a class="app-btn" href="/config.html" title="Mudar a cara da sua live">🎨 Aparência</a>',
+    '{{barraEspiando}}': (ehAdmin && espiando) ? barraDeEspiar(ctx.dono) : ''
   };
   return String(html).replace(/\{\{[a-zA-Z.]+\}\}/g, m => (m in mapa ? mapa[m] : m));
 }

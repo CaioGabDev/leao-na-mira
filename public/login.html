@@ -146,7 +146,11 @@
       });
       if (res.ok) {
         const params = new URLSearchParams(location.search);
-        location.href = params.get('next') || '/';
+        // Quem pediu uma página específica vai pra ela. Fora isso, quem manda
+        // é o servidor: o dono do negócio cai no painel, o cliente no ranking
+        // da live dele.
+        const dados = await res.json().catch(() => ({}));
+        location.href = params.get('next') || dados.destino || '/';
         return;
       }
       const data = await res.json().catch(() => ({}));
