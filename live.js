@@ -423,7 +423,9 @@ function criarLive({ dono, db, emitir }) {
   // página /diagnostico.html, pra dar pra acompanhar durante a live sem precisar
   // abrir o painel do Railway. Guarda as últimas linhas pra quem abrir depois.
   const diagnostico = [];
-  const MAX_DIAGNOSTICO = 400;
+  // 1200 e nao 400 por causa da janela do premio: um despejo de JSON inteiro
+  // ocupa varias linhas e com 400 ele se comia sozinho antes de ser lido.
+  const MAX_DIAGNOSTICO = 1200;
 
   function registrarDiagnostico(canal, texto) {
     const linha = { canal, texto, em: Date.now() };
@@ -989,64 +991,232 @@ function criarLive({ dono, db, emitir }) {
     // Um prêmio chega sem dizer o item. Se o TikTok conta isso pra alguém, é numa
     // mensagem que chega por perto — então aqui a gente grava TUDO que passar
     // logo depois, sem filtro de tipo nenhum, e marca o que cheirar a item.
-    const JANELA_MS = 10000;
-    const LIMITE_POR_JANELA = 80;
+    const JANELA_MS = 20000;
     const LIMITE_DE_JANELAS = 6;
+    const TETO_JSON = 1800;        // por mensagem
+    const TETO_JSON_BARULHO = 240; // tipos que a gente ja conhece de cor
+    const PEDACO = 300;            // uma linha do diagnostico
+    const QUANTAS_ANTES = 15;
+
+    // Tipos que enchem a live e ja foram lidos mil vezes. NAO ficam de fora:
+    // so aparecem encurtados, pra nao empurrar o resto pra fora do buffer.
+    const BARULHO = new Set([
+      'WebcastRoomUserSeqMessage', 'WebcastChatMessage', 'WebcastGiftMessage',
+      'WebcastLikeMessage', 'WebcastMemberMessage', 'WebcastSocialMessage',
+      'WebcastEmoteChatMessage', 'WebcastRoomMessage'
+    ]);
 
     let janelaAte = 0;
     let janelaNum = 0;
-    let capturadasNaJanela = 0;
+    let tiposJaDespejados = new Set();
+
+    // Anel das ultimas mensagens. Guarda a referencia, nao o texto: so vira
+    // JSON quando um premio acontece, entao nao custa nada na live normal.
+    const ultimasMensagens = [];
+
+    function jsonDaMensagem(d) {
+      try {
+        return JSON.stringify(d, (k, v) => (typeof v === 'bigint' ? String(v) : v));
+      } catch (e) {
+        return '(nao deu pra serializar: ' + e.message + ')';
+      }
+    }
+
+    // Todo texto legivel da mensagem, em qualquer profundidade. Diferente da
+    // varredura do estoque, aqui nao filtra nada: e investigacao, nao decisao.
+    function textosParaInvestigar(obj, achados = [], nivel = 0) {
+      if (!obj || typeof obj !== 'object' || nivel > 8) return achados;
+      if (ArrayBuffer.isView(obj)) return achados;
+      for (const [chave, valor] of Object.entries(obj)) {
+        if (typeof valor === 'string') {
+          const t = valor.trim();
+          if (t && t.length <= 160 && !/^https?:/i.test(t)) achados.push(chave + '=' + t);
+        } else if (valor && typeof valor === 'object') {
+          textosParaInvestigar(valor, achados, nivel + 1);
+        }
+        if (achados.length > 200) break;
+      }
+      return achados;
+    }
+
+    function despejarMensagem(marca, tipo, dados) {
+      const textos = textosParaInvestigar(dados);
+      const comItem = textos.filter(t => tipoPelasPalavras(t.split('=').slice(1).join('=')));
+
+      if (comItem.length) {
+        registrarDiagnostico('premio', `  [${marca}] >>> ${tipo} CITA ITEM <<<`);
+        comItem.slice(0, 8).forEach(t => registrarDiagnostico('premio', '      ' + t));
+      }
+
+      // JSON inteiro UMA vez por tipo em cada janela: repetir o mesmo tipo dez
+      // vezes so empurraria o que importa pra fora do buffer.
+      if (tiposJaDespejados.has(tipo)) {
+        registrarDiagnostico('premio', `  [${marca}] ${tipo} (tipo ja despejado nesta janela)`);
+        return;
+      }
+      tiposJaDespejados.add(tipo);
+
+      const teto = BARULHO.has(tipo) ? TETO_JSON_BARULHO : TETO_JSON;
+      const json = jsonDaMensagem(dados);
+      registrarDiagnostico('premio',
+        `  [${marca}] ${tipo} -- JSON (${json.length} chars${json.length > teto ? ', cortado' : ''})`);
+      for (let i = 0; i < json.length && i < teto; i += PEDACO) {
+        registrarDiagnostico('premio', '    ' + json.slice(i, i + PEDACO));
+      }
+      if (json.length > teto) {
+        registrarDiagnostico('premio', `    ...faltaram ${json.length - teto} chars`);
+      }
+    }
 
     function abrirJanelaDoPremio(quem) {
       if (janelaNum >= LIMITE_DE_JANELAS) return;
       janelaNum++;
       janelaAte = Date.now() + JANELA_MS;
-      capturadasNaJanela = 0;
-      registrarDiagnostico('premio',
-        `===== JANELA ${janelaNum}/${LIMITE_DE_JANELAS}: "${quem}" ganhou algo. ` +
-        `Gravando TODAS as mensagens dos proximos ${JANELA_MS / 1000}s =====`);
-    }
+      tiposJaDespejados = new Set();
 
-    // Todo texto legível da mensagem, em qualquer profundidade. Diferente da
-    // varredura do estoque, aqui não filtra nada: é investigação, não decisão.
-    function textosParaInvestigar(obj, achados = [], nivel = 0) {
-      if (!obj || typeof obj !== 'object' || nivel > 7) return achados;
-      if (ArrayBuffer.isView(obj)) return achados;
-      for (const [chave, valor] of Object.entries(obj)) {
-        if (typeof valor === 'string') {
-          const t = valor.trim();
-          // URL e id não interessam; texto curto e legível sim
-          if (t && t.length <= 120 && !/^https?:/i.test(t) && !/^\d+$/.test(t)) {
-            achados.push(chave + '=' + t);
-          }
-        } else if (valor && typeof valor === 'object') {
-          textosParaInvestigar(valor, achados, nivel + 1);
-        }
-        if (achados.length > 60) break;
-      }
-      return achados;
+      registrarDiagnostico('premio',
+        `===== JANELA ${janelaNum}/${LIMITE_DE_JANELAS}: "${quem}" ganhou algo =====`);
+
+      // ANTES: o item pode ser anunciado antes do aviso de premio, e a sonda
+      // velha so olhava pra frente.
+      registrarDiagnostico('premio',
+        `----- as ${ultimasMensagens.length} mensagens ANTES do premio -----`);
+      const agora = Date.now();
+      ultimasMensagens.forEach(m => {
+        despejarMensagem('-' + ((agora - m.em) / 1000).toFixed(1) + 's', m.tipo, m.dados);
+      });
+
+      // e os quadros CRUS de antes, que mostram ate o que foi descartado
+      quadrosRecentes.forEach(b => esmiucarQuadro('cru-', b));
+
+      registrarDiagnostico('premio',
+        `----- e os ${JANELA_MS / 1000}s DEPOIS -----`);
     }
 
     connection.on('decodedData', (metodo, decodificada) => {
       if (myId !== activeConnectionId) return;
-      if (Date.now() > janelaAte) return;
-      if (capturadasNaJanela >= LIMITE_POR_JANELA) return;
-      capturadasNaJanela++;
-
       const tipo = decodificada?.type || metodo;
       const dados = decodificada?.data ?? decodificada;
-      const textos = textosParaInvestigar(dados);
 
-      // o que interessa: alguma dessas frases nomeia um item?
-      const comItem = textos.filter(t => tipoPelasPalavras(t.split('=').slice(1).join('=')));
-
-      if (comItem.length) {
-        registrarDiagnostico('premio', `  >>> ${tipo} CITA ITEM <<<`);
-        comItem.slice(0, 6).forEach(t => registrarDiagnostico('premio', '      ' + t));
-      } else {
-        registrarDiagnostico('premio',
-          `  ${tipo}` + (textos.length ? ' :: ' + textos.slice(0, 4).join(' | ').slice(0, 220) : ' (sem texto)'));
+      // dentro da janela: despeja. fora dela: so guarda pro proximo premio.
+      if (Date.now() <= janelaAte) {
+        despejarMensagem('+', tipo, dados);
+        return;
       }
+      ultimasMensagens.push({ tipo, dados, em: Date.now() });
+      if (ultimasMensagens.length > QUANTAS_ANTES) ultimasMensagens.shift();
+    });
+
+    // ---------- SONDA CRUA (o que o conector joga fora) ----------
+    // O tiktok-live-connector descarta toda mensagem cujo tipo o
+    // tiktok-live-proto nao conhece -- ela nunca chega no `decodedData`:
+    //
+    //     if (!hasProtoName(message.method)) continue;
+    //
+    // Entao a sonda de cima e cega, POR CONSTRUCAO, pros tipos que a
+    // biblioteca nao conhece. Como ela corre atras do TikTok e nao na frente,
+    // um aviso publico novo cai bem ai. Aqui a gente pega o quadro cru do
+    // websocket e decodifica na mao, pra ver o que foi jogado fora.
+    const zlib = require('zlib');
+    const caminho = require('path');
+
+    function abrirProto() {
+      // o pacote nao exporta os subcaminhos, entao vou no arquivo direto
+      const tentativas = [
+        caminho.join(__dirname, 'node_modules/tiktok-live-proto/dist/node/v3.js'),
+        caminho.join(process.cwd(), 'node_modules/tiktok-live-proto/dist/node/v3.js')
+      ];
+      for (const t of tentativas) {
+        try { return require(t); } catch (e) { /* tenta o proximo */ }
+      }
+      return null;
+    }
+    const proto = abrirProto();
+    if (!proto) {
+      registrarDiagnostico('premio',
+        'sonda crua DESLIGADA: nao achei o tiktok-live-proto pra decodificar o quadro');
+    }
+
+    // As mensagens dentro de um quadro do websocket, SEM filtro de tipo.
+    function mensagensDoQuadro(bytes) {
+      if (!proto) return [];
+      try {
+        const quadro = proto.WebcastPushFrame.decode(bytes);
+        let carga = quadro.payload;
+        if (!carga || !carga.length) return [];
+        // gzip: 1f 8b 08
+        if (carga.length > 2 && carga[0] === 0x1f && carga[1] === 0x8b && carga[2] === 0x08) {
+          carga = zlib.gunzipSync(Buffer.from(carga));
+        }
+        return proto.ProtoMessageFetchResult.decode(Buffer.from(carga)).messages || [];
+      } catch (e) {
+        return [];
+      }
+    }
+
+    // Texto legivel dentro do protobuf cru. Funciona mesmo sem decodificador:
+    // string em protobuf vai como ASCII no meio dos bytes.
+    // corridas de 4+ caracteres imprimíveis (espaço até "~" é o ASCII visível)
+    const LEGIVEL = /[ -~]{4,}/g;
+    function textosCrus(bytes) {
+      try {
+        return Buffer.from(bytes).toString('latin1').match(LEGIVEL) || [];
+      } catch (e) { return []; }
+    }
+
+    // A biblioteca sabe decodificar este tipo?
+    const conhecido = metodo => !!(proto && proto[metodo] && typeof proto[metodo].decode === 'function');
+
+    const quadrosRecentes = [];      // anel dos quadros crus, pro "antes"
+    const tiposJaVistos = new Set(); // censo: cada tipo e anunciado uma vez
+    let ultimoCenso = 0;
+
+    function esmiucarQuadro(marca, bytes) {
+      mensagensDoQuadro(bytes).forEach(m => {
+        const metodo = m.method || '(sem metodo)';
+        const sabe = conhecido(metodo);
+        const textos = textosCrus(m.payload || []);
+        const achados = [...new Set(textos.filter(t => tipoPelasPalavras(t)))];
+
+        if (achados.length) {
+          registrarDiagnostico('premio',
+            `  [${marca}] >>> CRU: ${metodo} CITA ITEM <<< ` +
+            `${sabe ? '' : '(tipo DESCARTADO pelo conector) '}${achados.slice(0, 6).join(' | ')}`);
+          return;
+        }
+        if (!sabe) {
+          // o achado mais valioso: uma mensagem que a biblioteca joga no lixo
+          registrarDiagnostico('premio',
+            `  [${marca}] CRU: ${metodo} -- TIPO DESCARTADO PELO CONECTOR, ` +
+            `${(m.payload || []).length} bytes :: ${textos.slice(0, 8).join(' | ').slice(0, 240)}`);
+        }
+      });
+    }
+
+    connection.on('websocketData', bytes => {
+      if (myId !== activeConnectionId) return;
+
+      if (Date.now() <= janelaAte) { esmiucarQuadro('cru+', bytes); return; }
+
+      quadrosRecentes.push(bytes);
+      if (quadrosRecentes.length > QUANTAS_ANTES) quadrosRecentes.shift();
+
+      // CENSO: fora da janela, no maximo 1 quadro por segundo, so pra anunciar
+      // tipo novo. E de graca saber que o TikTok manda algo que a gente perde.
+      const agora = Date.now();
+      if (agora - ultimoCenso < 1000) return;
+      ultimoCenso = agora;
+      mensagensDoQuadro(bytes).forEach(m => {
+        const metodo = m.method || '(sem metodo)';
+        if (tiposJaVistos.has(metodo)) return;
+        tiposJaVistos.add(metodo);
+        if (!conhecido(metodo)) {
+          registrarDiagnostico('premio',
+            `CENSO: o TikTok manda "${metodo}" e o conector DESCARTA ` +
+            `(sem decodificador). Texto cru: ` +
+            textosCrus(m.payload || []).slice(0, 8).join(' | ').slice(0, 240));
+        }
+      });
     });
 
     // Listener próprio, separado do farejador de propósito: o farejador só mostra

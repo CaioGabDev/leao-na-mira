@@ -36,10 +36,10 @@ const PADRAO = {
     gold:   '#ffb03a',
     ember1: '#ff7a1a',
     ember2: '#ff2d2d',
-    // As brasas do fundo são desenhadas no canvas com cor fixa, dentro do
-    // script que a gente não mexe. Girar o matiz por CSS é o jeito de elas
-    // acompanharem um tema de outra cor sem encostar naquele código.
-    girarBrasa: 0
+    // As brasinhas que sobem no fundo. Duas cores: o miolo e a borda que
+    // some. São os mesmos valores que estavam cravados no canvas.
+    brasa1: '#ffaa3c',
+    brasa2: '#ff3c14'
   },
   live: {
     // @ da live da casa. Vazio = usa a env var TIKTOK_USERNAME, como sempre foi.
@@ -71,6 +71,13 @@ function corOuNada(v) {
 
 function cor(v, padrao) {
   return corOuNada(v) || padrao;
+}
+
+// O canvas monta o rgba() com a opacidade dele, então a cor vai em "r, g, b".
+function rgbDoHex(hex, padrao) {
+  const t = corOuNada(hex);
+  if (!t) return padrao;
+  return [1, 3, 5].map(i => parseInt(t.slice(i, i + 2), 16)).join(', ');
 }
 
 function grau(v) {
@@ -122,7 +129,8 @@ function normalizar(bruto, base) {
       gold:   cor(t.gold,   p.tema.gold),
       ember1: cor(t.ember1, p.tema.ember1),
       ember2: cor(t.ember2, p.tema.ember2),
-      girarBrasa: t.girarBrasa === undefined ? p.tema.girarBrasa : grau(t.girarBrasa)
+      brasa1: cor(t.brasa1, p.tema.brasa1),
+      brasa2: cor(t.brasa2, p.tema.brasa2)
     },
     live: { usuario: usuarioTikTok(l.usuario) }
   };
@@ -174,7 +182,7 @@ const CAMPOS_TEXTO = {
   marca: { emoji: LIMITE.emoji, titulo: LIMITE.titulo, sub: LIMITE.sub },
   mural: { titulo: LIMITE.titulo, sub: LIMITE.sub }
 };
-const CORES_DO_TEMA = ['bg', 'card', 'gold', 'ember1', 'ember2'];
+const CORES_DO_TEMA = ['bg', 'card', 'gold', 'ember1', 'ember2', 'brasa1', 'brasa2'];
 
 function aplicarParcial(destino, parcial, aceitaLive) {
   const p = (parcial && typeof parcial === 'object') ? parcial : {};
@@ -200,10 +208,6 @@ function aplicarParcial(destino, parcial, aceitaLive) {
       if (limpa) destino.tema[campo] = limpa;
       else delete destino.tema[campo];
     });
-    if (p.tema.girarBrasa !== undefined) {
-      const g = grau(p.tema.girarBrasa);
-      if (g) destino.tema.girarBrasa = g; else delete destino.tema.girarBrasa;
-    }
     if (!Object.keys(destino.tema).length) delete destino.tema;
   }
 
@@ -255,12 +259,12 @@ function getVersao() { return versao; }
 // todo o site consome esses tokens, isso repinta tudo sem CSS novo.
 function blocoDeTema(dono) {
   const t = get(dono).tema;
-  const linhas =
+  const cores =
     `--bg:${t.bg};--card:${t.card};--gold:${t.gold};--ember1:${t.ember1};--ember2:${t.ember2};`;
-  const brasa = t.girarBrasa
-    ? `canvas{filter:hue-rotate(${t.girarBrasa}deg)}`
-    : '';
-  return `<style id="tema-do-cliente">:root{${linhas}}${brasa}</style>`;
+  // as brasinhas vão em "r, g, b": é assim que o canvas do ranking consome
+  const brasas =
+    `--brasa-1:${rgbDoHex(t.brasa1, '255, 170, 60')};--brasa-2:${rgbDoHex(t.brasa2, '255, 60, 20')};`;
+  return `<style id="tema-do-cliente">:root{${cores}${brasas}}</style>`;
 }
 
 // Troca os {{marcadores}} do HTML. Marcador desconhecido fica como está, de
@@ -299,5 +303,5 @@ function aplicar(html, ctx) {
 module.exports = {
   FILE, PADRAO, get, salvar, getVersao, aplicar, blocoDeTema,
   listarClientes, removerCliente,
-  normalizar, escaparHtml, texto, cor, corOuNada, grau, usuarioTikTok
+  normalizar, escaparHtml, texto, cor, corOuNada, grau, rgbDoHex, usuarioTikTok
 };

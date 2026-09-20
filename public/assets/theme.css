@@ -28,6 +28,11 @@
   --red:       #ff6b6b;
   --blue:      #3e7bfa;
 
+  /* As brasinhas do canvas. Em "r, g, b" porque o script monta o rgba() com a
+     opacidade dele — é isso que permite trocar a cor delas por cliente. */
+  --brasa-1: 255, 170, 60;
+  --brasa-2: 255, 60, 20;
+
   --grad-fire: linear-gradient(180deg, var(--gold), var(--ember1));
   --grad-ink:  linear-gradient(180deg, #ffe9b0 0%, var(--gold) 30%, var(--ember1) 65%, #a3230f 100%);
 
@@ -58,23 +63,36 @@
 
 * { box-sizing: border-box; }
 
-html { height: 100%; }
+/* A cor de base fica no html: ela cobre a página inteira, por mais alta que
+   seja. Antes ficava no body e, com a propagação do fundo pro documento, o
+   gradiente era posicionado pela caixa do html (uma tela de altura) — o que
+   deixava uma emenda visível no meio de páginas altas. */
+html { height: 100%; background: var(--bg); }
+
 body {
   margin: 0;
   /* min-height (e NÃO height:100%) — com height:100% o body para na altura da
-     viewport e todo position:sticky de dentro dele deixa de grudar.
-     O html continua em 100%, que é a área que posiciona o gradiente do fundo. */
+     viewport e todo position:sticky de dentro dele deixa de grudar. */
   min-height: 100%;
-  /* O fundo é a identidade do site — não mexer. */
-  background:
-    radial-gradient(700px 420px at 12% -6%, rgba(255,122,26,.14), transparent 60%),
-    radial-gradient(900px 600px at 100% 0%, rgba(255,45,45,.08), transparent 55%),
-    var(--bg);
   color: var(--ink);
   font-family: 'Rajdhani', sans-serif;
   font-weight: 600;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+/* O brilho do fundo — a identidade do site, com os mesmos valores de sempre.
+   Mora numa camada PRESA à viewport: assim ele nunca "acaba" no meio da
+   página, não importa a altura dela nem onde a pessoa esteja na rolagem. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(700px 420px at 12% -6%, rgba(255,122,26,.14), transparent 60%),
+    radial-gradient(900px 600px at 100% 0%, rgba(255,45,45,.08), transparent 55%);
 }
 
 a { color: inherit; }

@@ -27,8 +27,9 @@
     --line:   #232a36;
     --line-soft: #1b212b;
   }
-  /* o fundo de brasa do theme.css é do produto; aqui é liso */
-  body { background: var(--bg); }
+  /* o brilho de brasa do theme.css é do produto; aqui o fundo é liso */
+  html { background: var(--bg); }
+  body::before { display: none; }
 </style>
 </head>
 <body>

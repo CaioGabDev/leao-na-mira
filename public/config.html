@@ -111,15 +111,20 @@
       </div>
     </div>
 
-    <div class="campo" style="margin-top:16px">
-      <label for="girarBrasa">Girar a cor das brasinhas do fundo</label>
-      <div class="faixa">
-        <input type="range" id="girarBrasa" min="0" max="360" step="5">
-        <span class="valor" id="girarValor">0°</span>
+    <div style="margin-top:18px; padding-top:16px; border-top:1px solid var(--line-soft)">
+      <div class="cores">
+        <div class="cor">
+          <label for="corBrasa1">Brasinha (miolo)</label>
+          <div class="linha"><input type="color" id="corBrasa1"><span class="hex" id="hexBrasa1"></span></div>
+        </div>
+        <div class="cor">
+          <label for="corBrasa2">Brasinha (borda)</label>
+          <div class="linha"><input type="color" id="corBrasa2"><span class="hex" id="hexBrasa2"></span></div>
+        </div>
       </div>
-      <span class="dica">
-        As brasinhas são desenhadas em laranja fixo pelo código da página. Este giro
-        é o que faz elas combinarem com um tema de outra cor.
+      <span class="dica" style="margin-top:8px; display:block">
+        São as partículas que sobem no fundo do ranking. O miolo é o brilho do
+        meio; a borda é a cor pra onde ela desaparece.
       </span>
     </div>
   </section>
@@ -180,7 +185,9 @@
     ['ember1', 'corEmber1', 'hexEmber1'],
     ['ember2', 'corEmber2', 'hexEmber2'],
     ['bg', 'corBg', 'hexBg'],
-    ['card', 'corCard', 'hexCard']
+    ['card', 'corCard', 'hexCard'],
+    ['brasa1', 'corBrasa1', 'hexBrasa1'],
+    ['brasa2', 'corBrasa2', 'hexBrasa2']
   ];
 
   let padrao = null;
@@ -203,11 +210,11 @@
     const raiz = document.documentElement;
     CORES.forEach(([chave, idCor, idHex]) => {
       const v = $(idCor).value;
-      raiz.style.setProperty('--' + chave, v);
+      // brasa1/brasa2 viram --brasa-1/--brasa-2 (o canvas lê nesse nome)
+      raiz.style.setProperty(
+        chave.startsWith('brasa') ? '--brasa-' + chave.slice(5) : '--' + chave, v);
       $(idHex).textContent = v;
     });
-    const giro = Number($('girarBrasa').value) || 0;
-    $('girarValor').textContent = giro + '°';
   }
 
   // O painel "Live acompanhada" é da instalação: um cliente não escolhe o @
@@ -240,13 +247,12 @@
     $('muralTitulo').value = c.mural.titulo;
     $('muralSub').value    = c.mural.sub;
     CORES.forEach(([chave, idCor]) => { $(idCor).value = c.tema[chave]; });
-    $('girarBrasa').value  = c.tema.girarBrasa;
     $('liveUsuario').value = c.live.usuario;
     espelhar();
   }
 
   function montarEnvio() {
-    const tema = { girarBrasa: Number($('girarBrasa').value) || 0 };
+    const tema = {};
     CORES.forEach(([chave, idCor]) => { tema[chave] = $(idCor).value; });
     return {
       dono: alvoAtual,
@@ -275,7 +281,6 @@
   }
 
   CORES.forEach(([, idCor]) => $(idCor).addEventListener('input', espelhar));
-  $('girarBrasa').addEventListener('input', espelhar);
 
   $('alvo').addEventListener('change', async () => {
     alvoAtual = $('alvo').value;
