@@ -1164,31 +1164,61 @@ function criarLive({ dono, db, emitir }) {
       } catch (e) { return []; }
     }
 
+    // No CRU não existe frase, só bytes. Os padrões de PALAVRAS_DA_CARTA foram
+    // feitos pra ler texto do TikTok ("got 1 no. 2 booster") e soltos aqui
+    // casam com lixo: uma URL de avatar terminada em "idc=no1a" virou "raio 1x".
+    // Então o cru só aceita nome forte de item.
+    const NOME_FORTE = new RegExp(
+      'stun_?hammer|vault_?glove|boosting_?glove|glove|hammer' +
+      '|smoke_?card|extra_?time|critical_?strike|potion_?card|wave_?card' +
+      '|power_?up|booster|card_?name', 'i');
+
+    // URL é prova mais fraca (o nome pode estar no caminho da imagem do card,
+    // que vale — mas também pode ser coincidência), então vai marcada.
+    const ehUrl = t => /https?:|x-signature|refresh_token/i.test(t);
+
+    function itensNoCru(textos) {
+      const achados = [];
+      for (const t of textos) {
+        const m = t.match(NOME_FORTE);
+        if (!m) continue;
+        achados.push(ehUrl(t) ? `${m[0]} (em URL: ...${t.slice(-60)})` : t.slice(0, 100));
+        if (achados.length >= 6) break;
+      }
+      return [...new Set(achados)];
+    }
+
     // A biblioteca sabe decodificar este tipo?
     const conhecido = metodo => !!(proto && proto[metodo] && typeof proto[metodo].decode === 'function');
 
     const quadrosRecentes = [];      // anel dos quadros crus, pro "antes"
-    const tiposJaVistos = new Set(); // censo: cada tipo e anunciado uma vez
+    const tiposJaVistos = new Set();    // censo: cada tipo e anunciado uma vez
+    const tiposDescartados = new Set(); // ...destes o conector nao sabe nada
     let ultimoCenso = 0;
+    let primeiroQuadro = 0;
+    let censoFechado = false;
+    const PRAZO_DO_CENSO = 90000;
 
     function esmiucarQuadro(marca, bytes) {
       mensagensDoQuadro(bytes).forEach(m => {
         const metodo = m.method || '(sem metodo)';
         const sabe = conhecido(metodo);
         const textos = textosCrus(m.payload || []);
-        const achados = [...new Set(textos.filter(t => tipoPelasPalavras(t)))];
+        const achados = itensNoCru(textos);
 
         if (achados.length) {
           registrarDiagnostico('premio',
-            `  [${marca}] >>> CRU: ${metodo} CITA ITEM <<< ` +
-            `${sabe ? '' : '(tipo DESCARTADO pelo conector) '}${achados.slice(0, 6).join(' | ')}`);
+            (`  [${marca}] >>> CRU: ${metodo} CITA ITEM <<< ` +
+             `${sabe ? '' : '(tipo DESCARTADO pelo conector) '}` +
+             achados.join(' | ')).slice(0, 400));
           return;
         }
         if (!sabe) {
           // o achado mais valioso: uma mensagem que a biblioteca joga no lixo
+          const limpos = textos.filter(t => !ehUrl(t)).map(t => t.slice(0, 60));
           registrarDiagnostico('premio',
             `  [${marca}] CRU: ${metodo} -- TIPO DESCARTADO PELO CONECTOR, ` +
-            `${(m.payload || []).length} bytes :: ${textos.slice(0, 8).join(' | ').slice(0, 240)}`);
+            `${(m.payload || []).length} bytes :: ${limpos.slice(0, 8).join(' | ').slice(0, 240)}`);
         }
       });
     }
@@ -1211,12 +1241,26 @@ function criarLive({ dono, db, emitir }) {
         if (tiposJaVistos.has(metodo)) return;
         tiposJaVistos.add(metodo);
         if (!conhecido(metodo)) {
+          tiposDescartados.add(metodo);
           registrarDiagnostico('premio',
             `CENSO: o TikTok manda "${metodo}" e o conector DESCARTA ` +
             `(sem decodificador). Texto cru: ` +
-            textosCrus(m.payload || []).slice(0, 8).join(' | ').slice(0, 240));
+            textosCrus(m.payload || []).filter(t => !ehUrl(t))
+              .map(t => t.slice(0, 60)).slice(0, 8).join(' | ').slice(0, 240));
         }
       });
+
+      // Fechamento do censo: sem isto, "não apareceu nada" fica ambíguo entre
+      // "não tem tipo descartado" e "o log foi cortado". Uma linha só, no fim.
+      if (!primeiroQuadro) primeiroQuadro = agora;
+      if (!censoFechado && agora - primeiroQuadro > PRAZO_DO_CENSO) {
+        censoFechado = true;
+        registrarDiagnostico('premio',
+          `CENSO FECHADO (${PRAZO_DO_CENSO / 1000}s de live): ${tiposJaVistos.size} tipos vistos, ` +
+          (tiposDescartados.size
+            ? `${tiposDescartados.size} DESCARTADOS pelo conector -> ${[...tiposDescartados].join(', ')}`
+            : 'nenhum descartado - a biblioteca conhece tudo que passou aqui'));
+      }
     });
 
     // Listener próprio, separado do farejador de propósito: o farejador só mostra
