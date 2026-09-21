@@ -151,6 +151,32 @@
   .pu-dir { text-align: right; white-space: nowrap; }
   .pu-mao { font-family: 'Bungee', sans-serif; font-size: 17px; color: var(--gold); }
   .pu-mao.vazio { color: var(--ink-faint); }
+  /* "≥N" e não "0": com tudo pendente a pessoa TEM cartas, só não se sabe
+     quais — e cada premiação vale uma OU MAIS, daí o "≥". Zero diria que ela
+     não tem nada, que é outra coisa.
+     Fora do Bungee de propósito: nela o "?" e o "≥" saem como borrões. */
+  .pu-mao.incerto {
+    font-family: 'Rajdhani', sans-serif; font-weight: 700; font-size: 16px;
+    color: var(--ink-dim);
+  }
+
+  /* Uma pendência por pessoa, não uma por premiação: cinco etiquetas
+     idênticas dizendo "toque pra informar" não informam nada. */
+  .pu-avisar {
+    display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+    padding: 7px 13px; border-radius: var(--r-pill);
+    border: 1px dashed rgba(255,176,58,.5); background: rgba(255,176,58,.07);
+    font-family: 'Rajdhani', sans-serif; font-weight: 700; font-size: 13px;
+    color: var(--gold);
+    transition: background .15s, border-color .15s;
+  }
+  .pu-avisar:hover { background: rgba(255,176,58,.14); border-style: solid; }
+  .pu-avisar .qtd { font-family: 'Bungee', sans-serif; font-size: 13px; }
+  .pu-avisar.urgente { border-color: rgba(255,107,107,.55); color: var(--ember1); }
+
+  .pu-nada {
+    font-size: 12.5px; color: var(--ink-faint); padding: 3px 0;
+  }
   .pu-prazo { display: block; font-size: 11px; font-weight: 700; color: var(--ink-faint); margin-top: 2px; }
   .pu-prazo.urgente { color: var(--red); }
   .pu-tipos { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: 4px; }
@@ -176,10 +202,7 @@
   /* etiquetas de prazo viram botao (clicar informa os itens) */
   button.pu-carta { cursor: pointer; font-family: 'Rajdhani', sans-serif; }
   button.pu-carta:hover { border-color: var(--gold); }
-  .pu-pendente {
-    border-style: dashed; border-color: rgba(255,176,58,.5);
-    background: rgba(255,176,58,.06);
-  }
+  /* (a .pu-pendente saiu: a etiqueta por premiação virou um botão por pessoa) */
 
   /* editor */
   .pu-editor { padding: 18px 20px 20px; }
@@ -1783,22 +1806,24 @@
           .join('');
         const totalEstoque = Object.values(p.estoque || {}).reduce((a, b) => a + b, 0);
 
-        // Uma etiqueta por premiação, a pendente clicável pra informar.
-        // Quem tem 15 premiações virava 15 etiquetas numa linha só — agora
-        // mostra as mais urgentes e o resto abre sob demanda.
+        // As premiações se separam em duas coisas com destinos diferentes:
+        //
+        //   IDENTIFICADAS -> viram etiqueta, porque cada uma diz algo
+        //                    diferente (qual carta, quanto falta).
+        //   PENDENTES     -> viram UM botão só. Cinco etiquetas idênticas
+        //                    dizendo "toque pra informar" enchiam a linha e
+        //                    não informavam nada.
         const cartas = p.cartas || [];
+        const sabidas = cartas.filter(c => !c.pendente);
+        const pendentes = cartas.filter(c => c.pendente && (c.expiraEmMs - decorrido) > 0);
+
         const tudoAberto = abertos.has(String(p.uniqueId));
-        const mostrar = tudoAberto ? cartas : cartas.slice(0, ETIQUETAS_VISIVEIS);
-        const escondidas = cartas.length - mostrar.length;
+        const mostrar = tudoAberto ? sabidas : sabidas.slice(0, ETIQUETAS_VISIVEIS);
+        const escondidas = sabidas.length - mostrar.length;
 
         const premios = mostrar.map(c => {
           const falta = Math.max(0, c.expiraEmMs - decorrido);
           const urge = falta < DIA_MS;
-          if (c.pendente) {
-            return `<button class="pu-carta pu-pendente ${urge ? 'urgente' : ''}" data-uid="${esc2(p.uniqueId)}" data-em="${c.ganhaEm}">
-                      <b>${curto(falta)}</b> <i class="pu-itens pu-aberto">toque pra informar</i>
-                    </button>`;
-          }
           const itens = Object.entries(c.itens)
             .map(([t, n]) => `${ICONE_DO_TIPO[t] || '🎴'}${n > 1 ? ' ×' + n : ''}`).join(' ');
           // `deduzido` = o item veio do uso, que o TikTok confirmou; vale
@@ -1809,9 +1834,24 @@
                   </button>`;
         }).join('') + (escondidas > 0
           ? `<button class="pu-mais" data-abrir="${esc2(p.uniqueId)}">+${escondidas}</button>`
-          : (tudoAberto && cartas.length > ETIQUETAS_VISIVEIS
+          : (tudoAberto && sabidas.length > ETIQUETAS_VISIVEIS
               ? `<button class="pu-mais" data-abrir="${esc2(p.uniqueId)}">mostrar menos</button>`
               : ''));
+
+        // O botão de pendência: um por pessoa, com a mais urgente no texto.
+        // Ele abre o editor já naquela premiação — e o editor oferece aplicar
+        // o mesmo item às outras de uma vez.
+        const maisUrgente = pendentes.reduce(
+          (m, c) => (!m || c.expiraEmMs < m.expiraEmMs ? c : m), null);
+        const avisar = maisUrgente
+          ? `<button class="pu-avisar ${(maisUrgente.expiraEmMs - decorrido) < DIA_MS ? 'urgente' : ''}"
+                     data-uid="${esc2(p.uniqueId)}" data-em="${maisUrgente.ganhaEm}"
+                     title="Diga qual carta veio — dá pra aplicar a todas de uma vez">
+               <span class="qtd">${pendentes.length}</span>
+               ${pendentes.length === 1 ? 'premiação sem item' : 'premiações sem item'}
+               · a mais urgente vence em ${curto(Math.max(0, maisUrgente.expiraEmMs - decorrido))}
+             </button>`
+          : '';
 
         // quanto falta, em barra: o número já está escrito, a barra é pra
         // bater o olho e ver quem está no fim do prazo
@@ -1825,18 +1865,51 @@
           .map(([t, n]) => `<span class="pu-uso">${NOME_DO_TIPO[t] || t}${n > 1 ? ' ×' + n : ''}</span>`)
           .join('');
 
+        // O CONTADOR DA DIREITA. Ele mostrava o estoque identificado, então
+        // aparecia "0" pra quem tem 5 premiações pendentes — dizendo que a
+        // pessoa não tem nada quando o certo é "não se sabe o quê".
+        let mao, maoClasse, maoTitulo;
+        if (totalEstoque > 0) {
+          mao = totalEstoque;
+          maoClasse = '';
+          maoTitulo = totalEstoque + ' carta(s) na mão';
+        } else if (pendentes.length) {
+          // cada premiação vale uma carta OU MAIS, então o número é um piso
+          mao = '≥' + pendentes.length;
+          maoClasse = 'incerto';
+          maoTitulo = pendentes.length + ' premiação(ões) sem item informado — '
+            + 'cada uma vale pelo menos uma carta';
+        } else {
+          mao = 0;
+          maoClasse = 'vazio';
+          maoTitulo = 'nada na mão';
+        }
+
+        // "tem carta" = tem premiação no prazo, identificada ou não. Antes
+        // dependia do estoque, então quem só tinha pendência ficava apagado
+        // na lista como se não tivesse nada.
+        const temAlgo = totalEstoque > 0 || pendentes.length > 0;
+
         return `
-          <div class="pu-row ${totalEstoque > 0 ? 'tem' : 'zerado'}">
+          <div class="pu-row ${temAlgo ? 'tem' : 'zerado'}">
             <img class="row-avatar" src="${esc2(p.avatar || SEM_FOTO)}" onerror="this.src='${SEM_FOTO}'" alt="">
             <div>
               <div class="pu-nome">${esc2(p.nickname)}</div>
-              <div class="pu-sub">${p.handle ? '@' + esc2(p.handle) + ' · ' : ''}premiado ${p.totalPremiacoes}x · jogou ${p.usadas} carta(s)${p.expiradas ? ' · ' + p.expiradas + ' vencida(s)' : ''}</div>
-              ${estoque ? `<div class="pu-cartas pu-estoque">${estoque}</div>` : ''}
+              <div class="pu-sub">${[
+                p.handle ? '@' + esc2(p.handle) : '',
+                'premiado ' + p.totalPremiacoes + 'x',
+                // "jogou 0" é ruído: a ausência já diz isso
+                p.usadas ? 'jogou ' + p.usadas : '',
+                p.expiradas ? p.expiradas + ' vencida(s)' : ''
+              ].filter(Boolean).join(' · ')}</div>
+              ${estoque ? `<div class="pu-cartas pu-estoque"><span class="pu-rotulo">na mão</span>${estoque}</div>` : ''}
               ${premios ? `<div class="pu-cartas"><span class="pu-rotulo">prazos</span>${premios}</div>` : ''}
-              ${usos ? `<div class="pu-cartas pu-usados"><span class="pu-rotulo">jogou</span>${usos}</div>` : ''}
+              ${avisar ? `<div class="pu-cartas">${avisar}</div>` : ''}
+              ${!estoque && !premios && !avisar ? '<div class="pu-nada">Sem carta no prazo.</div>' : ''}
+              ${usos ? `<div class="pu-cartas pu-usados"><span class="pu-rotulo">já jogou</span>${usos}</div>` : ''}
             </div>
             <div class="pu-dir">
-              <span class="pu-mao ${totalEstoque ? '' : 'vazio'}">${totalEstoque}</span>
+              <span class="pu-mao ${maoClasse}" title="${esc2(maoTitulo)}">${mao}</span>
               <span class="pu-prazo ${urgente ? 'urgente' : ''}">${p.premiacoes ? prazo(restante) : 'nada no prazo'}</span>
               ${barra}
             </div>
@@ -1985,7 +2058,7 @@
         render();
         return;
       }
-      const alvo = e.target.closest('.pu-carta[data-uid]');
+      const alvo = e.target.closest('.pu-carta[data-uid], .pu-avisar[data-uid]');
       if (!alvo) return;
       abrirEditor(alvo.dataset.uid, alvo.dataset.em);
     });

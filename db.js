@@ -157,6 +157,32 @@ function criarBanco(dono, opcoes) {
   // As fantasmas que já entraram no histórico saem daqui. Uma vez só, e a
   // marca fica gravada — o resetAll preserva as marcas de migração de
   // propósito (ver o comentário lá).
+  // As duplicatas que já entraram: ficha com o @ na chave cujo dono também
+  // tem ficha com o id numérico. Uma vez só, com a marca gravada.
+  if (!state.global.fichasJuntadas) {
+    const porHandle = new Map();
+    Object.values(state.cartas).forEach(f => {
+      // só as que têm id numérico; a chave-@ é justamente a que não tem
+      if (f.handle && /^\d+$/.test(String(f.uniqueId))) porHandle.set(String(f.handle), f);
+    });
+
+    let juntadas = 0;
+    Object.keys(state.cartas).forEach(chave => {
+      if (/^\d+$/.test(chave)) return;             // esta já é a boa
+      const boa = porHandle.get(chave);
+      if (!boa) return;                            // órfã sem par: fica como está
+      fundirFichas(boa, state.cartas[chave]);
+      juntadas++;
+    });
+
+    if (juntadas) {
+      console.log(`[${dono}] ${juntadas} ficha(s) duplicada(s) juntada(s) ` +
+        '(a mesma pessoa aparecia duas vezes: uma pelo @, outra pelo id).');
+    }
+    state.global.fichasJuntadas = true;
+    dirty = true;
+  }
+
   if (!state.global.fantasmasLimpos) {
     const antes = state.sessions.length;
     state.sessions = state.sessions.filter(temSinalDeVida);
@@ -595,6 +621,55 @@ function criarBanco(dono, opcoes) {
     return mudou;
   }
 
+  // Junta duas fichas da MESMA pessoa numa só.
+  //
+  // Elas existem porque o live.js usa `userId || displayId` como chave: um
+  // evento sem userId cria uma ficha com o @ como chave, e a pessoa passa a
+  // ter duas — cada uma com metade das premiações dela. Isso fazia o streamer
+  // ver "premiado 2x" numa linha e "premiado 1x" noutra, da mesma pessoa.
+  //
+  // `velha` é despejada dentro de `boa` e some. As premiações são somadas, não
+  // sobrescritas: cada uma é um prêmio de verdade que aconteceu.
+  function fundirFichas(boa, velha) {
+    if (!boa || !velha || boa === velha) return boa;
+
+    boa.ganhas = [...(boa.ganhas || []), ...(velha.ganhas || [])]
+      .sort((a, b) => a.em - b.em);
+
+    Object.entries(velha.usos || {}).forEach(([t, n]) => {
+      boa.usos[t] = (boa.usos[t] || 0) + n;
+    });
+    Object.entries(velha.jogou || {}).forEach(([t, n]) => {
+      boa.jogou = boa.jogou || {};
+      boa.jogou[t] = (boa.jogou[t] || 0) + n;
+    });
+
+    boa.usadas = (boa.usadas || 0) + (velha.usadas || 0);
+    boa.expiradas = (boa.expiradas || 0) + (velha.expiradas || 0);
+    boa.ultimaEm = Math.max(boa.ultimaEm || 0, velha.ultimaEm || 0);
+
+    // fica com o que estiver preenchido: a ficha órfã costuma ser a que não
+    // tem foto nem @, mas pode ser a que tem o apelido mais recente
+    if (!boa.avatar && velha.avatar) boa.avatar = velha.avatar;
+    if (!boa.handle && velha.handle) boa.handle = velha.handle;
+    if ((!boa.nickname || boa.nickname === boa.uniqueId) && velha.nickname) {
+      boa.nickname = velha.nickname;
+    }
+
+    delete state.cartas[velha.uniqueId];
+    dirty = true;
+    return boa;
+  }
+
+  // Acha uma ficha órfã criada com o @ como chave, quando agora sabemos o id
+  // numérico da pessoa. É a ponte: basta UM evento trazer os dois campos.
+  function fichaOrfaDoHandle(handle, idDeVerdade) {
+    if (!handle) return null;
+    const orfa = state.cartas[handle];
+    if (!orfa || orfa.uniqueId === idDeVerdade) return null;
+    return orfa;
+  }
+
   function garantirFichaDeCarta(uniqueId, nickname, avatar, handle) {
     if (!uniqueId) return null;
     let ficha = state.cartas[uniqueId];
@@ -608,6 +683,17 @@ function criarBanco(dono, opcoes) {
     if (nickname) ficha.nickname = nickname;
     if (avatar) ficha.avatar = avatar;
     if (handle) ficha.handle = handle; // pode chegar só em alguns eventos
+
+    // Este evento trouxe id E @: se existe uma ficha órfã com o @ na chave,
+    // ela é desta mesma pessoa. Junta agora, antes de gravar mais nada nela.
+    if (handle && String(handle) !== String(uniqueId)) {
+      const orfa = fichaOrfaDoHandle(String(handle), String(uniqueId));
+      if (orfa) {
+        console.log(`[${dono}] juntei duas fichas de "${ficha.nickname}": ` +
+          `@${handle} e ${uniqueId} eram a mesma pessoa.`);
+        fundirFichas(ficha, orfa);
+      }
+    }
     return ficha;
   }
 
@@ -848,7 +934,8 @@ function criarBanco(dono, opcoes) {
     const jaMigrado = {
       superfaRemarcado: state.global.superfaRemarcado,
       picoCorrigido: state.global.picoCorrigido,
-      fantasmasLimpos: state.global.fantasmasLimpos
+      fantasmasLimpos: state.global.fantasmasLimpos,
+      fichasJuntadas: state.global.fichasJuntadas
     };
     state.global = {
       totalDiamonds: 0, totalLikes: 0, totalComments: 0, totalFollows: 0, totalShares: 0,
