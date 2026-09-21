@@ -987,6 +987,19 @@ function criarLive({ dono, db, emitir }) {
     });
 
     // ---------- SONDA DOS POWER-UPS DO PK ----------
+    // Nome forte de item. Os padrões de PALAVRAS_DA_CARTA foram feitos pra ler
+    // FRASE do TikTok ("got 1 no. 2 booster"); soltos em cima de bytes crus ou
+    // de JSON inteiro eles casam com lixo — uma URL de avatar terminada em
+    // "idc=no1a" já virou "raio 1x". Aqui só vale nome forte.
+    //
+    // Declarado ANTES das duas sondas que o usam: ele estava 118 linhas depois
+    // do primeiro uso e só funcionava porque a função que o chama roda depois
+    // da subida. Zona morta de `const` já me derrubou duas vezes neste arquivo.
+    const NOME_FORTE = new RegExp(
+      'stun_?hammer|vault_?glove|boosting_?glove|glove|hammer' +
+      '|smoke_?card|extra_?time|critical_?strike|potion_?card|wave_?card' +
+      '|power_?up|booster|card_?name|card_?award', 'i');
+
     // ---------- JANELA DO PRÊMIO ----------
     // Um prêmio chega sem dizer o item. Se o TikTok conta isso pra alguém, é numa
     // mensagem que chega por perto — então aqui a gente grava TUDO que passar
@@ -1102,6 +1115,10 @@ function criarLive({ dono, db, emitir }) {
         `===== JANELA ${janelaNum}/${LIMITE_DE_JANELAS}: "${quem}" ganhou algo =====`);
       if (dadosDoPremio) despejarPremioInteiro(dadosDoPremio);
 
+      // e pergunta pra API HTTP, que é onde o item aparece — mas só enquanto
+      // a comemoração do prêmio está passando
+      perguntarNaJanelaDoPremio(quem);
+
       // ANTES: o item pode ser anunciado antes do aviso de premio, e a sonda
       // velha so olhava pra frente.
       registrarDiagnostico('premio',
@@ -1131,6 +1148,99 @@ function criarLive({ dono, db, emitir }) {
       ultimasMensagens.push({ tipo, dados, em: Date.now() });
       if (ultimasMensagens.length > QUANTAS_ANTES) ultimasMensagens.shift();
     });
+
+
+    // ---------- SONDA HTTP: O ITEM DO PRÊMIO ----------
+    // O print de um site que consegue puxar o item mostra campos em
+    // snake_case (`card_award_name`, `visible_score`, `top_fans`), e o
+    // websocket entrega camelCase. Aquilo veio da API HTTP do webcast — e
+    // trazia "got 1 no. 2 booster" escrito por extenso.
+    //
+    // A janela é curta: quem mandou o print disse que só aparece "no período
+    // de comemoração", ou seja, enquanto a animação do prêmio está rodando.
+    // Por isso a consulta sai NA HORA do prêmio e se repete umas vezes logo
+    // depois, em vez de uma vez só.
+    //
+    // Sem cookie de ninguém: `getJsonObjectFromWebcastApi` assina pelo Euler,
+    // o mesmo caminho que o conector já usa pra abrir o socket.
+    const CAMINHOS_DO_PREMIO = [
+      // o mais provável: o print tem campos do dono da sala (visible_score,
+      // top_fans, with_ecommerce_permission) junto do card_award_name
+      'room/info/',
+      // e estes são os candidatos de PK, caso o item more num bloco próprio
+      'linkmic/battle_info/',
+      'ranklist/online_audience/'
+    ];
+    const TENTATIVAS_APOS_PREMIO = [0, 1500, 4000, 9000];
+    let sondasHttp = 0;
+    const LIMITE_SONDA_HTTP = 8;
+
+    // Todo texto da resposta que cheire a nome de carta, com o CAMINHO até
+    // ele: saber que existe não basta, eu preciso saber onde ler.
+    function caminhosComItem(obj, caminho = '$', achados = [], nivel = 0) {
+      if (!obj || typeof obj !== 'object' || nivel > 9 || achados.length > 40) return achados;
+      for (const [chave, valor] of Object.entries(obj)) {
+        const aqui = caminho + '.' + chave;
+        if (typeof valor === 'string') {
+          if (!valor || valor.length > 200) continue;
+          // o nome do campo já é pista: card_award_name foi o do print
+          const chaveInteressa = /card|award|booster|glove|power/i.test(chave);
+          const valorInteressa = NOME_FORTE.test(valor) || tipoPelasPalavras(valor);
+          if (chaveInteressa || valorInteressa) achados.push(aqui + ' = ' + valor);
+        } else if (valor && typeof valor === 'object') {
+          caminhosComItem(valor, aqui, achados, nivel + 1);
+        }
+      }
+      return achados;
+    }
+
+    async function perguntarAoHttp(quem, rodada) {
+      if (sondasHttp >= LIMITE_SONDA_HTTP) return;
+      const cliente = connection && connection.webClient;
+      if (!cliente || typeof cliente.getJsonObjectFromWebcastApi !== 'function') {
+        registrarDiagnostico('premio',
+          'sonda HTTP DESLIGADA: este conector não expõe o webClient');
+        sondasHttp = LIMITE_SONDA_HTTP;
+        return;
+      }
+
+      for (const caminho of CAMINHOS_DO_PREMIO) {
+        if (sondasHttp >= LIMITE_SONDA_HTTP) return;
+        sondasHttp++;
+        try {
+          const resposta = await cliente.getJsonObjectFromWebcastApi(caminho, {
+            ...(cliente.clientParams || {}),
+            room_id: cliente.roomId
+          }, true);
+
+          const achados = caminhosComItem(resposta);
+          const bruto = JSON.stringify(resposta);
+          if (achados.length) {
+            registrarDiagnostico('premio',
+              `  >>> HTTP ${caminho} (+${rodada}ms) TEM O ITEM <<< ${achados.length} campo(s)`);
+            achados.slice(0, 12).forEach(a =>
+              registrarDiagnostico('premio', '      ' + a.slice(0, 220)));
+          } else {
+            registrarDiagnostico('premio',
+              `  HTTP ${caminho} (+${rodada}ms): respondeu ${bruto.length} chars, ` +
+              'nenhum campo de carta');
+          }
+        } catch (e) {
+          registrarDiagnostico('premio',
+            `  HTTP ${caminho} (+${rodada}ms) falhou: ${e && e.message}`);
+        }
+      }
+    }
+
+    function perguntarNaJanelaDoPremio(quem) {
+      TENTATIVAS_APOS_PREMIO.forEach(atraso => {
+        const t = setTimeout(() => {
+          perguntarAoHttp(quem, atraso).catch(e =>
+            registrarDiagnostico('premio', '  sonda HTTP estourou: ' + (e && e.message)));
+        }, atraso);
+        if (t.unref) t.unref();
+      });
+    }
 
     // ---------- SONDA CRUA (o que o conector joga fora) ----------
     // O tiktok-live-connector descarta toda mensagem cujo tipo o
@@ -1188,15 +1298,6 @@ function criarLive({ dono, db, emitir }) {
         return Buffer.from(bytes).toString('latin1').match(LEGIVEL) || [];
       } catch (e) { return []; }
     }
-
-    // No CRU não existe frase, só bytes. Os padrões de PALAVRAS_DA_CARTA foram
-    // feitos pra ler texto do TikTok ("got 1 no. 2 booster") e soltos aqui
-    // casam com lixo: uma URL de avatar terminada em "idc=no1a" virou "raio 1x".
-    // Então o cru só aceita nome forte de item.
-    const NOME_FORTE = new RegExp(
-      'stun_?hammer|vault_?glove|boosting_?glove|glove|hammer' +
-      '|smoke_?card|extra_?time|critical_?strike|potion_?card|wave_?card' +
-      '|power_?up|booster|card_?name', 'i');
 
     // URL é prova mais fraca (o nome pode estar no caminho da imagem do card,
     // que vale — mas também pode ser coincidência), então vai marcada.
@@ -1396,45 +1497,38 @@ function criarLive({ dono, db, emitir }) {
     });
 
     // ---------- SONDA 2: EFEITOS POR USUÁRIO (linkMicArmies) ----------
-    // O linkMicArmies traz effectInfos.effectInfoList = [{type, uidList, effectExtra}],
-    // ou seja, QUAL efeito está ativo em QUAIS usuários. Se isso vier preenchido,
-    // é a fonte certa pra saber o que cada um ganhou — melhor que adivinhar pelo
-    // texto do prêmio. Também loga o ranking de contribuidores, porque "no. 2
-    // booster" tem cara de ser POSIÇÃO (2º colocado) e não nome de carta.
+    // O linkMicArmies traz effectInfos.effectInfoList = [{type, uidList,
+    // effectExtra}] — QUAL efeito está ativo em QUAIS usuários. Se viesse
+    // preenchido, seria a fonte certa pra saber o que cada um ganhou.
     //
-    // Este evento dispara a cada presente, então: só loga quando tem efeito,
-    // ignora repetição e tem teto próprio.
-    let sondaEfeitos = 0;
-    const LIMITE_EFEITOS = 30;
-    let ultimaAssinaturaEfeito = '';
+    // NÃO VEM. Confirmado 30 vezes num log de produção de 21/09: vazio em
+    // todas. A sonda antiga imprimia esse vazio junto com o ranking de
+    // contribuintes a cada vez — ~200 linhas repetindo o mesmo negativo, que
+    // empurraram a janela do prêmio e o censo pra fora da tela no dia em que
+    // eles finalmente tinham o que dizer.
+    //
+    // Então ela fica calada. Só fala se o effectInfoList vier PREENCHIDO, que
+    // é o único caso que ainda traz informação nova. E aí fala alto.
+    let efeitosVistos = 0;
+    const LIMITE_EFEITOS = 10;
 
     connection.on('linkMicArmies', data => {
       if (myId !== activeConnectionId) return;
-      if (sondaEfeitos >= LIMITE_EFEITOS) return;
+      if (efeitosVistos >= LIMITE_EFEITOS) return;
 
       const lista = data?.effectInfos?.effectInfoList || [];
-      const ranking = [];
-      Object.values(data?.armies || {}).forEach(exercito => {
-        (exercito?.userArmies || []).forEach((ua, pos) => {
-          ranking.push(`${pos + 1}º ${ua?.nickname || ''} (${ua?.userIdStr || ua?.userId || ''}) ${ua?.score || 0}`);
-        });
-      });
+      if (!lista.length) return;          // o caso de sempre: silêncio
 
-      if (!lista.length && !ranking.length) return;
-
-      // não repete a mesma foto duas vezes seguidas
-      const assinatura = JSON.stringify([lista, ranking]);
-      if (assinatura === ultimaAssinaturaEfeito) return;
-      ultimaAssinaturaEfeito = assinatura;
-      sondaEfeitos++;
-
-      registrarDiagnostico('powerup', `[efeitos ${sondaEfeitos}/${LIMITE_EFEITOS}] versao=${data?.effectInfos?.effectListVersion || ''}`);
-      if (!lista.length) registrarDiagnostico('powerup', '  effectInfoList VAZIO');
+      efeitosVistos++;
+      registrarDiagnostico('powerup',
+        `>>> effectInfoList APARECEU (${efeitosVistos}/${LIMITE_EFEITOS})! ` +
+        `versao=${data?.effectInfos?.effectListVersion || ''} — ` +
+        'este campo diz QUAL efeito está em QUEM, e nunca tinha vindo preenchido.');
       lista.forEach((ef, i) => {
         registrarDiagnostico('powerup',
-          `  efeito[${i}] type="${ef?.type || ''}" uids=[${(ef?.uidList || []).join(',')}] extra="${(ef?.effectExtra || '').slice(0, 200)}"`);
+          `  efeito[${i}] type="${ef?.type || ''}" uids=[${(ef?.uidList || []).join(',')}] ` +
+          `extra="${(ef?.effectExtra || '').slice(0, 300)}"`);
       });
-      ranking.slice(0, 6).forEach(linha => registrarDiagnostico('powerup', `  contrib ${linha}`));
     });
 
     // ---------- POWER-UPS DO PK: QUEM GANHOU / QUEM USOU ----------
