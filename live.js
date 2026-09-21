@@ -17,7 +17,10 @@ const { TikTokLiveConnection } = require('tiktok-live-connector');
 const ConnectionClass = TikTokLiveConnection;
 const assinatura = require('./assinatura');
 
-function criarLive({ dono, db, emitir }) {
+// `criarConexao` existe pro teste: o bug do prêmio perdido é sobre ORDEM DE
+// CHEGADA dos eventos, e sem poder mandá-los na ordem que eu quero o teste
+// não testaria o que quebrou. Em produção ninguém passa, e cai no TikTok.
+function criarLive({ dono, db, emitir, criarConexao }) {
   if (!dono) throw new Error('criarLive precisa do @ da live.');
   if (!db) throw new Error('criarLive precisa do db daquele dono.');
   if (typeof emitir !== 'function') throw new Error('criarLive precisa de uma função emitir().');
@@ -341,6 +344,10 @@ function criarLive({ dono, db, emitir }) {
   // A saída é o linkMicArmies, que traz os contribuidores INDEXADOS POR ANFITRIÃO
   // — daí sai a lista de quem é do nosso lado.
   let meusContribuintes = new Set();
+  // O último exército que chegou antes de sabermos quem somos. Sem isto, um
+  // linkMicArmies anterior ao primeiro linkMicBattle é jogado fora — e foi
+  // assim que um prêmio de produção se perdeu (ver guardarContribuintes).
+  let exercitosPendentes = null;
   let batalhaDosContribuintes = null;
 
   function anfitriaoBeneficiado(carta) {
@@ -559,9 +566,9 @@ function criarLive({ dono, db, emitir }) {
 
   function startTikTokConnection() {
     const myId = ++connectionCounter;
-    const connection = new ConnectionClass(dono, {
-      signApiKey: process.env.EULERSTREAM_API_KEY
-    });
+    const connection = criarConexao
+      ? criarConexao(dono)
+      : new ConnectionClass(dono, { signApiKey: process.env.EULERSTREAM_API_KEY });
     currentConnection = connection;
 
     connection.connect().then(state => {
@@ -694,6 +701,11 @@ function criarLive({ dono, db, emitir }) {
 
       const eu = anfitrioes.find(souEu);
       if (eu) meuUserId = eu.userId;
+
+      // O linkMicBattle TAMBÉM traz os exércitos, e é ele quem define o
+      // meuUserId. Preencher aqui resolve a ordem de chegada de uma vez.
+      aproveitarExercitoGuardado();
+      guardarContribuintes(data);
 
       if (acao === BATALHA_ABRIU) {
         const times = timesDaBatalha(data);
@@ -1164,10 +1176,11 @@ function criarLive({ dono, db, emitir }) {
     // Sem cookie de ninguém: `getJsonObjectFromWebcastApi` assina pelo Euler,
     // o mesmo caminho que o conector já usa pra abrir o socket.
     const CAMINHOS_DO_PREMIO = [
-      // o mais provável: o print tem campos do dono da sala (visible_score,
-      // top_fans, with_ecommerce_permission) junto do card_award_name
+      // Primeiro o room/info/: é o do print (visible_score, top_fans,
+      // with_ecommerce_permission são campos dele) E é o único que o conector
+      // busca SEM assinatura — ou seja, o único garantidamente de graça.
       'room/info/',
-      // e estes são os candidatos de PK, caso o item more num bloco próprio
+      // os outros são palpite, e podem exigir assinatura
       'linkmic/battle_info/',
       'ranklist/online_audience/'
     ];
@@ -1194,6 +1207,27 @@ function criarLive({ dono, db, emitir }) {
       return achados;
     }
 
+    // SEM ASSINAR PRIMEIRO. O conector busca o room/info/ com signRequest
+    // false, e só o gift/list/ com true — ou seja, o caminho mais provável de
+    // ter o item nunca precisou de assinatura. A sonda pedia tudo assinado,
+    // o Euler cobrou o plano Business, e eu reportei como se fosse o TikTok
+    // exigindo. Era eu forçando.
+    //
+    // A assinatura só entra se a chamada limpa for recusada por autenticação.
+    async function pedir(cliente, caminho) {
+      const params = { ...(cliente.clientParams || {}), room_id: cliente.roomId };
+      try {
+        return await cliente.getJsonObjectFromWebcastApi(caminho, params, false);
+      } catch (e) {
+        const recado = (e && e.message) || '';
+        // recusa por falta de assinatura: aí sim vale tentar assinado
+        if (!/sign|403|401|unauthor/i.test(recado)) throw e;
+        registrarDiagnostico('premio',
+          `  HTTP ${caminho}: sem assinatura nao passou (${recado.slice(0, 60)}), tentando assinado`);
+        return await cliente.getJsonObjectFromWebcastApi(caminho, params, true);
+      }
+    }
+
     async function perguntarAoHttp(quem, rodada) {
       if (sondasHttp >= LIMITE_SONDA_HTTP) return;
       const cliente = connection && connection.webClient;
@@ -1208,10 +1242,7 @@ function criarLive({ dono, db, emitir }) {
         if (sondasHttp >= LIMITE_SONDA_HTTP) return;
         sondasHttp++;
         try {
-          const resposta = await cliente.getJsonObjectFromWebcastApi(caminho, {
-            ...(cliente.clientParams || {}),
-            room_id: cliente.roomId
-          }, true);
+          const resposta = await pedir(cliente, caminho);
 
           const achados = caminhosComItem(resposta);
           const bruto = JSON.stringify(resposta);
@@ -1226,8 +1257,21 @@ function criarLive({ dono, db, emitir }) {
               'nenhum campo de carta');
           }
         } catch (e) {
+          const recado = (e && e.message) || '';
+          // O plano do Euler assina o websocket de graça mas cobra pra assinar
+          // chamada à API. Isso não melhora tentando de novo: desliga a sonda
+          // e diz o porquê UMA vez, em vez de repetir 12 linhas por prêmio.
+          if (/Business plan|requires a .*plan/i.test(recado)) {
+            registrarDiagnostico('premio',
+              'sonda HTTP DESLIGADA: o Euler exige plano Business pra assinar ' +
+              'chamada à API do TikTok. O item do prêmio vem por aí (confirmado ' +
+              'por um site que consegue), mas a assinatura é paga. O websocket ' +
+              'continua de graça e não muda nada.');
+            sondasHttp = LIMITE_SONDA_HTTP;
+            return;
+          }
           registrarDiagnostico('premio',
-            `  HTTP ${caminho} (+${rodada}ms) falhou: ${e && e.message}`);
+            `  HTTP ${caminho} (+${rodada}ms) falhou: ${recado}`);
         }
       }
     }
@@ -1477,23 +1521,69 @@ function criarLive({ dono, db, emitir }) {
       console.log(`[POWERUP] ${rotulo} :: ${(json || '').slice(0, 2000)}`);
     });
 
-    // Mantém a lista de contribuintes do nosso lado. Fica separado da sonda de
-    // baixo porque a sonda tem teto de logs e isto precisa rodar sempre.
-    connection.on('linkMicArmies', data => {
-      if (myId !== activeConnectionId) return;
-      if (!meuUserId) return;
+    // ---------- QUEM É DO NOSSO LADO ----------
+    // O prêmio do PK não diz de que lado a pessoa é. Quem diz é o exército —
+    // e ele vem em DOIS eventos, em formatos diferentes:
+    //
+    //   linkMicArmies -> armies é um MAPA   { anfitriao: { userArmies } }
+    //   linkMicBattle -> armies é uma LISTA [ { key, value: { userArmies } } ]
+    //
+    // Ler os dois não é redundância: é o conserto de um prêmio perdido em
+    // produção (21/09 02:31). O Armies chegou às 02:31:18, o Battle às
+    // 02:31:22 — e é o Battle que define quem somos. O Armies foi descartado
+    // por chegar cedo demais, e o prêmio das 02:31:24 caiu como "lista vazia".
+    // O prêmio sai quando a batalha ACABA, que é justo quando o Armies para
+    // de chegar; numa reconexão no meio da batalha isso se repetiria sempre.
+    function exercitoDoAnfitriao(armies, anfitriao) {
+      if (!armies || !anfitriao) return null;
+      if (Array.isArray(armies)) {
+        const achado = armies.find(e => String(e?.key || '') === String(anfitriao));
+        return achado?.value || null;
+      }
+      return armies[String(anfitriao)] || null;
+    }
+
+    // Devolve quantos entraram, pra quem chama poder dizer se valeu.
+    function guardarContribuintes(data) {
+      if (!meuUserId) {
+        // Ainda não sabemos quem somos: guarda pra quando souber, em vez de
+        // jogar fora. Era exatamente aqui que o exército se perdia.
+        exercitosPendentes = data;
+        return 0;
+      }
 
       const battleId = String(data?.battleId || '');
       if (battleId && battleId !== batalhaDosContribuintes) {
         batalhaDosContribuintes = battleId;
         meusContribuintes = new Set();          // batalha nova, lista nova
       }
-      // armies é um mapa anfitrião -> exército. O nosso é o do meuUserId.
-      const meu = (data?.armies || {})[String(meuUserId)];
+
+      const meu = exercitoDoAnfitriao(data?.armies, meuUserId);
+      let entraram = 0;
       (meu?.userArmies || []).forEach(ua => {
         const id = String(ua?.userIdStr || ua?.userId || '');
-        if (id) meusContribuintes.add(id);
+        if (id && !meusContribuintes.has(id)) { meusContribuintes.add(id); entraram++; }
       });
+      return entraram;
+    }
+
+    // Chamado assim que o meuUserId fica conhecido.
+    function aproveitarExercitoGuardado() {
+      if (!meuUserId || !exercitosPendentes) return;
+      const guardado = exercitosPendentes;
+      exercitosPendentes = null;
+      const entraram = guardarContribuintes(guardado);
+      if (entraram) {
+        registrarDiagnostico('powerup',
+          `contribuintes: ${entraram} do exército que tinha chegado antes de eu saber quem sou`);
+      }
+    }
+
+    // Mantém a lista de contribuintes do nosso lado. Fica separado da sonda de
+    // baixo porque a sonda tem teto de logs e isto precisa rodar sempre.
+    connection.on('linkMicArmies', data => {
+      if (myId !== activeConnectionId) return;
+      guardarContribuintes(data);
     });
 
     // ---------- SONDA 2: EFEITOS POR USUÁRIO (linkMicArmies) ----------
