@@ -154,6 +154,21 @@ function criarBanco(dono, opcoes) {
   // O pico ficou gravado com o acumulado de quem entrou (campo errado do
   // TikTok), e pico só cresce — então esse número errado nunca sairia sozinho.
   // Zera uma única vez pra ele voltar a ser medido pelo valor certo.
+  // As fantasmas que já entraram no histórico saem daqui. Uma vez só, e a
+  // marca fica gravada — o resetAll preserva as marcas de migração de
+  // propósito (ver o comentário lá).
+  if (!state.global.fantasmasLimpos) {
+    const antes = state.sessions.length;
+    state.sessions = state.sessions.filter(temSinalDeVida);
+    const foram = antes - state.sessions.length;
+    if (foram) {
+      console.log(`[${dono}] ${foram} "live" sem sinal de vida nenhum saiu do histórico ` +
+        '(conexão fantasma: zero espectador, zero interação).');
+    }
+    state.global.fantasmasLimpos = true;
+    dirty = true;
+  }
+
   if (!state.global.picoCorrigido) {
     state.global.peakViewers = 0;
     state.global.sessionPeakViewers = 0;
@@ -699,6 +714,43 @@ function criarBanco(dono, opcoes) {
     return true;
   }
 
+  // O mesmo conteúdo em TODAS as premiações pendentes e no prazo de alguém.
+  //
+  // Só as PENDENTES: as que já têm item (informado na mão ou deduzido de um
+  // uso que o TikTok confirmou) não são tocadas — senão um clique em lote
+  // apagaria informação melhor do que a que está entrando.
+  //
+  // Devolve quantas foram alteradas, pra tela poder dizer o que aconteceu em
+  // vez de só piscar.
+  function definirItensDasPendentes(uniqueId, itens) {
+    const ficha = state.cartas[uniqueId];
+    if (!ficha) return 0;
+
+    const limpo = {};
+    Object.entries(itens || {}).forEach(([tipo, qtd]) => {
+      const n = Math.floor(Number(qtd) || 0);
+      if (tipo && n > 0) limpo[tipo] = Math.min(n, 99);
+    });
+    if (!Object.keys(limpo).length) return 0;
+
+    const agora = Date.now();
+    let mexidas = 0;
+    ficha.ganhas.forEach(c => {
+      const pendente = !c.itens || !Object.keys(c.itens).length;
+      const noPrazo = agora - c.em < VALIDADE_CARTA_MS;
+      if (!pendente || !noPrazo) return;
+      c.itens = { ...limpo };
+      mexidas++;
+    });
+
+    if (mexidas) {
+      ficha.ultimaEm = agora;
+      dirty = true;
+      saveToDisk();
+    }
+    return mexidas;
+  }
+
   function getEstoqueCartas() {
     expirarCartas();
     const agora = Date.now();
@@ -795,7 +847,8 @@ function criarBanco(dono, opcoes) {
     // restart fazia o pico sumir sozinho no dia seguinte.
     const jaMigrado = {
       superfaRemarcado: state.global.superfaRemarcado,
-      picoCorrigido: state.global.picoCorrigido
+      picoCorrigido: state.global.picoCorrigido,
+      fantasmasLimpos: state.global.fantasmasLimpos
     };
     state.global = {
       totalDiamonds: 0, totalLikes: 0, totalComments: 0, totalFollows: 0, totalShares: 0,
@@ -911,6 +964,18 @@ function criarBanco(dono, opcoes) {
     dirty = true;
   }
 
+  // Uma sessão só conta como live se alguma coisa aconteceu nela. Os campos
+  // vêm do delta contra o retrato do começo, então "0 em tudo" quer dizer
+  // literalmente nada: nem um espectador o TikTok reportou.
+  function temSinalDeVida(s) {
+    return (s.peakViewers || 0) > 0
+      || (s.totalDiamonds || 0) > 0
+      || (s.totalLikes || 0) > 0
+      || (s.totalComments || 0) > 0
+      || (s.totalFollows || 0) > 0
+      || (s.totalShares || 0) > 0;
+  }
+
   function markLiveOnline() {
     const now = Date.now();
 
@@ -958,21 +1023,33 @@ function criarBanco(dono, opcoes) {
       const endedAt = Date.now();
       const durationSeconds = Math.floor((endedAt - snap.startedAt) / 1000);
 
-      // só registra no histórico lives com alguma duração mínima (evita "lixo"
-      // de reconexões picadas de poucos segundos)
-      if (durationSeconds >= 10) {
-        state.sessions.push({
-          id: snap.startedAt,
-          startedAt: snap.startedAt,
-          endedAt,
-          durationSeconds,
-          totalDiamonds: state.global.totalDiamonds - snap.totalDiamonds,
-          totalLikes: state.global.totalLikes - snap.totalLikes,
-          totalComments: state.global.totalComments - snap.totalComments,
-          totalFollows: state.global.totalFollows - snap.totalFollows,
-          totalShares: state.global.totalShares - snap.totalShares,
-          peakViewers: state.global.sessionPeakViewers || 0
-        });
+      const sessao = {
+        id: snap.startedAt,
+        startedAt: snap.startedAt,
+        endedAt,
+        durationSeconds,
+        totalDiamonds: state.global.totalDiamonds - snap.totalDiamonds,
+        totalLikes: state.global.totalLikes - snap.totalLikes,
+        totalComments: state.global.totalComments - snap.totalComments,
+        totalFollows: state.global.totalFollows - snap.totalFollows,
+        totalShares: state.global.totalShares - snap.totalShares,
+        peakViewers: state.global.sessionPeakViewers || 0
+      };
+
+      // Só entra no histórico o que teve SINAL DE VIDA.
+      //
+      // O filtro daqui era `durationSeconds >= 10`, e duração não é o sinal:
+      // apareceram "lives" de 1, 2 e 7 minutos com tudo zerado, em horários
+      // em que ninguém abriu live nenhuma. Toda vez que o conector consegue
+      // abrir a sala isto dispara — um deploy, um restart, uma sala que o
+      // TikTok aceita mas não está transmitindo. Cada um virava uma live.
+      //
+      // Uma live de verdade sempre tem pelo menos um espectador contado. Zero
+      // em TUDO, inclusive no pico, é conexão fantasma — e ela não é só feia
+      // na lista: ela entra na média por live, no melhor dia, no dia da
+      // semana e no horário, puxando todos pra baixo.
+      if (durationSeconds >= 10 && temSinalDeVida(sessao)) {
+        state.sessions.push(sessao);
         if (state.sessions.length > 200) state.sessions.shift(); // limite de segurança
         state.global.lastLiveDurationSeconds = durationSeconds;
       }
@@ -1552,7 +1629,7 @@ function criarBanco(dono, opcoes) {
   return {
     addLikes, addGift, addPowerUp, getRanking, getUserProfile, resetAll,
     registrarCartaGanha, registrarCartaUsada, getEstoqueCartas, VALIDADE_CARTA_MS,
-    definirItensDaPremiacao,
+    definirItensDaPremiacao, definirItensDasPendentes,
     getGlobalStats, updateViewerCount, addComment, addFollow, addShare,
     markLiveOnline, markLiveOffline, checkLevelUp, getTropa, limparTropa, getSessions,
     heartbeat,

@@ -252,12 +252,85 @@
     font-family: 'Rajdhani', sans-serif; font-weight: 700; font-size: 13.5px;
     padding: 10px 18px; border-radius: var(--r-pill); cursor: pointer;
     transition: color .15s ease, background .15s ease;
+    /* o Histórico é um link (leva pro Painel da Live) e os outros são botões:
+       sem isto ele saía sublinhado e desalinhado no meio dos irmãos.
+       (Sem escrever o nome da tag entre sinais de menor/maior aqui: dentro
+       do CSS o navegador ignora, mas confunde qualquer conferência de tags
+       que leia o arquivo cru.) */
+    text-decoration: none; display: inline-flex; align-items: center;
+    justify-content: center; text-align: center;
   }
   .tab-btn:hover { color: var(--ink); background: rgba(255,255,255,.04); }
   .tab-btn.is-active {
     background: var(--grad-fire); color: #2a1400;
     box-shadow: 0 4px 12px -6px rgba(255,122,26,.9);
   }
+
+  /* ---------- power-ups: explicação recolhida ---------- */
+  .pu-explica {
+    margin-bottom: 14px; border-radius: var(--r-md);
+    background: var(--card-2); border: 1px solid var(--line-soft);
+  }
+  .pu-explica summary {
+    cursor: pointer; padding: 11px 14px; font-size: 13.5px; font-weight: 700;
+    color: var(--gold); list-style: none;
+  }
+  .pu-explica summary::-webkit-details-marker { display: none; }
+  .pu-explica summary::before { content: '▸ '; }
+  .pu-explica[open] summary::before { content: '▾ '; }
+  .pu-explica p {
+    margin: 0 14px 11px; font-size: 13px; line-height: 1.55; color: var(--ink-dim);
+  }
+  .pu-explica em { color: var(--gold); font-style: normal; font-weight: 700; }
+
+  /* ---------- power-ups: busca, filtros e ordem ---------- */
+  .pu-ferramentas {
+    display: flex; flex-wrap: wrap; gap: 9px; align-items: center;
+    margin-bottom: 14px;
+  }
+  .pu-busca {
+    flex: 1 1 180px; min-width: 150px;
+    padding: 9px 13px; border-radius: var(--r-pill);
+    border: 1px solid var(--line); background: var(--card-2);
+    font-family: 'Rajdhani', sans-serif; font-weight: 600; font-size: 14px;
+    color: var(--ink); outline: none;
+  }
+  .pu-busca::placeholder { color: var(--ink-faint); }
+  .pu-busca:focus { border-color: var(--gold); }
+  .pu-chips { display: flex; gap: 5px; flex-wrap: wrap; }
+  .pu-chip {
+    border: 1px solid var(--line); background: var(--card-2); cursor: pointer;
+    font-family: 'Rajdhani', sans-serif; font-weight: 700; font-size: 12.5px;
+    color: var(--ink-faint); padding: 8px 13px; border-radius: var(--r-pill);
+    transition: color .15s, border-color .15s, background .15s;
+  }
+  .pu-chip:hover { color: var(--ink); }
+  .pu-chip.ligado { background: var(--grad-fire); color: #2a1400; border-color: transparent; }
+  .pu-chip .conta { opacity: .75; font-weight: 600; }
+
+  /* ---------- power-ups: etiquetas que sobram ---------- */
+  .pu-mais {
+    border: 1px dashed var(--line); background: none; cursor: pointer;
+    font-family: 'Rajdhani', sans-serif; font-weight: 700; font-size: 12px;
+    color: var(--ink-faint); padding: 5px 11px; border-radius: var(--r-pill);
+  }
+  .pu-mais:hover { color: var(--gold); border-color: var(--gold); }
+
+  /* ---------- power-ups: barra de urgência ---------- */
+  .pu-barra {
+    width: 100%; height: 3px; border-radius: 2px; margin-top: 6px;
+    background: var(--card-3); overflow: hidden;
+  }
+  .pu-barra span { display: block; height: 100%; border-radius: 2px; background: var(--grad-fire); }
+  .pu-barra.urgente span { background: linear-gradient(90deg, var(--ember2), var(--ember1)); }
+
+  /* ---------- power-ups: o lote no editor ---------- */
+  .pu-ed-lote {
+    margin: 0 0 12px; padding: 11px 13px; border-radius: var(--r-sm);
+    background: rgba(255,176,58,.07); border: 1px solid rgba(255,176,58,.24);
+    font-size: 13px; color: var(--ink-dim); line-height: 1.5;
+  }
+  .pu-ed-lote b { color: var(--gold); }
 
   .tab-panel { display: flex; flex-direction: column; gap: 22px; }
   .tab-panel[hidden] { display: none; }
@@ -266,7 +339,6 @@
   /* vazio da aba: aparece só quando a seção irmã está escondida pelo script */
   .tab-empty { display: none; text-align: center; color: var(--ink-faint); font-size: 14.5px; padding: 46px 24px; }
   #battleSection[style*="none"] + .tab-empty,
-  #historySection[style*="none"] + .tab-empty { display: block; }
 
   /* ========================================================================
      BANNER DE STATUS
@@ -286,6 +358,11 @@
   .stats-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   @media (min-width: 640px)  { .stats-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
   @media (min-width: 1080px) { .stats-grid { grid-template-columns: repeat(8, minmax(0, 1fr)); } }
+  /* A grade de 8 colunas é dos "números da live", que são oito. O resumo dos
+     power-ups tem quatro cartões e cada um leva uma linha de apoio embaixo —
+     em 1/8 da largura o rótulo quebrava em três linhas. */
+  .pu-resumo { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  @media (min-width: 720px) { .pu-resumo { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; } }
 
   .stats-card {
     background: var(--card-2); border: 1px solid var(--line);
@@ -296,6 +373,12 @@
   .stats-card:hover { border-color: rgba(255,176,58,.35); }
   .stats-card .num { font-family: 'Bungee', sans-serif; font-size: 19px; line-height: 1.1; color: var(--gold); }
   .stats-card .lbl { font-size: 10.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint); }
+  /* a linha de apoio do cartão: é ela que explica o número de cima, tipo
+     "19 identificadas · 56 a informar" embaixo de "cartas no prazo" */
+  .stats-card .pu-pe {
+    margin-top: 5px; font-size: 11.5px; font-weight: 600; line-height: 1.35;
+    color: var(--ink-faint); opacity: .85;
+  }
 
   /* ========================================================================
      PÓDIO
@@ -696,9 +779,11 @@
         <button class="tab-btn is-active" data-tab="ranking">🏆 Ranking</button>
         <button class="tab-btn" data-tab="batalhas">⚔️ Batalhas</button>
         <button class="tab-btn" data-tab="powerups">🎴 Power-ups</button>
-        <!-- este é o #toggleHistoryBtn original: o handler dele (abrir + carregar
-             o histórico) continua valendo, só mudou de lugar e virou aba -->
-        <button class="tab-btn" id="toggleHistoryBtn" data-tab="historico"><span>📜 Histórico</span></button>
+        <!-- Não é uma aba: leva pro Painel da Live, onde o histórico tem
+             gráfico, melhores dias, recordes e a tabela inteira. Aqui isto já
+             foi uma lista simples — e ter as duas coisas chamadas "Histórico"
+             fazia a pessoa clicar numa esperando a outra. -->
+        <a class="tab-btn" href="/painel.html#historico"><span>📜 Histórico</span></a>
       </nav>
 
       <!-- ===== TELA: RANKING ===== -->
@@ -770,15 +855,27 @@
             <span class="panel-meta">Validade de 5 dias</span>
           </div>
 
-          <div class="aviso-estimativa">
-            <strong>O TikTok não manda quais cartas a premiação deu.</strong>
-            Ele avisa <em>quem</em> foi premiado e <em>quando</em> (e o prazo de 5
-            dias de cada uma) — o resto ele só mostra no painel dele. Então quando
-            aparecer <em>toque pra informar</em>, escolhe os itens ali e o site cuida
-            do resto: desconta sozinho quando a pessoa joga e vence em 5 dias.
-          </div>
+          <!-- O aviso era permanente e comprido. Quem usa a tela todo dia já
+               sabe; quem chegou agora abre uma vez. -->
+          <details class="pu-explica">
+            <summary>Por que preciso informar as cartas?</summary>
+            <p>
+              O TikTok avisa <em>quem</em> foi premiado e <em>quando</em> — mas não
+              diz <em>qual carta</em> a premiação deu. Esse pedaço ele só mostra no
+              painel dele.
+            </p>
+            <p>
+              Você não precisa informar tudo: quando a pessoa <strong>joga</strong> a
+              carta, o TikTok diz qual é, e o site preenche a premiação sozinho. O
+              que sobra em <em>a informar</em> é o que ninguém jogou ainda.
+            </p>
+            <p>
+              Depois de informado, o resto é automático: desconta quando a pessoa
+              joga e vence em 5 dias.
+            </p>
+          </details>
 
-          <div class="stats-grid" id="powerupResumo"></div>
+          <div class="stats-grid pu-resumo" id="powerupResumo"></div>
           <div class="pu-cartas pu-totais" id="powerupTotais"></div>
         </section>
 
@@ -789,24 +886,27 @@
             <h2 class="panel-title">Quem tem carta</h2>
             <span class="panel-meta" id="powerupContagem"></span>
           </div>
+
+          <div class="pu-ferramentas">
+            <input type="search" id="puBusca" class="pu-busca" placeholder="Buscar por nome ou @"
+                   autocomplete="off" spellcheck="false">
+            <div class="pu-chips" id="puFiltros" role="group" aria-label="Filtrar">
+              <button class="pu-chip ligado" data-filtro="todos">Todos</button>
+              <button class="pu-chip" data-filtro="podem">Podem jogar</button>
+              <button class="pu-chip" data-filtro="pendentes">A informar</button>
+              <button class="pu-chip" data-filtro="vencendo">Vencendo em 24h</button>
+            </div>
+            <div class="pu-chips" id="puOrdem" role="group" aria-label="Ordenar">
+              <button class="pu-chip ligado" data-ordem="urgencia">↑ Vence antes</button>
+              <button class="pu-chip" data-ordem="cartas">Mais cartas</button>
+              <button class="pu-chip" data-ordem="nome">A–Z</button>
+            </div>
+          </div>
+
           <div class="list" id="powerupList">
             <div class="empty">Esperando alguém ganhar um power-up...</div>
           </div>
         </section>
-
-      </div>
-
-      <!-- ===== TELA: HISTÓRICO ===== -->
-      <div class="tab-panel" data-panel="historico" hidden>
-
-        <section class="panel" id="historySection" style="display:none;">
-          <div class="history-toggle" id="historyToggleRow">
-            <h2 class="panel-title">Histórico de lives · até o último reset</h2>
-            <span class="caret">▾</span>
-          </div>
-          <div class="history-list" id="historyList"></div>
-        </section>
-        <div class="panel tab-empty">Nenhuma live finalizada ainda.</div>
 
       </div>
 
@@ -1224,51 +1324,9 @@
   socket.on('battle_stats', renderBattles);
   socket.on('battle_live', renderBattleLive);
 
-  // ---------- HISTÓRICO DE LIVES ----------
-  const historySection = document.getElementById('historySection');
-  const historyToggleRow = document.getElementById('historyToggleRow');
-  const historyListEl = document.getElementById('historyList');
-  const toggleHistoryBtn = document.getElementById('toggleHistoryBtn');
-  let historyLoaded = false;
-  let historyOpen = false;
-
-  function setHistoryOpen(open) {
-    historyOpen = open;
-    historySection.style.display = 'block';
-    historyToggleRow.classList.toggle('open', open);
-    historyListEl.classList.toggle('show', open);
-    if (open) {
-      historySection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      loadHistory();
-    }
-  }
-
-  toggleHistoryBtn.addEventListener('click', () => setHistoryOpen(!historyOpen));
-  historyToggleRow.addEventListener('click', () => setHistoryOpen(!historyOpen));
-
-  async function loadHistory() {
-    if (historyLoaded) return;
-    try {
-      const res = await fetch('/api/sessions');
-      const sessions = await res.json();
-      historyLoaded = true;
-      if (!sessions.length) {
-        historyListEl.innerHTML = '<div class="modal-empty">Nenhuma live finalizada ainda.</div>';
-        return;
-      }
-      historyListEl.innerHTML = sessions.map(s => {
-        const data = new Date(s.startedAt).toLocaleString('pt-BR');
-        return `
-          <div class="history-item">
-            <div class="when">${data} · ⏱ ${formatUptime(s.durationSeconds)}</div>
-            <div class="nums">💎 <span class="dinheiro">${s.totalDiamonds.toLocaleString('pt-BR')}</span> · ❤️ ${s.totalLikes.toLocaleString('pt-BR')} · 💬 ${s.totalComments.toLocaleString('pt-BR')} · ➕ ${s.totalFollows.toLocaleString('pt-BR')} · 👀 pico ${s.peakViewers.toLocaleString('pt-BR')}</div>
-          </div>
-        `;
-      }).join('');
-    } catch (e) {
-      historyListEl.innerHTML = '<div class="modal-empty">Erro ao carregar histórico.</div>';
-    }
-  }
+  // O histórico saiu daqui: virou o Painel da Live, que tem gráfico,
+  // melhores dias, recordes e a tabela completa. A aba "📜 Histórico" lá em
+  // cima é um link pra lá.
 
   // ---------- MODAL DE PERFIL ----------
   async function openProfile(uniqueId) {
@@ -1463,12 +1521,13 @@
   // .tab-panel está visível. Quem decide se a seção tem conteúdo continua
   // sendo o script original.
   (function () {
-    const botoes = document.querySelectorAll('.tab-btn');
+    // button, e nao .tab-btn: o Histórico virou um <a> que leva pro Painel da
+    // Live. Ele não tem data-tab, e entrar aqui faria abrir(undefined)
+    // esconder todas as telas antes de o navegador sair da página.
+    const botoes = document.querySelectorAll('button.tab-btn');
     const telas  = document.querySelectorAll('.tab-panel');
     const battleHistory   = document.getElementById('battleHistory');
     const battleHistToggle= document.getElementById('battleHistToggle');
-    const historyList     = document.getElementById('historyList');
-    const historyToggleRow= document.getElementById('historyToggleRow');
 
     function abrir(nome) {
       botoes.forEach(b => b.classList.toggle('is-active', b.dataset.tab === nome));
@@ -1480,8 +1539,7 @@
       // Com tela própria, não faz sentido a lista nascer fechada. Em vez de
       // duplicar a lógica, clica no próprio toggle do script original — que é
       // quem também dispara o fetch do histórico.
-      if (nome === 'batalhas'  && !battleHistory.classList.contains('show')) battleHistToggle.click();
-      if (nome === 'historico' && !historyList.classList.contains('show'))   historyToggleRow.click();
+      if (nome === 'batalhas' && !battleHistory.classList.contains('show')) battleHistToggle.click();
     }
 
     botoes.forEach(b => b.addEventListener('click', () => abrir(b.dataset.tab)));
@@ -1565,6 +1623,58 @@
     let ultimo = [];
     let recebidoEm = Date.now();
 
+    // busca, filtro e ordem vivem aqui: com 25 pessoas e crescendo, rolar a
+    // lista inteira atrás de alguém deixou de funcionar
+    let busca = '';
+    let filtro = 'todos';
+    let ordem = 'urgencia';
+    const abertos = new Set();   // quem pediu pra ver TODAS as etiquetas
+
+    const DIA_MS = 24 * 3600000;
+    const VALIDADE_MS = 5 * DIA_MS;
+    const ETIQUETAS_VISIVEIS = 6;
+
+    // O que está pendente e ainda no prazo. A pendente vencida não tem mais o
+    // que informar — informar ela não devolveria carta nenhuma.
+    const pendentesNoPrazo = (p, decorrido) =>
+      (p.cartas || []).filter(c => c.pendente && (c.expiraEmMs - decorrido) > 0).length;
+
+    function filtrar(lista, decorrido) {
+      const termo = busca.trim().toLowerCase();
+      let saida = lista;
+
+      if (termo) {
+        saida = saida.filter(p =>
+          String(p.nickname || '').toLowerCase().includes(termo) ||
+          String(p.handle || '').toLowerCase().includes(termo) ||
+          String(p.uniqueId || '').toLowerCase().includes(termo));
+      }
+
+      if (filtro === 'podem') saida = saida.filter(p => p.premiacoes > 0);
+      else if (filtro === 'pendentes') saida = saida.filter(p => pendentesNoPrazo(p, decorrido) > 0);
+      else if (filtro === 'vencendo') {
+        saida = saida.filter(p => {
+          if (!p.premiacoes || p.proximaExpiraEmMs === null) return false;
+          const falta = p.proximaExpiraEmMs - decorrido;
+          return falta > 0 && falta < DIA_MS;
+        });
+      }
+
+      const naMao = p => Object.values(p.estoque || {}).reduce((a, b) => a + b, 0);
+      const ordenar = {
+        // quem não tem nada no prazo vai pro fim: ordenar por urgência com
+        // `null` no meio da lista misturava quem não tem carta com quem tem
+        urgencia: (a, b) => {
+          const va = a.premiacoes && a.proximaExpiraEmMs !== null ? a.proximaExpiraEmMs : Infinity;
+          const vb = b.premiacoes && b.proximaExpiraEmMs !== null ? b.proximaExpiraEmMs : Infinity;
+          return va - vb || b.premiacoes - a.premiacoes;
+        },
+        cartas: (a, b) => naMao(b) - naMao(a) || b.premiacoes - a.premiacoes,
+        nome: (a, b) => String(a.nickname || '').localeCompare(String(b.nickname || ''), 'pt-BR')
+      };
+      return [...saida].sort(ordenar[ordem] || ordenar.urgencia);
+    }
+
     function render() {
       // desconta o tempo que passou desde que o servidor mandou, pro prazo não
       // ficar congelado com a aba aberta
@@ -1584,28 +1694,86 @@
       const totalCartas = Object.values(porItem).reduce((a, b) => a + b, 0);
       const pendentes = ultimo.reduce((t, pe) => t + (pe.pendentes || 0), 0);
 
-      resumoEl.innerHTML = `
-        <div class="stats-card"><div class="num">${totalCartas}</div><div class="lbl">🎴 Cartas em estoque</div></div>
-        <div class="stats-card"><div class="num">${podemJogar}</div><div class="lbl">Podem jogar</div></div>
-        <div class="stats-card"><div class="num">${usadas}</div><div class="lbl">Cartas jogadas</div></div>
-        <div class="stats-card"><div class="num">${pendentes}</div><div class="lbl">A informar</div></div>
-      `;
+      // Premiações VÁLIDAS somadas, e quantas delas ainda não têm item.
+      // Os dois números juntos explicam o que antes parecia contradição:
+      // "0 cartas em estoque" com "19 podem jogar" — o estoque era zero
+      // porque ninguém tinha informado nada, não porque não havia carta.
+      const premiacoesValidas = ultimo.reduce((t, p) => t + p.premiacoes, 0);
+      const pendentesValidas = ultimo.reduce((t, p) => t + pendentesNoPrazo(p, decorrido), 0);
+      const identificadas = Math.max(0, premiacoesValidas - pendentesValidas);
+
+      // o que vence nas próximas 24h — a única coisa aqui com hora marcada
+      const vencendo = ultimo.filter(p => {
+        if (!p.premiacoes || p.proximaExpiraEmMs === null) return false;
+        const falta = p.proximaExpiraEmMs - decorrido;
+        return falta > 0 && falta < DIA_MS;
+      }).length;
+
+      const cartao = (num, rotulo, pe, classe) =>
+        `<div class="stats-card${classe ? ' ' + classe : ''}">`
+        + `<div class="num">${num}</div><div class="lbl">${rotulo}</div>`
+        + (pe ? `<div class="pu-pe">${pe}</div>` : '') + '</div>';
+
+      resumoEl.innerHTML = [
+        cartao(podemJogar, 'Podem jogar agora',
+               pessoas ? `de ${pessoas} premiado${pessoas > 1 ? 's' : ''}` : ''),
+        cartao(premiacoesValidas, '🎴 Cartas no prazo',
+               pendentesValidas
+                 ? `${identificadas} identificada${identificadas === 1 ? '' : 's'} · ${pendentesValidas} a informar`
+                 : 'todas identificadas'),
+        cartao(vencendo, '⏳ Vencendo em 24h', vencendo ? 'chame essa gente' : 'nada correndo'),
+        cartao(usadas, 'Já jogaram', expiradas ? `${expiradas} venceram sem uso` : '')
+      ].join('');
 
       // linha com o total de cada item
       const resumoItens = Object.entries(porItem).sort((a, b) => b[1] - a[1])
         .map(([t, n]) => `<span class="pu-uso">${NOME_DO_TIPO[t] || t} <b>${n}</b></span>`).join('');
+      // Estoque vazio tem duas causas, e elas não querem dizer a mesma coisa:
+      // ou ninguém informou nada, ou tudo que foi informado já foi jogado.
+      const vazioPorque = identificadas > 0
+        ? 'tudo que foi identificado já foi jogado'
+        : (pendentesValidas ? 'nada identificado ainda — informe as pendentes' : '');
       totaisEl.innerHTML = resumoItens
-        ? `<span class="pu-rotulo">no total</span>${resumoItens}`
-        : '';
+        ? `<span class="pu-rotulo">na mão da tropa</span>${resumoItens}`
+        : (vazioPorque
+            ? `<span class="pu-rotulo">na mão da tropa</span><span class="pu-uso">${vazioPorque}</span>`
+            : '');
 
-      contagemEl.textContent = pessoas ? `${podemJogar} com premiação válida · ${pessoas} no total` : '';
+      // a contagem dos filtros vai no próprio botão: escolher às cegas e cair
+      // numa lista vazia é pior que não ter filtro
+      const contas = {
+        todos: ultimo.length,
+        podem: podemJogar,
+        pendentes: ultimo.filter(p => pendentesNoPrazo(p, decorrido) > 0).length,
+        vencendo
+      };
+      document.querySelectorAll('#puFiltros [data-filtro]').forEach(b => {
+        const n = contas[b.dataset.filtro];
+        const base = b.dataset.rotulo || (b.dataset.rotulo = b.textContent.trim());
+        b.innerHTML = `${base} <span class="conta">${n}</span>`;
+        b.classList.toggle('ligado', filtro === b.dataset.filtro);
+      });
+      document.querySelectorAll('#puOrdem [data-ordem]').forEach(b => {
+        b.classList.toggle('ligado', ordem === b.dataset.ordem);
+      });
 
       if (!ultimo.length) {
+        contagemEl.textContent = '';
         listaEl.innerHTML = '<div class="empty">Ninguém foi premiado ainda.</div>';
         return;
       }
 
-      listaEl.innerHTML = ultimo.map(p => {
+      const visiveis = filtrar(ultimo, decorrido);
+      contagemEl.textContent = visiveis.length === ultimo.length
+        ? `${podemJogar} com premiação válida · ${pessoas} no total`
+        : `mostrando ${visiveis.length} de ${pessoas}`;
+
+      if (!visiveis.length) {
+        listaEl.innerHTML = '<div class="empty">Ninguém aqui com esse filtro.</div>';
+        return;
+      }
+
+      listaEl.innerHTML = visiveis.map(p => {
         const restante = p.proximaExpiraEmMs === null ? null : Math.max(0, p.proximaExpiraEmMs - decorrido);
         const urgente = restante !== null && restante < 24 * 3600000;
 
@@ -1615,21 +1783,42 @@
           .join('');
         const totalEstoque = Object.values(p.estoque || {}).reduce((a, b) => a + b, 0);
 
-        // uma etiqueta por premiação; a pendente é clicável pra informar
-        const premios = (p.cartas || []).map(c => {
+        // Uma etiqueta por premiação, a pendente clicável pra informar.
+        // Quem tem 15 premiações virava 15 etiquetas numa linha só — agora
+        // mostra as mais urgentes e o resto abre sob demanda.
+        const cartas = p.cartas || [];
+        const tudoAberto = abertos.has(String(p.uniqueId));
+        const mostrar = tudoAberto ? cartas : cartas.slice(0, ETIQUETAS_VISIVEIS);
+        const escondidas = cartas.length - mostrar.length;
+
+        const premios = mostrar.map(c => {
           const falta = Math.max(0, c.expiraEmMs - decorrido);
-          const urge = falta < 24 * 3600000;
+          const urge = falta < DIA_MS;
           if (c.pendente) {
-            return `<button class="pu-carta pu-pendente" data-uid="${esc2(p.uniqueId)}" data-em="${c.ganhaEm}">
+            return `<button class="pu-carta pu-pendente ${urge ? 'urgente' : ''}" data-uid="${esc2(p.uniqueId)}" data-em="${c.ganhaEm}">
                       <b>${curto(falta)}</b> <i class="pu-itens pu-aberto">toque pra informar</i>
                     </button>`;
           }
           const itens = Object.entries(c.itens)
             .map(([t, n]) => `${ICONE_DO_TIPO[t] || '🎴'}${n > 1 ? ' ×' + n : ''}`).join(' ');
-          return `<button class="pu-carta ${urge ? 'urgente' : ''}" data-uid="${esc2(p.uniqueId)}" data-em="${c.ganhaEm}">
-                    <b>${curto(falta)}</b> <i class="pu-itens">${itens}</i>
+          // `deduzido` = o item veio do uso, que o TikTok confirmou; vale
+          // dizer, senão parece igual ao que alguém marcou no chute
+          const marca = c.deduzido ? ' title="o TikTok confirmou pelo uso"' : '';
+          return `<button class="pu-carta ${urge ? 'urgente' : ''}" data-uid="${esc2(p.uniqueId)}" data-em="${c.ganhaEm}"${marca}>
+                    <b>${curto(falta)}</b> <i class="pu-itens">${itens}${c.deduzido ? ' ✓' : ''}</i>
                   </button>`;
-        }).join('');
+        }).join('') + (escondidas > 0
+          ? `<button class="pu-mais" data-abrir="${esc2(p.uniqueId)}">+${escondidas}</button>`
+          : (tudoAberto && cartas.length > ETIQUETAS_VISIVEIS
+              ? `<button class="pu-mais" data-abrir="${esc2(p.uniqueId)}">mostrar menos</button>`
+              : ''));
+
+        // quanto falta, em barra: o número já está escrito, a barra é pra
+        // bater o olho e ver quem está no fim do prazo
+        const fracao = restante === null ? 0 : Math.max(0, Math.min(1, restante / VALIDADE_MS));
+        const barra = p.premiacoes
+          ? `<div class="pu-barra ${urgente ? 'urgente' : ''}"><span style="width:${(fracao * 100).toFixed(1)}%"></span></div>`
+          : '';
 
         const usos = Object.entries(p.usos || {})
           .sort((a, b) => b[1] - a[1])
@@ -1649,6 +1838,7 @@
             <div class="pu-dir">
               <span class="pu-mao ${totalEstoque ? '' : 'vazio'}">${totalEstoque}</span>
               <span class="pu-prazo ${urgente ? 'urgente' : ''}">${p.premiacoes ? prazo(restante) : 'nada no prazo'}</span>
+              ${barra}
             </div>
           </div>
         `;
@@ -1685,6 +1875,20 @@
                   <button class="pu-ed-btn" data-acao="mais" data-tipo="${t}">+</button>
                 </div>`;
       }).join('');
+      // Quantas pendentes no prazo esta pessoa ainda tem. Quem joga luva ganha
+      // luva: as pendências de uma mesma pessoa são quase sempre a mesma
+      // carta, e marcar uma a uma é o que tornava isso inviável.
+      const decorrido = Date.now() - recebidoEm;
+      const pendentes = pendentesNoPrazo(pessoa, decorrido);
+      const escolheu = Object.keys(editando.itens).length > 0;
+
+      const lote = pendentes > 1
+        ? `<div class="pu-ed-lote">
+             Essa pessoa tem <b>${pendentes}</b> premiações sem item.
+             Se todas vieram com a mesma carta, marque acima e use o botão de baixo.
+           </div>`
+        : '';
+
       editorEl.hidden = false;
       editorEl.innerHTML = `
         <div class="pu-ed-topo">
@@ -1692,9 +1896,14 @@
           <span>o que veio nessa premiação?</span>
           <button class="pu-ed-fechar" data-acao="fechar">×</button>
         </div>
+        ${lote}
         <div class="pu-ed-grid">${linhas}</div>
         <div class="pu-ed-pe">
-          <button class="app-btn app-btn--primary" data-acao="salvar">Salvar</button>
+          <button class="app-btn app-btn--primary" data-acao="salvar">Salvar só esta</button>
+          ${pendentes > 1
+            ? `<button class="app-btn" data-acao="lote"${escolheu ? '' : ' disabled'}>`
+              + `Aplicar às ${pendentes} pendentes</button>`
+            : ''}
           <button class="app-btn" data-acao="fechar">Cancelar</button>
         </div>
       `;
@@ -1714,6 +1923,35 @@
         if (novo) editando.itens[t] = novo; else delete editando.itens[t];
         const pessoa = ultimo.find(x => String(x.uniqueId) === String(editando.uniqueId));
         if (pessoa) renderEditor(pessoa);
+        return;
+      }
+
+      if (acao === 'lote') {
+        const pessoa = ultimo.find(x => String(x.uniqueId) === String(editando.uniqueId));
+        const quantas = pessoa ? pendentesNoPrazo(pessoa, Date.now() - recebidoEm) : 0;
+        const oQue = Object.entries(editando.itens)
+          .map(([t, n]) => (NOME_DO_TIPO[t] || t) + (n > 1 ? ' ×' + n : '')).join(', ');
+        // confirmação porque isto escreve em várias de uma vez: desfazer
+        // significaria abrir uma por uma, que é justamente o que se evita aqui
+        if (!confirm(`Marcar as ${quantas} premiações pendentes de ${pessoa.nickname} como "${oQue}"?`)) return;
+
+        btn.disabled = true;
+        btn.textContent = 'Aplicando...';
+        try {
+          const res = await fetch('/api/powerup/itens-pendentes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ uniqueId: editando.uniqueId, itens: editando.itens })
+          });
+          const dados = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(dados.error || 'falhou');
+          editando = null;
+          renderEditor();
+        } catch (err) {
+          btn.disabled = false;
+          btn.textContent = `Aplicar às ${quantas} pendentes`;
+          alert(err.message || 'Não deu pra aplicar.');
+        }
         return;
       }
 
@@ -1740,10 +1978,49 @@
     });
 
     listaEl.addEventListener('click', e => {
+      const mais = e.target.closest('[data-abrir]');
+      if (mais) {
+        const id = String(mais.dataset.abrir);
+        if (abertos.has(id)) abertos.delete(id); else abertos.add(id);
+        render();
+        return;
+      }
       const alvo = e.target.closest('.pu-carta[data-uid]');
       if (!alvo) return;
       abrirEditor(alvo.dataset.uid, alvo.dataset.em);
     });
+
+    // ---------- busca, filtro e ordem ----------
+    const buscaEl = document.getElementById('puBusca');
+    if (buscaEl) {
+      let timer = null;
+      buscaEl.addEventListener('input', () => {
+        // espera a pessoa parar de digitar: redesenhar 25 linhas a cada tecla
+        // faz a lista tremer debaixo do dedo
+        clearTimeout(timer);
+        timer = setTimeout(() => { busca = buscaEl.value; render(); }, 150);
+      });
+    }
+
+    const filtrosEl = document.getElementById('puFiltros');
+    if (filtrosEl) {
+      filtrosEl.addEventListener('click', e => {
+        const b = e.target.closest('[data-filtro]');
+        if (!b) return;
+        filtro = b.dataset.filtro;
+        render();
+      });
+    }
+
+    const ordemEl = document.getElementById('puOrdem');
+    if (ordemEl) {
+      ordemEl.addEventListener('click', e => {
+        const b = e.target.closest('[data-ordem]');
+        if (!b) return;
+        ordem = b.dataset.ordem;
+        render();
+      });
+    }
 
     socket.on('powerup_estoque', dados => {
       ultimo = Array.isArray(dados) ? dados : [];

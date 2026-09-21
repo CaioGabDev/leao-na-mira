@@ -256,6 +256,26 @@ app.post('/api/powerup/itens', (req, res) => {
   res.json({ ok: true });
 });
 
+// O mesmo item em TODAS as premiações pendentes de alguém. Existe porque a
+// fila de "a informar" chega a dezenas, e na prática são quase sempre a mesma
+// carta — quem joga luva ganha luva. Uma a uma é trabalho que ninguém faz.
+app.post('/api/powerup/itens-pendentes', (req, res) => {
+  const { uniqueId, itens } = req.body || {};
+  if (!uniqueId) return res.status(400).json({ error: 'uniqueId é obrigatório.' });
+  if (!itens || typeof itens !== 'object' || !Object.keys(itens).length) {
+    return res.status(400).json({ error: 'Escolha pelo menos um item.' });
+  }
+
+  const { db, live } = clientes.doPedido(req);
+  const quantas = db.definirItensDasPendentes(uniqueId, itens);
+  if (!quantas) {
+    return res.status(404).json({ error: 'Essa pessoa não tem premiação pendente no prazo.' });
+  }
+
+  live.broadcastPowerUps();
+  res.json({ ok: true, quantas });
+});
+
 
 // ---------- SÓ O DONO DA INSTALAÇÃO ----------
 // A página de configuração e a API dela ficam atrás de um segundo portão, além
