@@ -1175,18 +1175,25 @@ function criarLive({ dono, db, emitir, criarConexao }) {
     //
     // Sem cookie de ninguém: `getJsonObjectFromWebcastApi` assina pelo Euler,
     // o mesmo caminho que o conector já usa pra abrir o socket.
-    const CAMINHOS_DO_PREMIO = [
-      // Primeiro o room/info/: é o do print (visible_score, top_fans,
-      // with_ecommerce_permission são campos dele) E é o único que o conector
-      // busca SEM assinatura — ou seja, o único garantidamente de graça.
-      'room/info/',
-      // os outros são palpite, e podem exigir assinatura
-      'linkmic/battle_info/',
-      'ranklist/online_audience/'
-    ];
-    const TENTATIVAS_APOS_PREMIO = [0, 1500, 4000, 9000];
-    let sondasHttp = 0;
-    const LIMITE_SONDA_HTTP = 8;
+    // O room/info/ é o do print (visible_score, top_fans e
+    // with_ecommerce_permission são campos dele) E é o único que o conector
+    // busca SEM assinatura — ou seja, o único garantidamente de graça. Ele
+    // tem orçamento próprio e folgado, porque não custa nada.
+    const CAMINHO_GRATIS = 'room/info/';
+    // Estes dois são palpite meu e podem exigir assinatura paga, então andam
+    // num orçamento à parte. Antes os três dividiam um teto de 8: o primeiro
+    // prêmio gastava 12 (3 caminhos x 4 tentativas) e as janelas 2 a 6 do log
+    // de 22/09 não fizeram UMA consulta.
+    const CAMINHOS_PALPITE = ['linkmic/battle_info/', 'ranklist/online_audience/'];
+    const TENTATIVAS_APOS_PREMIO = [0, 1500, 4000, 9000, 15000];
+    let sondasGratis = 0;
+    let sondasPalpite = 0;
+    const LIMITE_GRATIS = 40;    // 6 janelas x 5 tentativas, com folga
+    const LIMITE_PALPITE = 2;    // uma vez cada, e sO
+    // Caminho que respondeu "precisa de plano pago" nao volta a ser tentado.
+    // Antes isso desligava a sonda INTEIRA, entao um palpite pago matava junto
+    // o room/info/, que e de graca.
+    const caminhosProibidos = new Set();
 
     // Todo texto da resposta que cheire a nome de carta, com o CAMINHO até
     // ele: saber que existe não basta, eu preciso saber onde ler.
@@ -1229,18 +1236,28 @@ function criarLive({ dono, db, emitir, criarConexao }) {
     }
 
     async function perguntarAoHttp(quem, rodada) {
-      if (sondasHttp >= LIMITE_SONDA_HTTP) return;
+      if (sondasGratis >= LIMITE_GRATIS) return;
       const cliente = connection && connection.webClient;
       if (!cliente || typeof cliente.getJsonObjectFromWebcastApi !== 'function') {
         registrarDiagnostico('premio',
           'sonda HTTP DESLIGADA: este conector não expõe o webClient');
-        sondasHttp = LIMITE_SONDA_HTTP;
+        sondasGratis = LIMITE_GRATIS;
         return;
       }
 
-      for (const caminho of CAMINHOS_DO_PREMIO) {
-        if (sondasHttp >= LIMITE_SONDA_HTTP) return;
-        sondasHttp++;
+      // o de graca SEMPRE; os palpites so enquanto o troco deles durar
+      const desta = [CAMINHO_GRATIS].concat(
+        sondasPalpite < LIMITE_PALPITE ? CAMINHOS_PALPITE : []);
+
+      for (const caminho of desta) {
+        if (caminhosProibidos.has(caminho)) continue;
+        if (caminho === CAMINHO_GRATIS) {
+          if (sondasGratis >= LIMITE_GRATIS) return;
+          sondasGratis++;
+        } else {
+          if (sondasPalpite >= LIMITE_PALPITE) continue;
+          sondasPalpite++;
+        }
         try {
           const resposta = await pedir(cliente, caminho);
 
@@ -1262,13 +1279,13 @@ function criarLive({ dono, db, emitir, criarConexao }) {
           // chamada à API. Isso não melhora tentando de novo: desliga a sonda
           // e diz o porquê UMA vez, em vez de repetir 12 linhas por prêmio.
           if (/Business plan|requires a .*plan/i.test(recado)) {
+            // SO este caminho. Desligar a sonda toda era o que matava o
+            // room/info/, que nem precisa de assinatura.
+            caminhosProibidos.add(caminho);
             registrarDiagnostico('premio',
-              'sonda HTTP DESLIGADA: o Euler exige plano Business pra assinar ' +
-              'chamada à API do TikTok. O item do prêmio vem por aí (confirmado ' +
-              'por um site que consegue), mas a assinatura é paga. O websocket ' +
-              'continua de graça e não muda nada.');
-            sondasHttp = LIMITE_SONDA_HTTP;
-            return;
+              `  HTTP ${caminho} DESLIGADO: o Euler cobra plano Business pra ` +
+              'assinar este caminho. Os outros continuam.');
+            continue;
           }
           registrarDiagnostico('premio',
             `  HTTP ${caminho} (+${rodada}ms) falhou: ${recado}`);
