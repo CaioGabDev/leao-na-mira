@@ -1184,12 +1184,15 @@ function criarLive({ dono, db, emitir, criarConexao }) {
     // num orçamento à parte. Antes os três dividiam um teto de 8: o primeiro
     // prêmio gastava 12 (3 caminhos x 4 tentativas) e as janelas 2 a 6 do log
     // de 22/09 não fizeram UMA consulta.
-    const CAMINHOS_PALPITE = ['linkmic/battle_info/', 'ranklist/online_audience/'];
+    // O linkmic/battle_info/ saiu: deu 404 em producao (22/09), a rota nao
+    // existe. Sobrou este, que respondeu 122 chars -- pouco demais pra ser
+    // resposta de verdade, entao a sonda agora imprime o corpo inteiro.
+    const CAMINHOS_PALPITE = ['ranklist/online_audience/'];
     const TENTATIVAS_APOS_PREMIO = [0, 1500, 4000, 9000, 15000];
     let sondasGratis = 0;
     let sondasPalpite = 0;
     const LIMITE_GRATIS = 40;    // 6 janelas x 5 tentativas, com folga
-    const LIMITE_PALPITE = 2;    // uma vez cada, e sO
+    const LIMITE_PALPITE = 1;    // uma vez so, e so
     // Caminho que respondeu "precisa de plano pago" nao volta a ser tentado.
     // Antes isso desligava a sonda INTEIRA, entao um palpite pago matava junto
     // o room/info/, que e de graca.
@@ -1269,9 +1272,22 @@ function criarLive({ dono, db, emitir, criarConexao }) {
             achados.slice(0, 12).forEach(a =>
               registrarDiagnostico('premio', '      ' + a.slice(0, 220)));
           } else {
+            // NAO basta dizer "nao achei". O print poe o item em
+            // data.link_mic.card_award_info: se nem link_mic vier, a rota esta
+            // errada; se vier link_mic sem card_award_*, a rota esta certa e o
+            // que falta e o momento. Sem este retrato eu nao sei qual dos dois.
+            const d = (resposta && resposta.data) || {};
+            const lm = d.link_mic || d.linkMic;
+            const retrato = lm
+              ? 'link_mic tem: ' + Object.keys(lm).join(',')
+              : 'SEM link_mic | data tem: ' + Object.keys(d).slice(0, 30).join(',');
             registrarDiagnostico('premio',
               `  HTTP ${caminho} (+${rodada}ms): respondeu ${bruto.length} chars, ` +
-              'nenhum campo de carta');
+              'nenhum campo de carta | ' + retrato);
+            // resposta curta demais e quase sempre envelope de erro
+            if (bruto.length < 600) {
+              registrarDiagnostico('premio', '      corpo inteiro: ' + bruto);
+            }
           }
         } catch (e) {
           const recado = (e && e.message) || '';
