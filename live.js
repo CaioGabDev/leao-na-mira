@@ -344,6 +344,10 @@ function criarLive({ dono, db, emitir, criarConexao }) {
   // A saída é o linkMicArmies, que traz os contribuidores INDEXADOS POR ANFITRIÃO
   // — daí sai a lista de quem é do nosso lado.
   let meusContribuintes = new Set();
+  // O nosso exercito da batalha atual, COM pontuacao, na ordem em que o TikTok
+  // manda (maior primeiro). Serve so pro diagnostico do premio: o item ganho
+  // parece depender da posicao, e sem guardar isto nao da pra conferir.
+  let meuExercito = [];
   // O último exército que chegou antes de sabermos quem somos. Sem isto, um
   // linkMicArmies anterior ao primeiro linkMicBattle é jogado fora — e foi
   // assim que um prêmio de produção se perdeu (ver guardarContribuintes).
@@ -1184,11 +1188,16 @@ function criarLive({ dono, db, emitir, criarConexao }) {
     // num orçamento à parte. Antes os três dividiam um teto de 8: o primeiro
     // prêmio gastava 12 (3 caminhos x 4 tentativas) e as janelas 2 a 6 do log
     // de 22/09 não fizeram UMA consulta.
-    // O linkmic/battle_info/ saiu: deu 404 em producao (22/09), a rota nao
-    // existe. Sobrou este, que respondeu 122 chars -- pouco demais pra ser
-    // resposta de verdade, entao a sonda agora imprime o corpo inteiro.
-    const CAMINHOS_PALPITE = ['ranklist/online_audience/'];
-    const TENTATIVAS_APOS_PREMIO = [0, 1500, 4000, 9000, 15000];
+    // Nao sobrou palpite nenhum. O linkmic/battle_info/ deu 404 (rota nao
+    // existe) e o ranklist/online_audience/ respondeu, em 122 chars,
+    // {"message":"User doesn't login","status_code":20003}. O conector so
+    // conhece gift/list/, room/info/ e user/room/.
+    const CAMINHOS_PALPITE = [];
+    // Uma tentativa so. As cinco de antes serviram pra provar que o campo
+    // nao aparece em momento nenhum da comemoracao (22/09): as cinco
+    // responderam 47k chars com o link_mic certo e sem card_award_*.
+    // Fica uma, barata, caso o TikTok volte a servir o campo.
+    const TENTATIVAS_APOS_PREMIO = [2500];
     let sondasGratis = 0;
     let sondasPalpite = 0;
     const LIMITE_GRATIS = 40;    // 6 janelas x 5 tentativas, com folga
@@ -1593,11 +1602,40 @@ function criarLive({ dono, db, emitir, criarConexao }) {
 
       const meu = exercitoDoAnfitriao(data?.armies, meuUserId);
       let entraram = 0;
+      const lista = [];
       (meu?.userArmies || []).forEach(ua => {
         const id = String(ua?.userIdStr || ua?.userId || '');
-        if (id && !meusContribuintes.has(id)) { meusContribuintes.add(id); entraram++; }
+        if (!id) return;
+        lista.push({ id, nick: ua?.nickname || '?', pontos: Number(ua?.score || 0) });
+        if (!meusContribuintes.has(id)) { meusContribuintes.add(id); entraram++; }
       });
+      // so troca se veio exercito; um linkMicBattle de encerramento sem armies
+      // nao pode apagar o que a gente ja sabia
+      if (lista.length) meuExercito = lista;
       return entraram;
+    }
+
+    // O QUE A GENTE AINDA NAO SABE: qual carta cada um ganhou.
+    //
+    // A API nao entrega (o room/info/ traz o link_mic certo e sem
+    // card_award_info; o ranklist responde "User doesn't login"). A unica
+    // pista de graca e que o item parece sair da POSICAO no exercito: o icone
+    // do print que o Caio mandou e `webcast-sg/top2_3_scores` e o nome e
+    // "got 1 no. 2 booster".
+    //
+    // Isto aqui NAO decide nada e NAO grava nada -- so escreve no diagnostico
+    // o rank completo junto de quem foi premiado, pra hipotese poder ser
+    // conferida com varias amostras em vez de chutada com uma.
+    function registrarRankDoPremio(premiados) {
+      if (!meuExercito.length) return;
+      const ganhou = new Set((premiados || [])
+        .map(b => String(b?.user?.userId || ''))
+        .filter(Boolean));
+      const linhas = meuExercito.map((m, i) =>
+        `    #${i + 1} ${m.pontos} pts  ${ganhou.has(m.id) ? 'GANHOU' : '  -   '}  ${m.nick}`);
+      registrarDiagnostico('powerup',
+        `  RANK do nosso exercito no momento do premio (${ganhou.size} premiado(s)):`);
+      linhas.forEach(l => registrarDiagnostico('powerup', l));
     }
 
     // Chamado assim que o meuUserId fica conhecido.
@@ -1670,6 +1708,7 @@ function criarLive({ dono, db, emitir, criarConexao }) {
         // grava o que vier logo depois: e a chance de achar quem nomeia o item
         abrirJanelaDoPremio(
           premiados.map(b => b?.user?.nickName).filter(Boolean).join(', ') || '?', data);
+        registrarRankDoPremio(premiados);
         // quantidade da mensagem toda: só vale se o texto disser mesmo; senão a
         // varredura tenta achar a frase, e no fim assume 1.
         const qtdGanha = quantidadeDoTextoOuNada(textosDoDisplayContent(data?.awardCardNotice?.displayContent))
