@@ -1494,17 +1494,34 @@ function criarLive({ dono, db, emitir, criarConexao }) {
       if (myId !== activeConnectionId) return;
       const tipo = decodificada?.type || metodo;
       if (tipo !== 'WebcastLinkMicBattleItemCard') return;
-      if (sondaPowerUp >= LIMITE_SONDA) return;
-      sondaPowerUp++;
 
       const d = decodificada?.data ?? decodificada;
+      const ehPremio = Number(d?.msgType) === PK_MSG_GANHOU;
+
+      // Num PK em grupo a sala recebe as cartas de TODOS os anfitrioes. No log
+      // de 22/09 foram 11 cartas de outros hosts em 12: cada uma comia uma das
+      // 40 vagas e despejava o JSON inteiro, e o PREMIO -- a unica mensagem
+      // que eu preciso ver -- corria o risco de chegar com o teto ja gasto.
+      //
+      // Carta de outro anfitriao sai de graca aqui: o handler de baixo ja
+      // escreve uma linha "IGNORADO" pra ela, entao nem precisa de dump.
+      if (!ehPremio) {
+        const mapa = PK_CARTA_POR_MSGTYPE[d?.msgType];
+        const carta = mapa && d?.[mapa.campo];
+        if (carta && ehDoNossoLado(carta) === false) return;
+        if (sondaPowerUp >= LIMITE_SONDA) return;
+      }
+      sondaPowerUp++;
+
       let json;
       try {
         json = JSON.stringify(d, (k, v) => (typeof v === 'bigint' ? String(v) : v));
       } catch (e) { return; }
 
       const rotulo = CARTAS_PK[d?.msgType] || `msgType desconhecido (${d?.msgType})`;
-      registrarDiagnostico('powerup', `[${sondaPowerUp}/${LIMITE_SONDA}] CARTA DE PK → ${rotulo}`);
+      const selo = sondaPowerUp > LIMITE_SONDA
+        ? 'PREMIO fora do teto' : `${sondaPowerUp}/${LIMITE_SONDA}`;
+      registrarDiagnostico('powerup', `[${selo}] CARTA DE PK → ${rotulo}`);
       // displayContent de QUALQUER carta (uso ou prêmio) — é onde mora o nome real
       let dc = d?.awardCardNotice?.displayContent;
       for (const campo of Object.values(PK_CARTA_POR_MSGTYPE).map(m => m.campo)) {
