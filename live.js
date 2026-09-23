@@ -1353,6 +1353,20 @@ function criarLive({ dono, db, emitir, criarConexao }) {
       return null;
     }
     const proto = abrirProto();
+
+    // mesmo problema do abrirProto: `require('./protocru')` resolveria
+    // relativo a quem chama, e ha teste que roda este bloco de outra pasta
+    function abrirProtocru() {
+      const tentativas = [
+        caminho.join(__dirname, 'protocru.js'),
+        caminho.join(process.cwd(), 'protocru.js')
+      ];
+      for (const t of tentativas) {
+        try { return require(t); } catch (e) { /* tenta o proximo */ }
+      }
+      return null;
+    }
+    const protocru = abrirProtocru();
     if (!proto) {
       registrarDiagnostico('premio',
         'sonda crua DESLIGADA: nao achei o tiktok-live-proto pra decodificar o quadro');
@@ -1411,10 +1425,46 @@ function criarLive({ dono, db, emitir, criarConexao }) {
     let censoFechado = false;
     const PRAZO_DO_CENSO = 90000;
 
+    // ---- campos que o proto instalado NAO conhece ----
+    // Decodificar e re-codificar: o que nao volta, a biblioteca nao sabe ler.
+    // Mensagem grande e cara de conferir, entao cada TIPO e conferido uma vez
+    // -- menos a carta de PK, que e o que interessa e vai toda vez.
+    const perdaVerificada = new Set();
+    const perdaJaDita = new Set();
+    let perdasConferidas = 0;
+    const LIMITE_PERDA = 300;
+
+    function conferirCamposPerdidos(marca, metodo, carga) {
+      if (!proto || !protocru || !carga || !carga.length) return;
+      if (perdasConferidas >= LIMITE_PERDA) return;
+      const sempre = metodo === 'WebcastLinkMicBattleItemCard';
+      if (!sempre && perdaVerificada.has(metodo)) return;
+      perdaVerificada.add(metodo);
+      perdasConferidas++;
+
+      let r;
+      try {
+        r = protocru.camposQueOProtoNaoConhece(proto[metodo], Buffer.from(carga));
+      } catch (e) { return; }
+      if (!r || r.erro || !r.perdidos || !r.perdidos.length) return;
+
+      const assinatura = metodo + '|' + r.perdidos.map(p => p.caminho).join(',');
+      if (perdaJaDita.has(assinatura)) return;
+      perdaJaDita.add(assinatura);
+
+      registrarDiagnostico('premio',
+        `  [${marca}] >>> CAMPO QUE O PROTO NAO CONHECE em ${metodo} <<< ` +
+        `${r.perdidos.length} campo(s)`);
+      r.perdidos.slice(0, 12).forEach(p => registrarDiagnostico('premio',
+        `      ${p.caminho} (fio ${p.fio}) = ${p.valor}`.slice(0, 300)));
+    }
+
     function esmiucarQuadro(marca, bytes) {
       mensagensDoQuadro(bytes).forEach(m => {
         const metodo = m.method || '(sem metodo)';
         const sabe = conhecido(metodo);
+        // antes de qualquer coisa: o tipo e conhecido mas veio campo a mais?
+        if (sabe) conferirCamposPerdidos(marca, metodo, m.payload);
         const textos = textosCrus(m.payload || []);
         const achados = itensNoCru(textos);
 
