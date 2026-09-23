@@ -1442,21 +1442,31 @@ function criarLive({ dono, db, emitir, criarConexao }) {
       perdaVerificada.add(metodo);
       perdasConferidas++;
 
-      let r;
+      let r, qual = '';
       try {
         r = protocru.camposQueOProtoNaoConhece(proto[metodo], Buffer.from(carga));
-      } catch (e) { return; }
+        // De qual mensagem veio? Na janela do premio chega a carta usada E o
+        // premio, as duas com o mesmo `method`. Sem o msgType eu nao sei em
+        // qual das duas o campo apareceu -- e essa era a duvida inteira.
+        const d = proto[metodo].decode(Buffer.from(carga));
+        if (d && d.msgType !== undefined) qual = ` msgType=${d.msgType}`;
+      } catch (e) { if (!r) return; }
       if (!r || r.erro || !r.perdidos || !r.perdidos.length) return;
 
-      const assinatura = metodo + '|' + r.perdidos.map(p => p.caminho).join(',');
+      const assinatura = metodo + qual + '|' + r.perdidos.map(p => p.caminho).join(',');
       if (perdaJaDita.has(assinatura)) return;
       perdaJaDita.add(assinatura);
 
       registrarDiagnostico('premio',
-        `  [${marca}] >>> CAMPO QUE O PROTO NAO CONHECE em ${metodo} <<< ` +
+        `  [${marca}] >>> CAMPO QUE O PROTO NAO CONHECE em ${metodo}${qual} <<< ` +
         `${r.perdidos.length} campo(s)`);
-      r.perdidos.slice(0, 12).forEach(p => registrarDiagnostico('premio',
-        `      ${p.caminho} (fio ${p.fio}) = ${p.valor}`.slice(0, 300)));
+      r.perdidos.slice(0, 12).forEach(p => {
+        registrarDiagnostico('premio',
+          `      ${p.caminho} (fio ${p.fio}) = ${p.valor}`.slice(0, 300));
+        // o conteudo do campo desconhecido, aberto
+        if (p.dentro) registrarDiagnostico('premio',
+          `        dentro: ${p.dentro}`.slice(0, 900));
+      });
     }
 
     function esmiucarQuadro(marca, bytes) {

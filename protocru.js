@@ -85,6 +85,26 @@ function resumir(campo) {
   return `<${b.length} bytes>`;
 }
 
+// Um esboco do que tem DENTRO de uma mensagem, sem saber o que ela e.
+// "<2306 bytes>" nao serve de nada: e justamente ali dentro que o item estaria.
+function esbocar(bytes, fundo = 0, orcamento = { resta: 600 }) {
+  const campos = lerCampos(bytes);
+  if (campos === null || fundo > 4) return null;
+  const partes = [];
+  for (const c of campos) {
+    if (orcamento.resta <= 0) { partes.push('…'); break; }
+    let valor;
+    if (c.fio === 2 && ehMensagem(c.bytes) && fundo < 4) {
+      valor = esbocar(c.bytes, fundo + 1, orcamento);
+    }
+    if (valor == null) valor = resumir(c);
+    const pedaco = `${c.numero}: ${valor}`;
+    orcamento.resta -= pedaco.length;
+    partes.push(pedaco);
+  }
+  return '{' + partes.join(', ') + '}';
+}
+
 // ------------------------------------------------------- o que se perdeu
 // Compara os bytes que chegaram com os bytes que a biblioteca devolve depois
 // de decodificar e re-codificar. Campo que existe num e não no outro é campo
@@ -112,11 +132,16 @@ function camposPerdidos(cru, volta, caminho = '$', fundo = 0, achados = []) {
   for (const [numero, docru] of ma) {
     const davolta = mb.get(numero);
     if (!davolta) {
-      docru.slice(0, 3).forEach(c => achados.push({
-        caminho: `${caminho}.${numero}`,
-        fio: c.fio,
-        valor: resumir(c)
-      }));
+      docru.slice(0, 3).forEach(c => {
+        const achado = { caminho: `${caminho}.${numero}`, fio: c.fio, valor: resumir(c) };
+        // se o campo perdido for uma mensagem, abre: e la dentro que mora o
+        // que interessa, e "<N bytes>" nao me diz nada
+        if (c.fio === 2 && ehMensagem(c.bytes)) {
+          const dentro = esbocar(c.bytes);
+          if (dentro) achado.dentro = dentro;
+        }
+        achados.push(achado);
+      });
       continue;
     }
     // mesmo campo dos dois lados: só vale descer se o conteúdo mudou
@@ -147,4 +172,4 @@ function camposQueOProtoNaoConhece(tipo, bytes) {
   return { perdidos: camposPerdidos(cru, volta) };
 }
 
-module.exports = { lerCampos, camposPerdidos, camposQueOProtoNaoConhece, resumir };
+module.exports = { lerCampos, camposPerdidos, camposQueOProtoNaoConhece, resumir, esbocar };
