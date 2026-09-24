@@ -206,33 +206,73 @@
 
   /* editor */
   .pu-editor { padding: 18px 20px 20px; }
-  .pu-ed-topo { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
-  .pu-ed-topo strong { font-size: 15px; }
-  .pu-ed-topo span { font-size: 12.5px; color: var(--ink-faint); }
+  .pu-ed-topo { display: flex; align-items: center; gap: 11px; margin-bottom: 15px; }
+  .pu-ed-face {
+    width: 36px; height: 36px; flex-shrink: 0; border-radius: 50%;
+    object-fit: cover; border: 1px solid var(--line);
+  }
+  .pu-ed-quem { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .pu-ed-quem strong { font-size: 15px; }
+  .pu-ed-quem span { font-size: 12.5px; color: var(--ink-faint); }
   .pu-ed-fechar {
     margin-left: auto; background: none; border: none; color: var(--ink-faint);
     font-size: 22px; line-height: 1; cursor: pointer;
   }
-  .pu-ed-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; }
-  .pu-ed-linha {
-    display: flex; align-items: center; gap: 8px;
+  /* um cartao por item: um toque escolhe, outro toque soma */
+  .pu-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(98px, 1fr)); gap: 9px; }
+  .pu-pick-it {
+    position: relative; cursor: pointer; overflow: visible;
+    display: flex; flex-direction: column; align-items: center; gap: 5px;
+    padding: 13px 8px 11px;
     background: var(--card-2); border: 1px solid var(--line);
-    border-radius: var(--r-md); padding: 8px 10px;
+    border-radius: var(--r-md); color: var(--ink-dim);
+    font-family: 'Rajdhani', sans-serif;
+    transition: border-color .12s, background .12s, color .12s;
   }
-  .pu-ed-linha.ativo { border-color: rgba(255,176,58,.5); background: rgba(255,176,58,.07); }
-  .pu-ed-nome { flex: 1; font-size: 13px; font-weight: 700; color: var(--ink-dim); }
-  .pu-ed-linha.ativo .pu-ed-nome { color: var(--ink); }
-  .pu-ed-btn {
-    width: 26px; height: 26px; flex-shrink: 0; cursor: pointer;
-    background: #0d0907; border: 1px solid var(--line); border-radius: 50%;
-    color: var(--ink-dim); font-size: 15px; line-height: 1;
+  .pu-pick-it i { font-style: normal; font-size: 23px; line-height: 1; }
+  .pu-pick-it .pu-pick-nome { font-size: 12.5px; font-weight: 700; text-align: center; }
+  .pu-pick-it:hover { border-color: var(--gold); color: var(--ink); }
+  .pu-pick-it.sel {
+    border-color: var(--gold); background: rgba(255,176,58,.10); color: var(--ink);
   }
-  .pu-ed-btn:hover { border-color: var(--gold); color: var(--ink); }
-  .pu-ed-qtd {
-    min-width: 20px; text-align: center;
-    font-family: 'Bungee', sans-serif; font-size: 14px; color: var(--gold);
+  /* a quantidade fica FORA da moldura pra nao competir com o nome */
+  .pu-pick-n {
+    position: absolute; top: -8px; right: -8px;
+    min-width: 23px; height: 23px; padding: 0 5px;
+    display: grid; place-items: center; border-radius: 12px;
+    background: var(--gold); color: #1a1207;
+    font-family: 'Bungee', sans-serif; font-size: 11px;
   }
+  .pu-pick-menos {
+    position: absolute; top: -8px; left: -8px; width: 23px; height: 23px;
+    display: grid; place-items: center; border-radius: 50%;
+    background: #0d0907; border: 1px solid var(--line);
+    color: var(--ink-faint); font-size: 15px; line-height: 1;
+  }
+  .pu-pick-menos:hover { border-color: var(--red); color: var(--red); }
+
+  /* em QUAL premiacao isto vai escrever -- antes nada dizia */
+  .pu-ed-onde {
+    margin: 16px 0 7px; font-size: 10.5px; letter-spacing: .08em;
+    text-transform: uppercase; font-weight: 700; color: var(--ink-faint);
+  }
+  .pu-escopo { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+  .pu-esc {
+    cursor: pointer; text-align: left; padding: 11px 13px;
+    display: flex; flex-direction: column; gap: 2px;
+    background: var(--card-2); border: 1px solid var(--line);
+    border-radius: var(--r-md); font-family: 'Rajdhani', sans-serif;
+    transition: border-color .12s, background .12s;
+  }
+  .pu-esc b { font-size: 13px; color: var(--ink-dim); }
+  .pu-esc span { font-size: 11.5px; color: var(--ink-faint); line-height: 1.35; }
+  .pu-esc:hover { border-color: var(--gold); }
+  .pu-esc.ativo { border-color: var(--gold); background: rgba(255,176,58,.09); }
+  .pu-esc.ativo b { color: var(--gold); }
+  @media (max-width: 560px) { .pu-escopo { grid-template-columns: 1fr; } }
+
   .pu-ed-pe { display: flex; gap: 8px; margin-top: 16px; }
+  .pu-ed-pe .app-btn:disabled { opacity: .45; cursor: not-allowed; }
 
   .pu-itens.pu-aberto {
     letter-spacing: .04em; font-size: 10px; text-transform: uppercase;
@@ -347,13 +387,44 @@
   .pu-barra span { display: block; height: 100%; border-radius: 2px; background: var(--grad-fire); }
   .pu-barra.urgente span { background: linear-gradient(90deg, var(--ember2), var(--ember1)); }
 
-  /* ---------- power-ups: o lote no editor ---------- */
-  .pu-ed-lote {
-    margin: 0 0 12px; padding: 11px 13px; border-radius: var(--r-sm);
+  /* ---------- power-ups: o aviso do editor ---------- */
+  .pu-ed-dica {
+    margin: 14px 0 0; padding: 11px 13px; border-radius: var(--r-sm);
     background: rgba(255,176,58,.07); border: 1px solid rgba(255,176,58,.24);
-    font-size: 13px; color: var(--ink-dim); line-height: 1.5;
+    font-size: 12.5px; color: var(--ink-dim); line-height: 1.5;
   }
-  .pu-ed-lote b { color: var(--gold); }
+  .pu-ed-dica b { color: var(--gold); }
+
+  /* ---------- ícone de carta ---------- */
+  .ico { display: inline-flex; align-items: center; justify-content: center; }
+  .ico img { width: 1.4em; height: 1.4em; object-fit: contain; vertical-align: -.4em; }
+  /* o emoji só aparece quando o onerror já tirou a imagem da frente */
+  .ico i { font-style: normal; display: none; }
+  .ico i:first-child { display: inline; }
+  .ico-g img { width: 30px; height: 30px; }
+  .ico-g i { font-size: 23px; line-height: 1; }
+
+  /* ---------- power-up correndo na batalha ---------- */
+  .pk-efeitos {
+    display: flex; flex-wrap: wrap; gap: 8px; margin: -6px 0 16px;
+  }
+  .pk-efeito {
+    display: flex; align-items: center; gap: 7px;
+    padding: 6px 11px 6px 7px; border-radius: 999px;
+    background: rgba(255,176,58,.10); border: 1px solid rgba(255,176,58,.35);
+    font-size: 12.5px; color: var(--ink-dim);
+  }
+  .pk-efeito img { width: 20px; height: 20px; border-radius: 50%; object-fit: cover; }
+  .pk-efeito b { color: var(--ink); font-weight: 700; }
+  .pk-efeito .pk-conta {
+    font-family: 'Bungee', sans-serif; font-size: 12px; color: var(--gold);
+    font-variant-numeric: tabular-nums;
+  }
+  /* os últimos segundos: quem olha de relance precisa ver que está acabando */
+  .pk-efeito.acabando {
+    border-color: rgba(255,107,107,.5); background: rgba(255,107,107,.10);
+  }
+  .pk-efeito.acabando .pk-conta { color: var(--red); }
 
   .tab-panel { display: flex; flex-direction: column; gap: 22px; }
   .tab-panel[hidden] { display: none; }
@@ -773,6 +844,7 @@
     <!-- Placar do PK: mora na topbar (sticky) pra ficar visível o tempo todo.
          Fica display:none até o JS chamar renderBattleLive(). -->
     <div class="battle-live" id="battleLive"></div>
+    <div class="pk-efeitos" id="pkEfeitos" hidden></div>
 
   </div>
 </header>
@@ -1262,6 +1334,37 @@
 
   // ---------- BATALHAS (PK) ----------
   const battleSection = document.getElementById('battleSection');
+  // ---------- ÍCONE DE VERDADE DA CARTA ----------
+  // A figura que o TikTok usa, e não emoji. Os caminhos saem do `cardImage.uri`
+  // das cartas usadas em produção — conferidos um por um, abrindo a imagem.
+  //
+  // O `~tplv-resize:64:64` é o que a própria CDN oferece: 8KB no lugar de 40KB,
+  // e 64px cobre o maior uso (o cartão do editor, que é 30px em tela retina).
+  const CDN_CARTA = 'https://p16-webcast.tiktokcdn.com/img/alisg/webcast-sg/';
+  const ARQUIVO_DO_ITEM = {
+    luva:     'card_crit_v3',      // luva com raio
+    tempo:    'card_timer_v3',     // cronômetro "+10s"
+    nevoa:    'card_mist_v3',      // nuvens
+    booster2: 'top2_buffer',       // raio com o "2"
+    booster3: 'top3_buffer',       // raio com o "3"
+    // o martelo chega no payload com a imagem do heartme (539KB, e é um
+    // coração); esta é a certa, e é a que a tela mostra
+    martelo:  'card_effect_v3',
+    efeito:   'card_effect_v3'
+  };
+
+  // O emoji vai JUNTO, atrás, como rede: se a CDN mudar o caminho, o `onerror`
+  // remove a imagem e o emoji vira o primeiro filho — o CSS faz ele aparecer.
+  // Sem isso, um caminho quebrado viraria quadradinho cinza na tela toda.
+  function iconeDoItem(tipo, emoji, classe) {
+    const arquivo = ARQUIVO_DO_ITEM[tipo];
+    const img = arquivo
+      ? `<img src="${CDN_CARTA}${arquivo}~tplv-resize:64:64.png" alt="" loading="lazy"
+              onerror="this.remove()">`
+      : '';
+    return `<span class="ico ${classe || ''}">${img}<i>${emoji || '🎴'}</i></span>`;
+  }
+
   const battleLiveEl = document.getElementById('battleLive');
   const battleSummaryEl = document.getElementById('battleSummary');
   const battleHighlightsEl = document.getElementById('battleHighlights');
@@ -1286,7 +1389,9 @@
     battleLiveEl.innerHTML = `
       <img class="row-avatar" src="${b.oponente?.avatar || FALLBACK_AVATAR}"
            onerror="this.src='${FALLBACK_AVATAR}'">
-      <span class="vs">AO VIVO vs ${nome}${b.emDupla ? ' <small>(2v2)</small>' : ''}</span>
+      <span class="vs">AO VIVO vs ${nome}${
+        b.formato && b.formato !== '1v1' ? ' <small>(' + esc(b.formato) + ')</small>' : ''
+      }</span>
       <span class="placar dinheiro">${placarDaBatalha(b)}</span>
     `;
   }
@@ -1337,12 +1442,65 @@
         <span>${ICONE[b.resultado] || '⚔️'}</span>
         <div>
           <div class="quem">${esc(b.oponente?.nickname || '?')}</div>
-          <div class="quando">${new Date(b.endedAt).toLocaleString('pt-BR')} · ${formatUptime(b.duracaoSegundos)}${b.emDupla ? ' · 2v2' : ''}${b.interrompida ? ' · ⚠️ adversário saiu no meio' : ''}</div>
+          <div class="quando">${new Date(b.endedAt).toLocaleString('pt-BR')} · ${formatUptime(b.duracaoSegundos)}${b.formato && b.formato !== '1v1' ? ' · ' + esc(b.formato) : ''}${b.interrompida ? ' · ⚠️ adversário saiu no meio' : ''}</div>
         </div>
         <span class="score dinheiro">${placarDaBatalha(b)}</span>
       </div>
     `).join('');
   }
+
+  // ---------- POWER-UP CORRENDO ----------
+  // O efeito dura segundos (30 na luva, 10 no tempo). Sem contador a linha
+  // "fulano jogou luva" some no feed e ninguém sabe se ainda está valendo.
+  const pkEfeitosEl = document.getElementById('pkEfeitos');
+  let efeitosPK = [];
+
+  function desenharEfeitosPK() {
+    const agora = Date.now();
+    // fora os que já acabaram — sem isso a barra só cresce
+    efeitosPK = efeitosPK.filter(e => e.acabaEm > agora);
+    if (!efeitosPK.length) {
+      pkEfeitosEl.hidden = true;
+      pkEfeitosEl.innerHTML = '';
+      return;
+    }
+    pkEfeitosEl.hidden = false;
+    pkEfeitosEl.innerHTML = efeitosPK
+      .sort((a, b) => a.acabaEm - b.acabaEm)
+      .map(e => {
+        const falta = Math.max(0, Math.ceil((e.acabaEm - agora) / 1000));
+        // o rótulo vem "🧤 luva": o emoji é a rede do ícone, o resto é o nome
+        const cru = NOME_DO_ITEM_PK[e.tipo] || e.tipo;
+        const partes = cru.split(' ');
+        const temEmoji = partes.length > 1;
+        const emoji = temEmoji ? partes[0] : '';
+        const nome = temEmoji ? partes.slice(1).join(' ') : cru;
+        return `<span class="pk-efeito ${falta <= 5 ? 'acabando' : ''}">
+                  <img src="${e.avatar || FALLBACK_AVATAR}"
+                       onerror="this.src='${FALLBACK_AVATAR}'" alt="">
+                  <span><b>${esc(e.nickname)}</b> jogou ${
+                    iconeDoItem(e.tipo, emoji)} ${esc(nome)}${
+                    e.quantos > 1 ? ' ×' + e.quantos : ''}</span>
+                  <span class="pk-conta">${falta}s</span>
+                </span>`;
+      }).join('');
+  }
+
+  // os nomes que a tropa usa, iguais aos da aba de power-ups
+  const NOME_DO_ITEM_PK = {
+    luva: '🧤 luva', nevoa: '🌫️ névoa', tempo: '⏱️ tempo', martelo: '🔨 martelo',
+    booster1: '⚡ raio 1x', booster2: '⚡ raio 2x', booster3: '⚡ raio 3x',
+    critico: '💥 crítico', pocao: '🧪 poção', onda: '🌊 onda',
+    coracao: '💗 coração', efeito: '✨ efeito', luva_cofre: '🧰 luva cofre'
+  };
+
+  socket.on('powerup_efeito', e => {
+    if (!e || !e.acabaEm) return;
+    efeitosPK.push(e);
+    desenharEfeitosPK();
+  });
+  // o contador anda sozinho; 1s basta porque o número é em segundos
+  setInterval(desenharEfeitosPK, 1000);
 
   socket.on('battle_stats', renderBattles);
   socket.on('battle_live', renderBattleLive);
@@ -1802,7 +1960,10 @@
 
         // ESTOQUE: o que a pessoa tem, item por item, com quantidade
         const estoque = Object.entries(p.estoque || {}).sort((a, b) => b[1] - a[1])
-          .map(([t, n]) => `<span class="pu-item">${NOME_DO_TIPO[t] || t} <b>${n}</b></span>`)
+          .map(([t, n]) => {
+            const { emoji, nome } = emojiENome(t);
+            return `<span class="pu-item">${iconeDoItem(t, emoji)} ${esc2(nome)} <b>${n}</b></span>`;
+          })
           .join('');
         const totalEstoque = Object.values(p.estoque || {}).reduce((a, b) => a + b, 0);
 
@@ -1825,7 +1986,8 @@
           const falta = Math.max(0, c.expiraEmMs - decorrido);
           const urge = falta < DIA_MS;
           const itens = Object.entries(c.itens)
-            .map(([t, n]) => `${ICONE_DO_TIPO[t] || '🎴'}${n > 1 ? ' ×' + n : ''}`).join(' ');
+            .map(([t, n]) => `${iconeDoItem(t, ICONE_DO_TIPO[t])}${n > 1 ? '×' + n : ''}`)
+            .join(' ');
           // `deduzido` = o item veio do uso, que o TikTok confirmou; vale
           // dizer, senão parece igual ao que alguém marcou no chute
           const marca = c.deduzido ? ' title="o TikTok confirmou pelo uso"' : '';
@@ -1862,7 +2024,11 @@
 
         const usos = Object.entries(p.usos || {})
           .sort((a, b) => b[1] - a[1])
-          .map(([t, n]) => `<span class="pu-uso">${NOME_DO_TIPO[t] || t}${n > 1 ? ' ×' + n : ''}</span>`)
+          .map(([t, n]) => {
+            const { emoji, nome } = emojiENome(t);
+            return `<span class="pu-uso">${iconeDoItem(t, emoji)} ${esc2(nome)}${
+              n > 1 ? ' ×' + n : ''}</span>`;
+          })
           .join('');
 
         // O CONTADOR DA DIREITA. Ele mostrava o estoque identificado, então
@@ -1922,65 +2088,130 @@
     // Só os itens que a tropa realmente joga na batalha — é o que aparece na
     // hora de informar. Se algum dia aparecer outro, ele entra pela detecção
     // automática e o editor mostra ele no fim (ver renderEditor).
-    const ORDEM_ITENS = ['luva', 'tempo', 'booster1', 'booster2', 'booster3',
+    // Sem `booster1`: o proto vai de USE_TOP_2_CARD = 10 pra USE_TOP_3_CARD = 11,
+    // não existe carta de "no. 1 booster", e o ícone dela (`top1_buffer`) dá 404
+    // na CDN. Era um item que ninguém podia ter ganhado.
+    // (Se alguém já marcou booster1 um dia, ele continua aparecendo: o editor
+    // põe no fim da grade o que não está nesta lista.)
+    const ORDEM_ITENS = ['luva', 'tempo', 'booster2', 'booster3',
                          'nevoa', 'martelo'];
-    let editando = null;   // { uniqueId, ganhaEm, itens }
+    let editando = null;   // { uniqueId, ganhaEm, itens, escopo }
 
     function abrirEditor(uniqueId, ganhaEm) {
       const pessoa = ultimo.find(x => String(x.uniqueId) === String(uniqueId));
       const premio = pessoa && (pessoa.cartas || []).find(c => String(c.ganhaEm) === String(ganhaEm));
       if (!premio) return;
-      editando = { uniqueId, ganhaEm, itens: Object.assign({}, premio.itens) };
+      editando = {
+        uniqueId, ganhaEm,
+        itens: Object.assign({}, premio.itens),
+        // Padrão "só esta". Escrever em várias de uma vez não tem desfazer num
+        // clique — quem quiser o lote pede o lote, num toque, logo ali.
+        escopo: 'esta'
+      };
       renderEditor(pessoa);
     }
 
+    // O emoji e o nome saem os dois do NOME_DO_TIPO ('🧤 Luva'), pra não haver
+    // duas tabelas dizendo a mesma coisa e uma delas ficar atrás da outra.
+    // (function, não const: a lista de pessoas é desenhada antes daqui.)
+    function emojiENome(t) {
+      const inteiro = NOME_DO_TIPO[t] || t;
+      const partes = inteiro.split(' ');
+      if (partes.length < 2) return { emoji: '🎴', nome: inteiro };
+      return { emoji: partes[0], nome: partes.slice(1).join(' ') };
+    }
+
     function renderEditor(pessoa) {
-      if (!editando) { editorEl.hidden = true; editorEl.innerHTML = ''; return; }
-      // item marcado pela detecção automática que não está na lista curta entra
-      // no fim: nada fica escondido e travado sem poder ser corrigido
-      const extras = Object.keys(editando.itens).filter(t => !ORDEM_ITENS.includes(t));
-      const linhas = ORDEM_ITENS.concat(extras).map(t => {
-        const n = editando.itens[t] || 0;
-        return `<div class="pu-ed-linha ${n ? 'ativo' : ''}">
-                  <span class="pu-ed-nome">${NOME_DO_TIPO[t] || t}</span>
-                  <button class="pu-ed-btn" data-acao="menos" data-tipo="${t}">−</button>
-                  <span class="pu-ed-qtd">${n}</span>
-                  <button class="pu-ed-btn" data-acao="mais" data-tipo="${t}">+</button>
-                </div>`;
-      }).join('');
-      // Quantas pendentes no prazo esta pessoa ainda tem. Quem joga luva ganha
-      // luva: as pendências de uma mesma pessoa são quase sempre a mesma
-      // carta, e marcar uma a uma é o que tornava isso inviável.
+      if (!editando || !pessoa) { editorEl.hidden = true; editorEl.innerHTML = ''; return; }
+
       const decorrido = Date.now() - recebidoEm;
       const pendentes = pendentesNoPrazo(pessoa, decorrido);
-      const escolheu = Object.keys(editando.itens).length > 0;
+      const premio = (pessoa.cartas || [])
+        .find(c => String(c.ganhaEm) === String(editando.ganhaEm));
+      const falta = premio ? Math.max(0, premio.expiraEmMs - decorrido) : 0;
+      const jaTinha = premio && !premio.pendente;
 
-      const lote = pendentes > 1
-        ? `<div class="pu-ed-lote">
-             Essa pessoa tem <b>${pendentes}</b> premiações sem item.
-             Se todas vieram com a mesma carta, marque acima e use o botão de baixo.
+      // item que a dedução automática marcou e não está na lista curta entra no
+      // fim: nada fica escondido e travado sem poder ser corrigido
+      const extras = Object.keys(editando.itens).filter(t => !ORDEM_ITENS.includes(t));
+      const quantos = Object.values(editando.itens).reduce((a, b) => a + b, 0);
+
+      const cartoes = ORDEM_ITENS.concat(extras).map(t => {
+        const n = editando.itens[t] || 0;
+        const { emoji, nome } = emojiENome(t);
+        return `<button class="pu-pick-it ${n ? 'sel' : ''}" data-acao="mais" data-tipo="${esc2(t)}"
+                        title="${esc2(NOME_DO_TIPO[t] || t)}">
+                  ${iconeDoItem(t, emoji, 'ico-g')}
+                  <span class="pu-pick-nome">${esc2(nome)}</span>
+                  ${n ? `<b class="pu-pick-n">${n}</b>
+                         <span class="pu-pick-menos" data-acao="menos" data-tipo="${esc2(t)}"
+                               title="tirar um">−</span>` : ''}
+                </button>`;
+      }).join('');
+
+      // O ALVO. Só aparece quando há mais de uma pendente — com uma só não há
+      // escolha a fazer, e um controle de uma opção é enfeite.
+      const escopo = editando.escopo;
+      const alvo = pendentes > 1
+        ? `<div class="pu-ed-onde">Escrever em</div>
+           <div class="pu-escopo">
+             <button class="pu-esc ${escopo === 'esta' ? 'ativo' : ''}"
+                     data-acao="escopo" data-escopo="esta">
+               <b>Só esta</b><span>a que vence em ${curto(falta)}</span>
+             </button>
+             <button class="pu-esc ${escopo === 'todas' ? 'ativo' : ''}"
+                     data-acao="escopo" data-escopo="todas">
+               <b>As ${pendentes} sem item</b><span>de uma vez, se vieram iguais</span>
+             </button>
            </div>`
+        : '';
+
+      const emLote = pendentes > 1 && escopo === 'todas';
+      // o botão diz o que vai acontecer, em vez de deixar isso pro entendimento
+      let rotulo, travado = false;
+      if (emLote) {
+        rotulo = quantos ? `Salvar nas ${pendentes} premiações` : 'Escolha um item acima';
+        travado = !quantos;
+      } else if (quantos) {
+        rotulo = 'Salvar esta premiação';
+      } else if (jaTinha) {
+        rotulo = 'Deixar sem item';       // desmarcar é conserto, não erro
+      } else {
+        rotulo = 'Escolha um item acima';
+        travado = true;
+      }
+
+      const dica = emLote
+        ? `<div class="pu-ed-dica">Vai escrever o mesmo item nas <b>${pendentes}</b>
+             premiações desta pessoa que ainda estão sem item. As que já têm item
+             (informado ou confirmado por um uso) não são tocadas.</div>`
         : '';
 
       editorEl.hidden = false;
       editorEl.innerHTML = `
         <div class="pu-ed-topo">
-          <strong>${esc2(pessoa.nickname)}</strong>
-          <span>o que veio nessa premiação?</span>
-          <button class="pu-ed-fechar" data-acao="fechar">×</button>
+          <img class="pu-ed-face" src="${esc2(pessoa.avatar || SEM_FOTO)}"
+               onerror="this.src='${SEM_FOTO}'" alt="">
+          <div class="pu-ed-quem">
+            <strong>${esc2(pessoa.nickname)}</strong>
+            <span>${pendentes > 1
+                     ? pendentes + ' premiações sem item'
+                     : 'o que veio nessa premiação?'}</span>
+          </div>
+          <button class="pu-ed-fechar" data-acao="fechar" title="fechar">×</button>
         </div>
-        ${lote}
-        <div class="pu-ed-grid">${linhas}</div>
+        <div class="pu-pick">${cartoes}</div>
+        ${alvo}
+        ${dica}
         <div class="pu-ed-pe">
-          <button class="app-btn app-btn--primary" data-acao="salvar">Salvar só esta</button>
-          ${pendentes > 1
-            ? `<button class="app-btn" data-acao="lote"${escolheu ? '' : ' disabled'}>`
-              + `Aplicar às ${pendentes} pendentes</button>`
-            : ''}
+          <button class="app-btn app-btn--primary" data-acao="salvar"${travado ? ' disabled' : ''}>${rotulo}</button>
           <button class="app-btn" data-acao="fechar">Cancelar</button>
         </div>
       `;
     }
+
+    const pessoaEditada = () =>
+      ultimo.find(x => String(x.uniqueId) === String(editando && editando.uniqueId));
 
     editorEl.addEventListener('click', async e => {
       const btn = e.target.closest('[data-acao]');
@@ -1989,62 +2220,54 @@
 
       if (acao === 'fechar') { editando = null; renderEditor(); return; }
 
+      // um toque escolhe (1), o seguinte soma; o − tira
       if (acao === 'mais' || acao === 'menos') {
         const t = btn.dataset.tipo;
         const atual = editando.itens[t] || 0;
         const novo = acao === 'mais' ? Math.min(atual + 1, 99) : Math.max(atual - 1, 0);
         if (novo) editando.itens[t] = novo; else delete editando.itens[t];
-        const pessoa = ultimo.find(x => String(x.uniqueId) === String(editando.uniqueId));
-        if (pessoa) renderEditor(pessoa);
+        renderEditor(pessoaEditada());
         return;
       }
 
-      if (acao === 'lote') {
-        const pessoa = ultimo.find(x => String(x.uniqueId) === String(editando.uniqueId));
-        const quantas = pessoa ? pendentesNoPrazo(pessoa, Date.now() - recebidoEm) : 0;
-        const oQue = Object.entries(editando.itens)
-          .map(([t, n]) => (NOME_DO_TIPO[t] || t) + (n > 1 ? ' ×' + n : '')).join(', ');
-        // confirmação porque isto escreve em várias de uma vez: desfazer
-        // significaria abrir uma por uma, que é justamente o que se evita aqui
-        if (!confirm(`Marcar as ${quantas} premiações pendentes de ${pessoa.nickname} como "${oQue}"?`)) return;
-
-        btn.disabled = true;
-        btn.textContent = 'Aplicando...';
-        try {
-          const res = await fetch('/api/powerup/itens-pendentes', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ uniqueId: editando.uniqueId, itens: editando.itens })
-          });
-          const dados = await res.json().catch(() => ({}));
-          if (!res.ok) throw new Error(dados.error || 'falhou');
-          editando = null;
-          renderEditor();
-        } catch (err) {
-          btn.disabled = false;
-          btn.textContent = `Aplicar às ${quantas} pendentes`;
-          alert(err.message || 'Não deu pra aplicar.');
-        }
+      if (acao === 'escopo') {
+        editando.escopo = btn.dataset.escopo === 'todas' ? 'todas' : 'esta';
+        renderEditor(pessoaEditada());
         return;
       }
 
       if (acao === 'salvar') {
-        const corpo = { uniqueId: editando.uniqueId, ganhaEm: editando.ganhaEm, itens: editando.itens };
+        const pessoa = pessoaEditada();
+        const pendentes = pessoa ? pendentesNoPrazo(pessoa, Date.now() - recebidoEm) : 0;
+        const emLote = pendentes > 1 && editando.escopo === 'todas';
+        const rotulo = btn.textContent;
+
         btn.disabled = true;
         btn.textContent = 'Salvando...';
         try {
-          const res = await fetch('/api/powerup/itens', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(corpo)
-          });
-          if (!res.ok) throw new Error('falhou');
+          const res = emLote
+            ? await fetch('/api/powerup/itens-pendentes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ uniqueId: editando.uniqueId, itens: editando.itens })
+              })
+            : await fetch('/api/powerup/itens', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  uniqueId: editando.uniqueId,
+                  ganhaEm: editando.ganhaEm,
+                  itens: editando.itens
+                })
+              });
+          const dados = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(dados.error || 'falhou');
           editando = null;
           renderEditor();   // o servidor reemite o estoque e a lista se redesenha
         } catch (err) {
           btn.disabled = false;
-          btn.textContent = 'Salvar';
-          alert('Não deu pra salvar. Confere se o servidor está rodando.');
+          btn.textContent = rotulo;
+          alert(err.message || 'Não deu pra salvar. Confere se o servidor está rodando.');
         }
         return;
       }

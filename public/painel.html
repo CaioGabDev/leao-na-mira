@@ -331,6 +331,11 @@
     /* 152px: abaixo disso um valor de 6 digitos nao cabe e o cartao fica feio */
     .numeros { grid-template-columns: repeat(auto-fit, minmax(152px, 1fr)); }
   }
+  /* icone de carta: a figura do TikTok, com o emoji atras como rede */
+  .ico { display: inline-flex; align-items: center; justify-content: center; }
+  .ico img { width: 1.4em; height: 1.4em; object-fit: contain; vertical-align: -.4em; }
+  .ico i { font-style: normal; display: none; }
+  .ico i:first-child { display: inline; }
 </style>
 {{tema}}
 </head>
@@ -781,6 +786,31 @@
   }
 
   // ------------------------------------------------ cartas
+  // A figura de verdade do TikTok (mesma tabela do index.html; as duas páginas
+  // são independentes). O emoji fica atrás como rede: se o caminho mudar, o
+  // `onerror` tira a imagem e o CSS mostra o emoji.
+  const CDN_CARTA = 'https://p16-webcast.tiktokcdn.com/img/alisg/webcast-sg/';
+  const ARQUIVO_DO_ITEM = {
+    luva: 'card_crit_v3', tempo: 'card_timer_v3', nevoa: 'card_mist_v3',
+    booster2: 'top2_buffer', booster3: 'top3_buffer',
+    martelo: 'card_effect_v3', efeito: 'card_effect_v3'
+  };
+  function iconeDoItem(tipo, emoji) {
+    const arquivo = ARQUIVO_DO_ITEM[tipo];
+    const img = arquivo
+      ? '<img src="' + CDN_CARTA + arquivo + '~tplv-resize:64:64.png" alt="" '
+        + 'loading="lazy" onerror="this.remove()">'
+      : '';
+    return '<span class="ico">' + img + '<i>' + (emoji || '🎴') + '</i></span>';
+  }
+  // devolve { emoji, nome } a partir do rótulo '🧤 Luva'
+  function emojiENome(t) {
+    const inteiro = NOME_DA_CARTA[t] || t;
+    const partes = inteiro.split(' ');
+    if (partes.length < 2) return { emoji: '', nome: inteiro };
+    return { emoji: partes[0], nome: partes.slice(1).join(' ') };
+  }
+
   const NOME_DA_CARTA = {
     luva: '🧤 Luva', martelo: '🔨 Martelo', nevoa: '🌫️ Névoa', tempo: '⏳ Tempo',
     booster1: '⚡ Raio 1x', booster2: '⚡ Raio 2x', booster3: '⚡ Raio 3x',
@@ -799,7 +829,8 @@
       return;
     }
     const chips = itens.map(([tipo, n]) =>
-      '<span class="carta-chip">' + esc(NOME_DA_CARTA[tipo] || tipo) + ' <b>' + n + '</b></span>').join('');
+      '<span class="carta-chip">' + iconeDoItem(tipo, emojiENome(tipo).emoji)
+      + ' ' + esc(emojiENome(tipo).nome) + ' <b>' + n + '</b></span>').join('');
 
     // As premiações pendentes são reais: o TikTok avisa que alguém ganhou mas
     // não diz O QUÊ. Esconder isso faria o estoque parecer menor do que é.

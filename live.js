@@ -247,64 +247,18 @@ function criarLive({ dono, db, emitir, criarConexao }) {
         || mapa.tipo;
   }
 
-  function descobrirCartaGanha(data) {
-    // 1) algum use*Card veio preenchido de carona? aí o cardNameKey resolve
-    for (const { campo, tipo } of Object.values(PK_CARTA_POR_MSGTYPE)) {
-      const info = data?.[campo]?.cardInfo;
-      if (!info) continue;
-      const chave = info.common?.cardNameKey || info.cardNameKey;
-      return tipoPelasPalavras(chave) || tipo;
-    }
-    // 2) e 3) a chave de i18n e depois o texto
-    const dc = data?.awardCardNotice?.displayContent;
-    // 4) varredura: a frase "got 1 no. 2 booster" em algum campo perdido
-    return tipoPelasPalavras(dc?.key)
-        || tipoPelasPalavras(textosDoDisplayContent(dc))
-        || varreduraDaCarta(data)?.tipo
-        || null;
-  }
+  // (saíram daqui `descobrirCartaGanha`, `descobrirCartaDoPremiado` e
+  // `quantidadeDoPremiado`: existiam só pra adivinhar o item do prêmio, e a
+  // premiação agora nasce vazia por decisão, não por falta de tentativa.)
 
-  // ---------- O ITEM DE CADA PREMIADO ----------
-  // O texto geral do prêmio vem genérico ("Contributors got match power-ups"),
-  // mas cada premiado carrega `tags[]`, que é o selo que o TikTok desenha ao lado
-  // do nome dele — com `content` (texto) e `iconImage` (o ícone da carta).
-  // É daí que sai o item de cada um, individualmente. Se a tag não disser nada,
-  // cai pro que a mensagem inteira sugerir; se nem isso, fica pendente.
-  function descobrirCartaDoPremiado(bu, data) {
-    const tags = bu?.tags || [];
-
-    // 1) o texto da tag
-    for (const tg of tags) {
-      const achou = tipoPelasPalavras(tg?.content);
-      if (achou) return achou;
-    }
-    // 2) o ícone da tag
-    for (const tg of tags) {
-      const achou = tipoPelaImagem(tg?.iconImage?.uri || tg?.iconImage?.urlList?.[0]);
-      if (achou) return achou;
-    }
-    // 3) qualquer outro campo DESTE premiado. Vem antes da mensagem inteira de
-    //    propósito: numa premiação com duas pessoas, a frase de uma não pode
-    //    virar o item da outra.
-    const soDele = varreduraDaCarta(bu);
-    if (soDele) return soDele.tipo;
-
-    // 4) a mensagem como um todo
-    return descobrirCartaGanha(data);
-  }
-
-  // A tag pode trazer quantidade ("x2", "×2", "2x"). Retorna null quando não diz,
-  // pra quem chamou usar a quantidade do texto da mensagem.
-  function quantidadeDoPremiado(bu) {
-    for (const tg of (bu?.tags || [])) {
-      const m = /[x×]\s*(\d{1,2})|(\d{1,2})\s*[x×]/i.exec(String(tg?.content || ''));
-      if (m) {
-        const n = parseInt(m[1] || m[2], 10);
-        if (n >= 1 && n <= 50) return n;
-      }
-    }
-    // "got 2 no. 1 booster" em algum campo do premiado também diz a quantidade
-    return varreduraDaCarta(bu)?.qtd ?? null;
+  // Quantos segundos o efeito da carta dura. Mesmo aninhamento torto do
+  // sendUser: uns põem em cardInfo, outros em cardInfo.common.
+  function duracaoDoEfeito(carta) {
+    const info = carta?.cardInfo;
+    const bruto = info?.effectLastDuration ?? info?.common?.effectLastDuration;
+    const n = Number(bruto);
+    // teto de sanidade: efeito de PK dura dezenas de segundos, não horas
+    return Number.isFinite(n) && n > 0 && n <= 600 ? Math.round(n) : 0;
   }
 
   // Luva/Top2/Top3 aninham o sendUser dentro de cardInfo.common; névoa, tempo e
@@ -738,29 +692,56 @@ function criarLive({ dono, db, emitir, criarConexao }) {
             uniqueId: 'dupla:' + timeRival.membros.slice().sort().join('+'),
             nickname: rivais.map(nomeDe).join(' + '),
             avatar: rivais[0].avatar
-          }, fimPrevisto(data.battleSettings),
-            { meuTimeId: meuTime.teamId, timeRivalId: timeRival.teamId });
+          }, fimPrevisto(data.battleSettings), {
+            meuTimeId: meuTime.teamId,
+            timeRivalId: timeRival.teamId,
+            // 2v2 e 1v2 são o mesmo caminho: o que muda é o tamanho dos times
+            formato: `${meuTime.membros.length}v${timeRival.membros.length}`
+          });
 
-          console.log(`Batalha em dupla começou contra ${rivais.map(nomeDe).join(' + ')}`);
+          const comoE = `${meuTime.membros.length}v${timeRival.membros.length}`;
+          console.log(`Batalha ${comoE} começou contra ${rivais.map(nomeDe).join(' + ')}`);
           broadcastBattles();
           return;
         }
 
+        const rivais = anfitrioes.filter(a => !souEu(a));
+        if (!rivais.length) return;
+
         // ---- 1v1 ----
-        const adversario = anfitrioes.find(a => !souEu(a));
-        if (!adversario) return;
-        // mais de dois anfitriões sem teamMember: não dá pra dizer quem é inimigo
-        if (anfitrioes.length > 2) {
-          console.log('Batalha com vários anfitriões e sem times: ignorada');
+        if (anfitrioes.length <= 2) {
+          const adversario = rivais[0];
+          db.iniciarBatalha(battleId, {
+            uniqueId: adversario.displayId || adversario.userId,
+            nickname: nomeDe(adversario),
+            avatar: adversario.avatar
+          }, fimPrevisto(data.battleSettings), { formato: '1v1' });
+          console.log(`Batalha começou contra ${nomeDe(adversario)}`);
+          broadcastBattles();
           return;
         }
 
+        // ---- TODOS CONTRA TODOS (1v1v1, 1v1v1v1) ----
+        // Isto era jogado fora com um console.log. O Borba faz PK em grupo com
+        // frequência, e a batalha inteira sumia do histórico.
+        //
+        // Aqui não existe "o adversário": são vários, cada um por si. Por isso
+        // o oponente registrado é o conjunto, e o placar se compara com o
+        // MELHOR deles (ver o linkMicArmies e o fim da batalha).
+        if (!eu) {
+          console.log(`Batalha de ${anfitrioes.length} anfitriões sem mim: ignorada`);
+          return;
+        }
         db.iniciarBatalha(battleId, {
-          uniqueId: adversario.displayId || adversario.userId,
-          nickname: nomeDe(adversario),
-          avatar: adversario.avatar
-        }, fimPrevisto(data.battleSettings));
-        console.log(`Batalha começou contra ${nomeDe(adversario)}`);
+          uniqueId: 'todos:' + rivais.map(r => r.userId).slice().sort().join('+'),
+          nickname: rivais.map(nomeDe).join(' · '),
+          avatar: rivais[0].avatar
+        }, fimPrevisto(data.battleSettings), {
+          formato: Array(anfitrioes.length).fill('1').join('v'),
+          rivaisIds: rivais.map(r => r.userId)
+        });
+        console.log(`Batalha ${Array(anfitrioes.length).fill('1').join('v')} `
+          + `começou contra ${rivais.map(nomeDe).join(', ')}`);
         broadcastBattles();
         return;
       }
@@ -788,16 +769,20 @@ function criarLive({ dono, db, emitir, criarConexao }) {
           }
           if (rival) scoreRival = Number(rival.totalScore) || 0;
         } else {
-          // 1v1: battleResult é um mapa userId -> { result, score }
+          // battleResult é um mapa userId -> { result, score }
           const resultados = data.battleResult || {};
           const meu = meuUserId ? resultados[meuUserId] : null;
-          const doOutro = Object.entries(resultados)
-            .find(([uid]) => uid !== meuUserId)?.[1];
           if (meu) {
             veredito = RESULTADO[Number(meu.result)];
             meuScore = Number(meu.score) || 0;
           }
-          if (doOutro) scoreRival = Number(doOutro.score) || 0;
+          // O MELHOR dos outros. Em 1v1 é o único que tem; num 1v1v1 é quem
+          // decide se você ganhou — pegar "o primeiro que não é você" dava
+          // vitória fácil contra quem ficou em último.
+          const outros = Object.entries(resultados)
+            .filter(([uid]) => uid !== meuUserId)
+            .map(([, r]) => Number(r && r.score) || 0);
+          if (outros.length) scoreRival = Math.max(...outros);
         }
 
         const registro = db.finalizarBatalha(battleId, {
@@ -836,11 +821,18 @@ function criarLive({ dono, db, emitir, criarConexao }) {
         const armies = data.armies || {};
         const entradas = Object.entries(armies);
         if (!entradas.length || !meuUserId) return;
-        const outroId = entradas.map(([uid]) => uid).find(uid => uid !== meuUserId);
-        if (!outroId) return;
         const pontos = uid => Number(armies[uid]?.hostscore) || 0;
+
+        // Quem são os outros: no todos-contra-todos vem da lista guardada na
+        // abertura; no 1v1 é simplesmente quem não sou eu.
+        const outros = (emCurso.rivaisIds && emCurso.rivaisIds.length)
+          ? emCurso.rivaisIds.filter(uid => armies[uid])
+          : entradas.map(([uid]) => uid).filter(uid => uid !== meuUserId);
+        if (!outros.length) return;
+
         meuPlacar = pontos(meuUserId);
-        placarRival = pontos(outroId);
+        // o placar que vale é o do líder entre eles
+        placarRival = Math.max(...outros.map(pontos));
       }
 
       const atual = db.atualizarPlacarBatalha(battleId, meuPlacar, placarRival);
@@ -1786,10 +1778,6 @@ function criarLive({ dono, db, emitir, criarConexao }) {
         abrirJanelaDoPremio(
           premiados.map(b => b?.user?.nickName).filter(Boolean).join(', ') || '?', data);
         registrarRankDoPremio(premiados);
-        // quantidade da mensagem toda: só vale se o texto disser mesmo; senão a
-        // varredura tenta achar a frase, e no fim assume 1.
-        const qtdGanha = quantidadeDoTextoOuNada(textosDoDisplayContent(data?.awardCardNotice?.displayContent))
-                      ?? varreduraDaCarta(data)?.qtd ?? 1;
         premiados.forEach(bu => {
           const p = dadosDoUsuarioPK(bu?.user);
           if (!p) return;
@@ -1803,15 +1791,29 @@ function criarLive({ dono, db, emitir, criarConexao }) {
               (meusContribuintes.size ? 'não está nos nossos contribuintes' : 'lista de contribuintes ainda vazia'));
             return;
           }
-          // item e quantidade DESTE premiado (a tag dele), não da mensagem toda
-          const tipoGanho = descobrirCartaDoPremiado(bu, data);
-          const qtd = quantidadeDoPremiado(bu) ?? qtdGanha;
-
-          if (db.registrarCartaGanha(p.uniqueId, p.nickname, p.avatar, tipoGanho, p.handle, qtd)) {
+          // A PREMIAÇÃO NASCE VAZIA, SEMPRE.
+          //
+          // Seis amostras de produção: o aviso do prêmio vem com `tags: []`,
+          // `pieces: []` e o texto genérico "Contributors got match
+          // power-ups." — ele nunca diz qual carta foi.
+          //
+          // O que havia aqui era uma cadeia de adivinhação que acabava numa
+          // varredura da MENSAGEM INTEIRA. Numa janela onde chega um USO junto
+          // (e o uso, esse sim, nomeia a carta), ela etiquetava o prêmio com o
+          // item do uso de outra pessoa. Item errado é pior que item vazio: o
+          // streamer nem fica sabendo que tem o que corrigir.
+          //
+          // Quantidade também não vem — uma mensagem pode valer 2 cartas. Uma
+          // entrada por premiado é o piso honesto (a tela mostra "≥N"), e quem
+          // informa o item informa a quantidade junto.
+          //
+          // Quem preenche isto depois: a aba de power-ups (na mão) ou o USO,
+          // que o TikTok confirma e o `resolverPendenteComUso` aproveita.
+          if (db.registrarCartaGanha(p.uniqueId, p.nickname, p.avatar, null, p.handle, 1)) {
             mexeu = true;
             // Sem pushFeed de propósito: o feedLine() do front não conhece esses
             // tipos e renderizaria uma linha sem texto. O lugar deles é a aba.
-            console.log(`[POWERUP] ${p.nickname} GANHOU ${qtd}x ${tipoGanho || 'power-up (item nao identificado -> fica pendente)'}`);
+            console.log(`[POWERUP] ${p.nickname} GANHOU power-up (item a informar)`);
           }
         });
       }
@@ -1839,6 +1841,23 @@ function criarLive({ dono, db, emitir, criarConexao }) {
         if (p && db.registrarCartaUsada(p.uniqueId, p.nickname, p.avatar, tipoUsado, p.handle, qtdUsada)) {
           mexeu = true;
           console.log(`[POWERUP] ${p.nickname} USOU ${qtdUsada}x ${tipoUsado}`);
+
+          // O EFEITO ESTÁ CORRENDO AGORA. A carta diz quantos segundos ele
+          // dura (30 na luva e no martelo, 10 no tempo — dado de produção), e
+          // isso ia pro lixo. Durante a batalha é o que mais importa: saber
+          // que a luva está valendo e por mais quanto tempo.
+          const segundos = duracaoDoEfeito(carta);
+          if (segundos > 0) {
+            emitir('powerup_efeito', {
+              uniqueId: p.uniqueId,
+              nickname: p.nickname,
+              avatar: p.avatar,
+              tipo: tipoUsado,
+              quantos: qtdUsada,
+              segundos,
+              acabaEm: Date.now() + segundos * 1000
+            });
+          }
         }
       }
 

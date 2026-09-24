@@ -1169,7 +1169,14 @@ function criarBanco(dono, opcoes) {
       // batalha de dupla: guardamos os times pra somar o placar do lado certo
       emDupla: !!(times && times.meuTimeId),
       meuTimeId: times?.meuTimeId || null,
-      timeRivalId: times?.timeRivalId || null
+      timeRivalId: times?.timeRivalId || null,
+      // O FORMATO, escrito como o TikTok mostra: 1v1, 2v2, 1v2, 1v1v1,
+      // 1v1v1v1. Até aqui só 1v1 e 2v2 eram registrados e o resto sumia.
+      formato: (times && times.formato) || '1v1',
+      // Num "todos contra todos" o rival não é UM. Guardo os ids pra o placar
+      // se comparar com o MELHOR deles — comparar com o primeiro da lista
+      // dava vitória fácil contra quem estava em último.
+      rivaisIds: Array.isArray(times && times.rivaisIds) ? times.rivaisIds.slice() : null
     };
     dirty = true;
     return state.currentBattle;
@@ -1244,7 +1251,10 @@ function criarBanco(dono, opcoes) {
       // marca que não veio veredito do TikTok: o adversário saiu no meio e o
       // resultado saiu do placar em que a batalha parou
       interrompida: !!dados.interrompida,
-      emDupla: !!b.emDupla
+      emDupla: !!b.emDupla,
+      // o formato tem que ir junto: sem ele o histórico mostra um 1v1v1 como
+      // se fosse um 1v1, e a derrota parece outra coisa do que foi
+      formato: b.formato || '1v1'
     };
 
     state.battles.push(registro);
