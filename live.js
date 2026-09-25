@@ -1849,6 +1849,10 @@ function criarLive({ dono, db, emitir, criarConexao }) {
           const segundos = duracaoDoEfeito(carta);
           if (segundos > 0) {
             emitir('powerup_efeito', {
+              // De QUAL batalha é este efeito. A carta costuma ser jogada no
+              // fim, e o efeito de 30s passa do encerramento: sem isto a tela
+              // mostraria efeito de uma batalha que já acabou.
+              battleId: String(data?.battleId || ''),
               uniqueId: p.uniqueId,
               nickname: p.nickname,
               avatar: p.avatar,

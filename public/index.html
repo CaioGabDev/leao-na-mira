@@ -1383,6 +1383,10 @@
   }
 
   function renderBattleLive(b) {
+    // O EFEITO MORRE COM A BATALHA. O contador é de 30s e a carta costuma ser
+    // jogada no fim — sem isto a faixa ficava mostrando "jogou luva, 18s" com
+    // a batalha encerrada e o placar do lado já apagado.
+    trocouDeBatalha(b ? b.battleId : null);
     if (!b) { battleLiveEl.classList.remove('show'); return; }
     const nome = esc(b.oponente?.nickname || b.oponente?.uniqueId || 'adversário');
     battleLiveEl.classList.add('show');
@@ -1454,6 +1458,18 @@
   // "fulano jogou luva" some no feed e ninguém sabe se ainda está valendo.
   const pkEfeitosEl = document.getElementById('pkEfeitos');
   let efeitosPK = [];
+  let batalhaDosEfeitos = null;
+
+  // `function` e não arrow de propósito: a renderBattleLive está ACIMA daqui no
+  // arquivo e chama isto — declaração de função sobe, `const` não.
+  function trocouDeBatalha(battleId) {
+    if (battleId === batalhaDosEfeitos) return;
+    batalhaDosEfeitos = battleId;
+    if (efeitosPK.length) {
+      efeitosPK = [];
+      desenharEfeitosPK();
+    }
+  }
 
   function desenharEfeitosPK() {
     const agora = Date.now();
@@ -1496,6 +1512,9 @@
 
   socket.on('powerup_efeito', e => {
     if (!e || !e.acabaEm) return;
+    // A carta pode chegar logo DEPOIS do fim da batalha (é quando mais se
+    // joga carta). Se ela não é da batalha que está na tela, não entra.
+    if (e.battleId && batalhaDosEfeitos && e.battleId !== batalhaDosEfeitos) return;
     efeitosPK.push(e);
     desenharEfeitosPK();
   });
