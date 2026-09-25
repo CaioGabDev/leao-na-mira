@@ -1,0 +1,470 @@
+# Ranking da Live
+
+Painel em tempo real para lives do TikTok. Ele fica conectado na live, escuta o
+que acontece lá (likes, presentes, comentários, seguidores, batalhas de PK) e
+transforma isso em ranking, mural da tropa, estoque de power-ups e histórico.
+
+Um servidor só atende **vários clientes ao mesmo tempo**: cada cliente é o `@`
+de uma live, com os dados dele, a marca dele e as pessoas dele — sem enxergar
+a live de ninguém.
+
+---
+
+## Sumário
+
+- [Como rodar](#como-rodar)
+- [As telas](#as-telas)
+- [Contas e acesso](#contas-e-acesso)
+- [Multi-cliente: como um servidor segura várias lives](#multi-cliente-como-um-servidor-segura-várias-lives)
+- [O que o motor da live escuta](#o-que-o-motor-da-live-escuta)
+- [Onde os dados moram](#onde-os-dados-moram)
+- [Aparência (configuração)](#aparência-configuração)
+- [Assinatura da conexão (EulerStream)](#assinatura-da-conexão-eulerstream)
+- [Variáveis de ambiente](#variáveis-de-ambiente)
+- [API](#api)
+- [Eventos de socket](#eventos-de-socket)
+- [Deploy (Railway)](#deploy-railway)
+- [Mapa dos arquivos](#mapa-dos-arquivos)
+- [Armadilhas conhecidas](#armadilhas-conhecidas)
+
+---
+
+## Como rodar
+
+### Requisitos
+
+**Node 24 ou mais novo.** Não é sugestão: o banco usa o SQLite que vem dentro do
+Node (`node:sqlite`), que só existe do 24 pra frente. Numa versão mais velha o
+servidor morre na subida com um recado explícito (`banco.js`), de propósito —
+melhor do que um `Cannot find module` no meio do log.
+
+A versão fica travada em três lugares: `.node-version`, `engines` do
+`package.json` e a checagem do `banco.js`.
+
+### Passo a passo
+
+```bash
+npm install
+
+# o primeiro usuário (só precisa na primeira vez)
+node create-user.js caio umaSenhaBoa --admin
+
+npm start
+```
+
+O site sobe em `http://localhost:3000` (ou na porta de `PORT`).
+
+Rode **de dentro da pasta do projeto**. Os arquivos de dados (`users.json`,
+`dados.db`, `config.json`, …) e o `express.static('public')` são relativos ao
+diretório de onde o processo subiu.
+
+### Qual live ele acompanha
+
+A live da casa é decidida na subida do servidor, nesta ordem:
+
+1. `live.usuario` do `config.json` (o que o administrador salvou na tela)
+2. a variável `TIKTOK_USERNAME`
+3. o padrão cravado no código
+
+É lido **uma vez, na subida**, de propósito: trocar de live com a coisa rodando
+misturaria os dados de duas lives no mesmo lugar. Depois de trocar o `@`,
+reinicie.
+
+Além da live da casa, o servidor sobe uma live por cliente cadastrado — todo
+mundo que tem `dono` no `users.json`.
+
+### Primeiro acesso
+
+Se ninguém for administrador, ninguém abre a configuração. O servidor tenta
+resolver isso sozinho na subida (`auth.garantirDono()`): se existe uma conta só,
+ela vira a dona; se existe `ADMIN_USER`, é ela. Não dando pra decidir, ele avisa
+no log e você resolve com `node create-user.js <usuario> <senha> --admin`.
+
+Em produção, onde não dá pra rodar script à mão, o primeiro usuário nasce das
+variáveis `ADMIN_USER` / `ADMIN_PASSWORD` (`auth.seedFromEnv()`). Ele só é
+criado se ainda não existir — trocar a senha depois não é desfeito no restart.
+
+---
+
+## As telas
+
+| Tela | Quem vê | O que é |
+|---|---|---|
+| `index.html` | cliente | O ranking em tempo real. A tela principal, a que vai pro OBS. |
+| `mural.html` | cliente | Mural da tropa: quem subiu de nível, superfãs, e a geração da imagem pra postar. |
+| `painel.html` | cliente | Os números da live: curva minuto a minuto, melhores dias, horários, recordes. |
+| `diagnostico.html` | cliente | Log cru do que está chegando do TikTok. É a tela de "por que isso não contou?". |
+| `admin.html` | administrador | Painel do negócio: todos os clientes, os números de cada live, as contas e as chaves. |
+| `config.html` | cliente e administrador | Aparência: marca, cores, textos. O cliente mexe na cara da live dele; o administrador escolhe de quem é a cara que está mexendo. |
+| `login.html` | todo mundo | Entrada. |
+| `ativar.html` | quem tem chave | Onde o cliente troca a chave de ativação por uma conta que ele mesmo escolhe. |
+
+As páginas são arquivos estáticos com `{{marcadores}}`. O servidor troca os
+marcadores pelo config de quem está logado **antes** de entregar — por isso esse
+middleware vem antes do `express.static`, senão o arquivo cru seria servido. O
+resultado fica em cache por `nome|dono|admin|espiando`, invalidado pelo mtime do
+arquivo e pela versão do config.
+
+O administrador **não mora nas telas de cliente**: pedir `index.html` sendo
+admin redireciona pro `admin.html`. Pra olhar a live de um cliente ele usa
+*espiar* (abaixo).
+
+---
+
+## Contas e acesso
+
+Uma conta tem dois eixos independentes, e eles não se misturam:
+
+- **`admin: true`** — abre `/admin.html`, `/api/clientes`, `/api/chaves` e
+  `/api/espiar`. É o dono do negócio.
+- **`dono: "@fulano"`** — de qual live aquela conta é. Sem isso, cai na live da
+  casa.
+
+Administrador **não pertence a live nenhuma**. Ele é a casa, não um streamer.
+Por isso ele não aparece na lista de usuários de nenhum cliente e não abre as
+telas de cliente sem espiar.
+
+### Espiar
+
+O administrador precisa olhar a live de um cliente de vez em quando (suporte,
+conferir se está contando). `GET /api/espiar?dono=@fulano` guarda esse `@` **na
+sessão dele**, e a partir daí as telas de cliente mostram a live do cliente.
+`GET /api/espiar/sair` desfaz. A marca de admin é conferida na hora de resolver
+a sessão (`clientes.daSessao`), então um cliente que forje `espiando` continua
+caindo na live dele.
+
+### Como entra gente nova
+
+**O caminho bom — chave de ativação.** O administrador gera uma chave dizendo só
+de qual live ela é. O cliente digita a chave em `ativar.html` e escolhe o
+próprio usuário e a própria senha. A senha nunca passa pela mão de ninguém.
+
+A chave é de uso único, vence (padrão configurável em `chaves.js`), e depois de
+usada vira registro histórico — não é apagada, pra o painel conseguir mostrar
+quem ativou e quando. O alfabeto não tem `I`, `L`, `O`, `0` nem `1`: alguém vai
+ler isso de um print e digitar na mão. Chute de chave tem castigo por IP.
+
+**O caminho manual — a linha de comando:**
+
+```bash
+node create-user.js <usuario> <senha> [--admin] [--dono=@fulano]
+```
+
+**Pelo painel.** O administrador também cria conta direto no `admin.html`, e
+pode promover um cliente a administrador ou rebaixar de volta.
+
+Duas travas no servidor, que a tela não pode contornar: ninguém se rebaixa nem
+se apaga sozinho, e a instalação nunca fica sem nenhum administrador — senão a
+configuração viraria uma porta trancada por dentro.
+
+Tirar o acesso de alguém **não apaga os dados da live dele**. Apagar é
+irreversível e não pode sair de um clique numa lista.
+
+### Sessões
+
+Ficam em arquivo (`sessions.json`), não só na memória: sem isso todo deploy
+deslogaria todo mundo. Cookie `httpOnly`, `sameSite: lax`, `secure` em produção,
+30 dias de validade que se renovam a cada visita (`rolling`). O login regenera
+o id da sessão, pra um id capturado antes não valer nada depois.
+
+A cada requisição o servidor confere se a conta **ainda existe**
+(`auth.existe()`). Apagar alguém tem que valer na hora, inclusive pra quem já
+está com a tela aberta.
+
+---
+
+## Multi-cliente: como um servidor segura várias lives
+
+A pergunta "de quem é esta requisição?" tem uma resposta só, e ela mora no
+`clientes.js`:
+
+```
+usuário logado  ->  dono (o @ da live)  ->  cliente { db, live, sala }
+```
+
+Cada cliente é:
+
+- um **`db`** próprio (`db.paraDono('@fulano')`) — estado em memória, espelhado
+  no SQLite;
+- um **motor de live** próprio (`criarLive(...)`) — a conexão com o TikTok, o
+  feed, o diagnóstico e os relógios dele;
+- uma **sala do socket.io** (`dono:@fulano`) — o motor fala com `io.to(sala)`,
+  nunca com `io.emit`. Essa é a linha que impede um cliente de ver a live do
+  outro em tempo real.
+
+Abrir um cliente acontece a cada requisição e é barato (reaproveita o que já
+está aberto). **Ligar** o motor — que conecta no TikTok — é outra coisa, e só
+acontece no `iniciar()`: na subida do servidor e quando um cliente novo é
+cadastrado (aí a live dele sobe na hora, sem reiniciar).
+
+---
+
+## O que o motor da live escuta
+
+O `live.js` é o miolo. Ele traduz eventos do TikTok em dados:
+
+| Evento | Vira |
+|---|---|
+| `like` | pontos no ranking |
+| `gift` | diamantes no ranking — ou **power-up**, se for GG, Rocket ou Universe |
+| `chat` | comentário no feed, e leitura do nível do selo |
+| `follow`, `share`, `social` | contadores sociais |
+| `member` | entrada na sala |
+| `roomUser` | contagem de espectadores e pico |
+| `streamEnd` | fecha a sessão da live de verdade |
+| `linkMicBattle`, `linkMicArmies` | batalha de PK: placar ao vivo e histórico |
+| `linkMicBattleItemCard` | cartas de power-up ganhas no PK |
+| `superFan`, `superFanJoin`, `barrage` | superfã |
+
+Alguns detalhes que custaram caro e estão comentados no código:
+
+- **Nível**: a fonte é o **selo** que aparece do lado do nome, e só ele. Antes o
+  código cruzava `payGrade` e `fansClub` como reforço; as fontes discordavam e a
+  diferença era lida como "subiu de nível". A primeira leitura de uma pessoa só
+  anota o ponto de partida, sem anunciar — senão quem já era nível 17 há meses
+  entraria no mural como se tivesse acabado de subir. O mural mostra do nível 10
+  pra cima.
+- **Presente em rajada**: presente de tipo 1 só conta quando a rajada termina
+  (`repeatEnd`), senão cada tap contaria de novo.
+- **Cartas de PK**: valem 5 dias e depois vencem sozinhas. Quantas cartas uma
+  premiação deu é a única coisa que o TikTok não manda pela live — ele mostra só
+  no painel dele — então quem informa é quem está assistindo,
+  por `POST /api/powerup/itens`.
+- **Watchdog**: comentário também conta como sinal de vida. Sem isso, numa live
+  de muita conversa e pouco like o watchdog forçava reconexão a cada 5 minutos,
+  a sessão era dada como encerrada e a duração voltava do zero no meio da live.
+- **Reconexão ≠ live nova**: queda de rede não fecha a sessão. Só `streamEnd`,
+  ou o watchdog depois do prazo de tolerância.
+- **`protocru.js`**: lê o protobuf cru, sem schema. Quando o TikTok acrescenta
+  um campo, a biblioteca decodifica o que conhece e pula o resto **em silêncio**
+  — o campo existe nos bytes e some antes de chegar em qualquer lugar visível.
+  Este módulo decodifica, re-codifica e compara os números de campo, pra
+  descobrir o que a biblioteca não conhece.
+
+---
+
+## Onde os dados moram
+
+| Arquivo | O que guarda |
+|---|---|
+| `dados.db` | **A fonte da verdade.** SQLite, uma linha por registro, sempre com a coluna `dono`. |
+| `users.json` | Contas: usuário, salt, hash, `admin`, `dono`. Gravado com permissão 0600. |
+| `chaves.json` | Chaves de ativação e o histórico de quem usou. |
+| `config.json` | Aparência da instalação e de cada cliente. |
+| `sessions.json` | Sessões abertas. |
+| `live.json` | Espelho no formato antigo, **só da live da casa**. Existe pra dar pra voltar pro código pré-SQLite sem perder nada. Clientes novos não espelham. |
+
+Nada disso vai pro git (veja o `.gitignore`).
+
+O estado fica **inteiro em memória** — é o que aguenta os picos de tap — e o
+banco é o espelho dele, gravado a cada 5 segundos e sempre dentro de uma
+transação.
+
+Cada linha guarda o objeto em **JSON**, e as colunas de verdade são só as que
+servem pra separar e ordenar (`dono`, `id`, posição). O motivo está no
+`banco.js`: os objetos ganham campo novo com frequência (powerups,
+`gifterLevel`, `superFaEm`…), e uma coluna por campo obrigaria a migrar o schema
+toda vez, com risco de perder dado calado no caminho.
+
+---
+
+## Aparência (configuração)
+
+O código é o mesmo pra todo mundo; o que muda mora no `config.js`, em dois
+níveis:
+
+- **Instalação** — a cara padrão do site e o `@` da live da casa.
+- **Cliente** — a cara de um cliente, por `dono`.
+
+O cliente só preenche o que quer diferente; o que ele não mexer cai na
+configuração da instalação. Por isso `get(dono)` devolve sempre um config
+completo, nunca pela metade.
+
+Dá pra configurar: nome e lema do **produto** (o que aparece no login e no
+ativar — a porta do produto, antes de a pessoa pertencer a uma live), emoji /
+título / subtítulo da **marca**, títulos do **mural**, as **cores** do tema
+(fundo, card, dourado, as duas brasas do gradiente e as duas brasinhas que sobem
+no fundo) e o `@` da **live**.
+
+Tudo que entra aqui veio de um formulário e vai parar dentro de HTML e de CSS,
+então nada é aproveitado como veio: texto perde caracteres de controle e é
+cortado no limite; cor só passa se for hexadecimal de 6 dígitos — é isso que
+impede alguém de fechar a regra do CSS e injetar o que quiser; o `@` vira
+minúsculo sempre, porque o banco, o registro de clientes e o config usam o `@`
+em caixa baixa como chave.
+
+---
+
+## Assinatura da conexão (EulerStream)
+
+Toda conexão com uma live passa por um servidor de assinatura — é ele que
+devolve a URL do websocket que o TikTok aceita. O padrão é o
+[EulerStream](https://api.eulerstream.com).
+
+**Sem chave, a identificação é pelo IP, e o limite é por IP.** Como cada live e
+cada reconexão pedem assinatura, esse é o primeiro gargalo que aparece quando o
+servidor passa a segurar vários clientes. Antes de colocar mais de uma live pra
+rodar, defina `EULERSTREAM_API_KEY` (ou `SIGN_API_KEY` — os dois nomes valem).
+
+O `assinatura.js` não guarda nem mostra a chave: só diz se existe uma, e sabe
+distinguir "o assinador recusou" de "a rede caiu". Sem essa distinção, limite
+estourado vira "sei lá, não conecta".
+
+---
+
+## Variáveis de ambiente
+
+| Variável | Pra que serve |
+|---|---|
+| `PORT` | Porta do servidor. Padrão: `3000`. |
+| `TIKTOK_USERNAME` | `@` da live da casa, quando não há `config.json`. |
+| `SESSION_SECRET` | Segredo do cookie de sessão. **Defina em produção** — sem ela o servidor avisa no log e usa um segredo de desenvolvimento. |
+| `EULERSTREAM_API_KEY` / `SIGN_API_KEY` | Chave do assinador. Necessária na prática pra mais de uma live. |
+| `SIGN_API_URL` | Aponta o assinador pra outro servidor. Serve pra investigação. |
+| `ADMIN_USER` / `ADMIN_PASSWORD` | Cria o primeiro administrador na subida, se ele ainda não existir. |
+| `NODE_ENV=production` | Liga `trust proxy` e o cookie `secure`. |
+| `RAILWAY_ENVIRONMENT` | Quando existe, todos os arquivos de dados passam a morar em `/data`. |
+
+---
+
+## API
+
+Tudo abaixo de `/api/` exige login, menos `/api/login`, `/api/ativar` e
+`/api/ativar/info`. As rotas de dados são escopadas pelo `clientes.doPedido` —
+cada um enxerga a própria live e nada mais.
+
+### Entrada
+
+| Rota | O que faz |
+|---|---|
+| `POST /api/login` | Entra. Regenera a sessão. |
+| `POST /api/logout` | Sai. |
+| `GET /api/ativar/info?chave=` | Diz de qual live a chave é, **sem gastar ela**. |
+| `POST /api/ativar` | Troca a chave por uma conta nova e já entra logado. |
+
+### Os dados da live (cliente)
+
+| Rota | O que devolve |
+|---|---|
+| `GET /api/ranking` | O ranking. |
+| `GET /api/dashboard` | Tudo que o streamer quer ver, num pedido só. |
+| `GET /api/serie` | A curva minuto a minuto. `agrupar` junta N minutos num ponto — quem desenha sabe quantos pixels tem, o servidor não. |
+| `GET /api/registros` | O olhar longo: melhores dias, dia da semana, horário, recordes. |
+| `GET /api/batalhas` | Histórico de PK, rivais, aproveitamento. |
+| `GET /api/sessions` | Lives já encerradas. |
+| `GET /api/user/:uniqueId` | A ficha de uma pessoa. |
+| `POST /api/reset` | **Apaga tudo** daquela live. |
+| `POST /api/tropa/limpar` | Limpa só o mural. Ranking, likes, presentes e níveis ficam de pé. |
+| `POST /api/tropa/remover` | Tira uma pessoa do mural. |
+| `POST /api/powerup/itens` | Informa quais cartas uma premiação deu. |
+| `POST /api/powerup/itens-pendentes` | O mesmo, para as premiações que ficaram em aberto. |
+
+### Só administrador
+
+| Rota | O que faz |
+|---|---|
+| `GET /api/clientes` | Todos os clientes, com os números de cada live e a lista de administradores. |
+| `POST /api/clientes` | Cria um cliente (e sobe a live dele na hora) ou um administrador. |
+| `POST /api/clientes/admin` | Promove ou rebaixa. |
+| `POST /api/clientes/remover-acesso` | Tira o acesso de alguém. Não apaga os dados da live. |
+| `GET` / `POST /api/chaves` | Lista e gera chaves de ativação. |
+| `POST /api/chaves/revogar` · `/apagar` | Mata uma chave. |
+| `GET /api/espiar?dono=` · `/api/espiar/sair` | Entra e sai da live de um cliente. |
+
+### Aparência — dos dois, com escopo
+
+`GET` e `POST /api/config` **não são exclusivas do administrador**: o cliente
+mexe na cara da live dele. Quem decide o escopo é o `escopoDoPedido()`:
+
+- **administrador** escolhe — `?dono=@fulano` mira um cliente, vazio mira a
+  instalação;
+- **cliente** só mexe na dele, e pedir outra dá **403** em vez de ser
+  redirecionado calado. Redirecionar fazia o cliente sobrescrever a própria cara
+  com um texto destinado a outro lugar.
+
+`dono` vazio quer dizer "a minha", não "a da casa" — por isso não é recusa.
+
+---
+
+## Eventos de socket
+
+O socket usa a mesma sessão do Express, e conexão sem login é recusada no
+handshake. Cada navegador entra **na sala do dono dele**.
+
+Ao conectar, o servidor manda o estado atual: `ranking`, `global_stats`,
+`live_status`, `live_feed_init`, `tropa_init`, `battle_stats`,
+`powerup_estoque`, `diagnostico_init`.
+
+Depois disso o motor empurra as mudanças: `ranking`, `global_stats`,
+`viewer_count`, `live_status`, `live_feed_event`, `tropa_add`,
+`battle_live`, `battle_stats`, `powerup_estoque`, `powerup_efeito`,
+`diagnostico` — e o servidor manda `tropa_removida` e `tropa_limpa` quando
+alguém mexe no mural pela API.
+
+---
+
+## Deploy (Railway)
+
+Com `RAILWAY_ENVIRONMENT` presente, todos os arquivos de dados passam a morar em
+**`/data`** — o disco persistente. Sem isso, cada deploy levaria junto o
+`users.json`, o banco e as sessões.
+
+O que configurar lá:
+
+- um **volume montado em `/data`**;
+- `SESSION_SECRET`;
+- `ADMIN_USER` / `ADMIN_PASSWORD` (pro primeiro acesso);
+- `EULERSTREAM_API_KEY`;
+- `NODE_ENV=production`;
+- Node 24+ (o `.node-version` já pede).
+
+Não precisa compilar nada: o SQLite vem dentro do Node, então não há dependência
+nativa pra buildar no deploy.
+
+---
+
+## Mapa dos arquivos
+
+```
+server.js          rotas, sessão, socket, e a entrega das páginas com a marca
+clientes.js        o registro: usuário -> dono -> { db, live, sala }
+live.js            o motor de uma live: conexão, eventos, feed, diagnóstico
+db.js              os dados de um dono, em memória, com o banco como espelho
+banco.js           o SQLite (node:sqlite). Toda linha carrega o `dono`
+auth.js            contas, hash de senha, admin/dono
+chaves.js          chaves de ativação
+config.js          aparência: instalação e cliente, com saneamento
+assinatura.js      o estado do assinador da conexão
+session-store.js   sessões em arquivo
+protocru.js        lê o protobuf cru pra achar campo que a lib não conhece
+create-user.js     cadastro pela linha de comando
+
+public/
+  index.html       o ranking (a tela principal)
+  mural.html       o mural da tropa e a geração da imagem
+  painel.html      os números da live
+  diagnostico.html o log cru do que chega do TikTok
+  admin.html       o painel do administrador
+  config.html      a aparência
+  login.html       entrada
+  ativar.html      troca de chave por conta
+  assets/theme.css os tokens de tema e as primitivas `app-`
+```
+
+---
+
+## Armadilhas conhecidas
+
+- **Node 24.** Tentar rodar em 18 ou 20 falha na subida, com recado. É o
+  `node:sqlite`.
+- **Rode de dentro da pasta do projeto.** `express.static('public')` e os
+  arquivos de dados são relativos ao diretório de onde o processo subiu — a
+  linha logo acima dele, que serve as páginas com marcador, usa `__dirname`.
+  Subir o servidor de outra pasta entrega as páginas sem CSS nenhum, calado.
+- **Trocar o `@` da live pede restart.** É lido uma vez, na subida.
+- **Uma chave de assinatura por instalação** antes de colocar a segunda live no
+  ar. Sem ela o limite é por IP, e cada reconexão consome.
+- **Promover um cliente a administrador tira ele da live dele**, porque
+  administrador não pertence a live nenhuma. A tela avisa antes.
+- **O `live.json` é só da casa.** Não procure lá os dados de um cliente: eles
+  nasceram no banco e só existem lá.
