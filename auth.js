@@ -107,11 +107,23 @@ function garantirDono() {
   return escolhido.username;
 }
 
+// O salt de mentira serve pra uma coisa só: gastar o mesmo tempo quando o
+// usuário não existe. Sem isso, a resposta voltava na hora pra nome
+// desconhecido e devagar pra nome conhecido — e essa diferença conta quais
+// contas existem pra quem estiver medindo.
+const SALT_DE_MENTIRA = crypto.randomBytes(16).toString('hex');
+
 function verifyCredentials(username, password) {
-  if (!username || !password) return false;
+  if (!username || typeof password !== 'string' || !password) return false;
+  // senha maior que o máximo do cadastro não é senha de ninguém: recusar antes
+  // do scrypt evita gastar CPU com um corpo grande de propósito
+  if (password.length > 200) return false;
   const users = loadUsers();
   const user = users.find(u => u.username === username);
-  if (!user) return false;
+  if (!user) {
+    hashPassword(password, SALT_DE_MENTIRA);
+    return false;
+  }
   const { hash } = hashPassword(password, user.salt);
   const a = Buffer.from(hash, 'hex');
   const b = Buffer.from(user.hash, 'hex');

@@ -168,6 +168,12 @@ function lerArquivo() {
   }
   if (!lido || typeof lido !== 'object') lido = {};
   if (!lido.clientes || typeof lido.clientes !== 'object') lido.clientes = {};
+  // Sem protótipo de propósito. O @ do cliente é a CHAVE deste objeto, e
+  // `usuarioTikTok('__proto__')` devolve '__proto__' — são só letras e
+  // sublinhado. Num objeto comum, `clientes['__proto__']` não é um cliente: é o
+  // Object.prototype, e gravar a configuração "dele" escrevia campo em todo
+  // objeto do processo. Aqui é só mais uma chave, como qualquer outra.
+  lido.clientes = Object.assign(Object.create(null), lido.clientes);
   bruto = lido;
   return bruto;
 }

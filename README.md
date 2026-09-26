@@ -318,11 +318,11 @@ estourado vira "sei lá, não conecta".
 |---|---|
 | `PORT` | Porta do servidor. Padrão: `3000`. |
 | `TIKTOK_USERNAME` | `@` da live da casa, quando não há `config.json`. |
-| `SESSION_SECRET` | Segredo do cookie de sessão. **Defina em produção** — sem ela o servidor avisa no log e usa um segredo de desenvolvimento. |
+| `SESSION_SECRET` | Segredo do cookie de sessão. **Obrigatória**: sem ela o servidor não sobe (só sobe com `DEV_LOCAL=1`, e aí com um segredo público). |
 | `EULERSTREAM_API_KEY` / `SIGN_API_KEY` | Chave do assinador. Necessária na prática pra mais de uma live. |
 | `SIGN_API_URL` | Aponta o assinador pra outro servidor. Serve pra investigação. |
 | `ADMIN_USER` / `ADMIN_PASSWORD` | Cria o primeiro administrador na subida, se ele ainda não existir. |
-| `NODE_ENV=production` | Liga `trust proxy` e o cookie `secure`. |
+| `DEV_LOCAL=1` | **Só na sua máquina.** Aceita rodar sem `SESSION_SECRET` e manda o cookie de sessão por HTTP. Em qualquer deploy, não defina: o padrão já é `trust proxy` ligado e cookie `secure`. |
 | `RAILWAY_ENVIRONMENT` | Quando existe, todos os arquivos de dados passam a morar em `/data`. |
 
 ---
@@ -412,10 +412,11 @@ Com `RAILWAY_ENVIRONMENT` presente, todos os arquivos de dados passam a morar em
 O que configurar lá:
 
 - um **volume montado em `/data`**;
-- `SESSION_SECRET`;
+- `SESSION_SECRET` (sem ela o servidor não sobe);
 - `ADMIN_USER` / `ADMIN_PASSWORD` (pro primeiro acesso);
 - `EULERSTREAM_API_KEY`;
-- `NODE_ENV=production`;
+- `NODE_ENV=production` (recomendado; a segurança da sessão e o vazamento de
+  stack trace não dependem mais dela);
 - Node 24+ (o `.node-version` já pede).
 
 Não precisa compilar nada: o SQLite vem dentro do Node, então não há dependência

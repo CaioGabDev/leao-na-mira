@@ -11,7 +11,7 @@
     "express": "^4.19.2",
     "express-session": "^1.19.0",
     "socket.io": "^4.7.5",
-    "tiktok-live-connector": "latest"
+    "tiktok-live-connector": "^2.4.4"
   },
   "engines": {
     "node": ">=24.0.0"

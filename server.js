@@ -7,6 +7,7 @@ const ConnectionClass = TikTokLiveConnection;
 const fs = require('fs');
 const path = require('path');
 const criarRegistro = require('./clientes');
+const dbFabrica = require('./db');   // só pela lista de tipos de carta
 const assinatura = require('./assinatura');
 const auth = require('./auth');
 const chaves = require('./chaves');
@@ -29,16 +30,81 @@ const clientes = criarRegistro({ io, donoPadrao: TIKTOK_USERNAME });
 // ---------- Login / sessão ----------
 // Quem pode logar é cadastrado com `node create-user.js <usuario> <senha>`
 // (gera/atualiza o users.json). Veja o README.
-if (process.env.NODE_ENV === 'production') app.set('trust proxy', 1);
+// As duas frouxuras que só fazem sentido numa máquina de desenvolvimento —
+// segredo de sessão de brinquedo e cookie sem `secure` — ficam atrás desta
+// variável, e de mais nada. Antes dependiam de `NODE_ENV`: esquecer a variável
+// no deploy deixava a sessão com um segredo que está no git e o cookie viajando
+// em HTTP, e o servidor subia igual, só com um aviso no log que ninguém lê.
+// Agora o padrão é o seguro, e quem quer o frouxo pede.
+const DEV_LOCAL = process.env.DEV_LOCAL === '1';
+
+// Atrás de proxy (Railway) o `secure` do cookie só funciona com isto ligado,
+// e é o que faz o req.ip ser o IP de quem pediu — o freio de tentativa conta
+// por IP, então sem isto todo mundo viraria o mesmo IP do proxy.
+if (!DEV_LOCAL) app.set('trust proxy', 1);
+
+// ---------- cabeçalhos de segurança ----------
+// À mão, e não com o helmet, pelo mesmo motivo do node:sqlite: dependência nova
+// é coisa pra atualizar e auditar pra sempre, e o que se precisa aqui são sete
+// cabeçalhos fixos. Primeiro middleware de propósito: assim até a resposta 401 e
+// o arquivo estático saem com eles.
+//
+// A CSP não proíbe script inline: TODA página deste projeto tem um <script> no
+// corpo e há onclick= espalhado pelo mural e pelo painel — uma CSP sem
+// 'unsafe-inline' desligaria o site inteiro. O que ela faz é o que dá pra fazer
+// sem reescrever as telas: script só da própria origem (e do cdnjs, que serve o
+// html2canvas do mural), nada de <object>, nada de <base>, nenhum site pode
+// embutir esta página num iframe e formulário só posta aqui dentro.
+const CSP = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com",
+  // o googleapis é a folha do Google Fonts, que toda página carrega
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  // os avatares vêm de vários domínios do TikTok, que mudam sem avisar
+  "img-src 'self' data: https:",
+  // 'self' já cobre o websocket da mesma origem, mas navegador antigo não
+  // concorda — e sem socket não há live, então ws/wss vão escritos
+  "connect-src 'self' ws: wss:",
+  // o arquivo da fonte em si vem do gstatic, não do googleapis
+  "font-src 'self' data: https://fonts.gstatic.com",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "frame-ancestors 'none'",
+  "form-action 'self'"
+].join('; ');
+
+app.use((_req, res, next) => {
+  res.setHeader('Content-Security-Policy', CSP);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  // só faz sentido onde já se está em HTTPS; em dev seria um tiro no pé, porque
+  // o navegador passa a recusar http://localhost por meses
+  if (!DEV_LOCAL) {
+    res.setHeader('Strict-Transport-Security', 'max-age=15552000; includeSubDomains');
+  }
+  next();
+});
 
 auth.seedFromEnv();
 // Quem vem da versão antiga não tem `admin` em ninguém. Isto resolve uma vez,
 // antes de qualquer requisição, pra ninguém ficar trancado pra fora.
 auth.garantirDono();
 
-const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-only-secret-troque-em-producao';
-if (!process.env.SESSION_SECRET) {
-  console.warn('AVISO: SESSION_SECRET não definido. Configure essa env var em produção (Railway).');
+// Sem segredo não tem sessão: o cookie de sessão é o que separa o dono do
+// site de qualquer visitante, e com um segredo conhecido dá pra forjar um.
+// Então falta de SESSION_SECRET derruba a subida em vez de virar aviso.
+const SESSION_SECRET = process.env.SESSION_SECRET
+  || (DEV_LOCAL ? 'dev-only-secret-troque-em-producao' : null);
+if (!SESSION_SECRET) {
+  console.error(
+    'ERRO: SESSION_SECRET não definido. Gere um segredo longo e aleatório e ' +
+    'configure essa env var (no Railway, em Variables). Pra rodar na sua ' +
+    'máquina sem ela, suba com DEV_LOCAL=1.'
+  );
+  process.exit(1);
 }
 
 const sessionMiddleware = session({
@@ -52,7 +118,8 @@ const sessionMiddleware = session({
   cookie: {
     httpOnly: true,
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    // padrão seguro: só uma subida com DEV_LOCAL=1 aceita cookie em HTTP
+    secure: !DEV_LOCAL,
     maxAge: 1000 * 60 * 60 * 24 * 30 // 30 dias sem acessar
   }
 });
@@ -68,11 +135,57 @@ io.use((socket, next) => {
   next(new Error('unauthorized'));
 });
 
+// ---------- freio de tentativa de senha ----------
+// O login é público e senha é coisa que dá pra chutar — e aqui o chute é mais
+// barato que na chave de ativação, porque as senhas têm 6 caracteres de mínimo.
+//
+// Conta por IP E por usuário, as duas contas no mesmo balde: só por IP, uma
+// rede grande (ou um IP trocado a cada tentativa) passa por cima do freio; só
+// por usuário, dá pra varrer uma lista de contas de um IP só sem nunca
+// esbarrar. Acertar a senha zera as duas — quem entrou não está chutando.
+const LOGIN_LIMITE = 10;
+const LOGIN_JANELA = 15 * 60 * 1000;
+const tentativasDeLogin = new Map();   // 'ip:x' | 'user:y' -> { contagem, ate }
+
+function baldesDoLogin(req, usuario) {
+  return ['ip:' + (req.ip || 'desconhecido'),
+          'user:' + String(usuario || '').trim().toLowerCase()];
+}
+
+function loginTravado(req, usuario) {
+  const agora = Date.now();
+  return baldesDoLogin(req, usuario).some(balde => {
+    const atual = tentativasDeLogin.get(balde);
+    return !!atual && agora < atual.ate && atual.contagem >= LOGIN_LIMITE;
+  });
+}
+
+function errouASenha(req, usuario) {
+  const agora = Date.now();
+  baldesDoLogin(req, usuario).forEach(balde => {
+    const atual = tentativasDeLogin.get(balde);
+    if (!atual || agora > atual.ate) {
+      tentativasDeLogin.set(balde, { contagem: 1, ate: agora + LOGIN_JANELA });
+    } else {
+      atual.contagem++;
+    }
+  });
+}
+
+function acertouASenha(req, usuario) {
+  baldesDoLogin(req, usuario).forEach(balde => tentativasDeLogin.delete(balde));
+}
+
 app.post('/api/login', (req, res) => {
   const { username, password } = req.body || {};
+  if (loginTravado(req, username)) {
+    return res.status(429).json({ error: 'Muitas tentativas. Espere alguns minutos.' });
+  }
   if (!auth.verifyCredentials(username, password)) {
+    errouASenha(req, username);
     return res.status(401).json({ error: 'Usuário ou senha inválidos.' });
   }
+  acertouASenha(req, username);
   // troca o id da sessão ao logar, pra um id capturado antes do login não valer nada
   req.session.regenerate(err => {
     if (err) return res.status(500).json({ error: 'Erro ao iniciar a sessão.' });
@@ -175,6 +288,16 @@ function limparChutes(req) {
   chutes.delete(req.ip || 'desconhecido');
 }
 
+// Os dois baldes são indexados por IP, e IP é coisa que não acaba: sem varrer o
+// que já venceu, quem manda uma tentativa de cada endereço faz a memória do
+// processo crescer sem teto. Vencido não tem valor nenhum — nem pra travar nem
+// pra liberar — então sai.
+setInterval(() => {
+  const agora = Date.now();
+  for (const [ip, item] of chutes) if (agora > item.ate) chutes.delete(ip);
+  for (const [balde, item] of tentativasDeLogin) if (agora > item.ate) tentativasDeLogin.delete(balde);
+}, 10 * 60 * 1000).unref();
+
 // Diz de qual live a chave é, sem gastar ela. É o que a tela mostra antes da
 // pessoa escolher usuário e senha — pra ela saber que caiu no lugar certo.
 app.get('/api/ativar/info', (req, res) => {
@@ -237,16 +360,35 @@ app.post('/api/ativar', (req, res) => {
   });
 });
 
+// ---------- validação do que chega nas rotas de power-up ----------
+// O @ de quem ganhou a carta vira CHAVE de objeto lá dentro, e o tipo da carta
+// vira texto na tela de todo mundo que vê aquela live. Então os dois são
+// conferidos aqui, na entrada: o que o TikTok não poderia ter mandado não passa.
+function identificadorValido(v) {
+  return typeof v === 'string' && v.length > 0 && v.length <= 80
+         && !['__proto__', 'constructor', 'prototype'].includes(v);
+}
+
+// Devolve o primeiro tipo que não existe (pra dizer QUAL na resposta), ou null.
+function tipoForaDaLista(itens) {
+  if (!itens || typeof itens !== 'object') return null;
+  return Object.keys(itens).find(t => !dbFabrica.TIPOS_DE_CARTA.has(t)) || null;
+}
+
 // Quais cartas (e quantas) uma premiação deu. O TikTok não manda isso pela
 // live — mostra no painel dele — então quem informa é quem está assistindo.
 // O restante do estoque é automático: o uso desconta e os 5 dias vencem.
 app.post('/api/powerup/itens', (req, res) => {
   const { uniqueId, ganhaEm, itens } = req.body || {};
-  if (!uniqueId || !ganhaEm) {
+  if (!identificadorValido(uniqueId) || !ganhaEm) {
     return res.status(400).json({ error: 'uniqueId e ganhaEm são obrigatórios.' });
   }
   if (itens && typeof itens !== 'object') {
     return res.status(400).json({ error: 'itens deve ser um objeto { tipo: quantidade }.' });
+  }
+  const desconhecido = tipoForaDaLista(itens);
+  if (desconhecido) {
+    return res.status(400).json({ error: `Não conheço a carta "${desconhecido}".` });
   }
   const { db, live } = clientes.doPedido(req);
   const ok = db.definirItensDaPremiacao(uniqueId, ganhaEm, itens || {});
@@ -261,9 +403,15 @@ app.post('/api/powerup/itens', (req, res) => {
 // carta — quem joga luva ganha luva. Uma a uma é trabalho que ninguém faz.
 app.post('/api/powerup/itens-pendentes', (req, res) => {
   const { uniqueId, itens } = req.body || {};
-  if (!uniqueId) return res.status(400).json({ error: 'uniqueId é obrigatório.' });
+  if (!identificadorValido(uniqueId)) {
+    return res.status(400).json({ error: 'uniqueId é obrigatório.' });
+  }
   if (!itens || typeof itens !== 'object' || !Object.keys(itens).length) {
     return res.status(400).json({ error: 'Escolha pelo menos um item.' });
+  }
+  const desconhecido = tipoForaDaLista(itens);
+  if (desconhecido) {
+    return res.status(400).json({ error: `Não conheço a carta "${desconhecido}".` });
   }
 
   const { db, live } = clientes.doPedido(req);
@@ -606,7 +754,11 @@ app.post('/api/tropa/limpar', (req, res) => {
 
 app.post('/api/tropa/remover', (req, res) => {
   const { nome, tipo } = req.body || {};
-  if (!nome || !tipo) return res.status(400).json({ error: 'nome e tipo são obrigatórios' });
+  // os dois voltam pra tela de todo mundo da sala num `emit`, então nada de
+  // aceitar objeto ou texto sem fim aqui
+  if (!identificadorValido(nome) || !identificadorValido(tipo)) {
+    return res.status(400).json({ error: 'nome e tipo são obrigatórios' });
+  }
   const { db, sala } = clientes.doPedido(req);
   const removeu = db.removerDaTropa(nome, tipo);
   if (removeu) io.to(sala).emit('tropa_removida', { nome, tipo });
@@ -652,6 +804,9 @@ app.get('/api/sessions', (req, res) => {
 });
 
 app.get('/api/user/:uniqueId', (req, res) => {
+  if (!identificadorValido(req.params.uniqueId)) {
+    return res.status(404).json({ error: 'Usuário não encontrado' });
+  }
   const profile = clientes.doPedido(req).db.getUserProfile(req.params.uniqueId);
   if (!profile.user) return res.status(404).json({ error: 'Usuário não encontrado' });
   res.json(profile);
@@ -674,6 +829,20 @@ io.on('connection', socket => {
   socket.emit('diagnostico_init', live.diagnostico());
 });
 
+
+// Último a entrar de propósito: o Express só usa isto se nenhuma rota respondeu.
+// Sem ele, um erro dentro de uma rota caía no handler padrão do Express, que
+// manda a stack trace inteira pro navegador quando NODE_ENV não é 'production'
+// — caminhos de arquivo, nomes de função e número de linha pra quem pediu.
+// O log completo continua, só não vai mais pela resposta.
+app.use((err, req, res, next) => {
+  console.error(`Erro em ${req.method} ${req.originalUrl}:`, err);
+  if (res.headersSent) return next(err);
+  if ((req.originalUrl || '').startsWith('/api/')) {
+    return res.status(500).json({ error: 'Algo deu errado aqui dentro.' });
+  }
+  res.status(500).type('text').send('Algo deu errado aqui dentro.');
+});
 
 process.on('uncaughtException', (err) => {
   console.error('Exceção não tratada:', err);

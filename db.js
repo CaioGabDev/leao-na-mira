@@ -18,6 +18,16 @@ const JSON_ANTIGO = process.env.RAILWAY_ENVIRONMENT ? '/data/live.json' : 'live.
 
 const INTERVALO_GRAVACAO = 5000;
 
+// Os tipos de carta que existem. Mesma lista que o live.js deduz do texto do
+// TikTok (PALAVRAS_DA_CARTA), e a única coisa que a rota de informar item
+// aceita: o tipo vira chave guardada e depois texto na tela, então tipo
+// inventado é texto de fora entrando no painel de todo mundo que vê a live.
+const TIPOS_DE_CARTA = new Set([
+  'martelo', 'booster1', 'booster2', 'booster3', 'luva', 'luva_cofre',
+  'nevoa', 'tempo', 'critico', 'pocao', 'onda', 'coracao', 'efeito',
+  'desconhecido'
+]);
+
 // Uma instância por dono, reaproveitada: dois pedidos pelo mesmo dono têm que
 // mexer no MESMO estado em memória, senão um sobrescreve o outro no banco.
 const instancias = new Map();
@@ -777,23 +787,43 @@ function criarBanco(dono, opcoes) {
     return true;
   }
 
+  // A ficha de cartas de alguém, quando ela existe DE VERDADE.
+  //
+  // O `uniqueId` vem do corpo de uma requisição, e `state.cartas[uniqueId]` com
+  // `uniqueId = "__proto__"` devolve o Object.prototype: um objeto que existe,
+  // não tem `ganhas`, e derrubava o handler com um TypeError no meio do pedido.
+  function fichaDeCarta(uniqueId) {
+    const chave = String(uniqueId == null ? '' : uniqueId);
+    if (!Object.prototype.hasOwnProperty.call(state.cartas, chave)) return null;
+    const ficha = state.cartas[chave];
+    return ficha && Array.isArray(ficha.ganhas) ? ficha : null;
+  }
+
+  // Só tipo de carta que existe, só quantidade inteira e positiva. O tipo é
+  // chave guardada E texto que volta pra tela de quem vê a live, então o que
+  // não está na lista não entra — nem como "desconhecido".
+  function itensLimpos(itens) {
+    const limpo = {};
+    if (!itens || typeof itens !== 'object') return limpo;
+    Object.entries(itens).forEach(([tipo, qtd]) => {
+      if (!TIPOS_DE_CARTA.has(tipo)) return;
+      const n = Math.floor(Number(qtd) || 0);
+      if (n > 0) limpo[tipo] = Math.min(n, 99);   // teto de sanidade
+    });
+    return limpo;
+  }
+
   // Informa (ou corrige) QUAIS cartas e QUANTAS uma premiação deu.
   // O TikTok mostra isso no painel dele mas não manda pela live, então quem sabe
   // é a pessoa que está assistindo. `ganhaEm` identifica a premiação.
   function definirItensDaPremiacao(uniqueId, ganhaEm, itens) {
-    const ficha = state.cartas[uniqueId];
+    const ficha = fichaDeCarta(uniqueId);
     if (!ficha) return false;
 
     const premio = ficha.ganhas.find(c => c.em === Number(ganhaEm));
     if (!premio) return false;
 
-    const limpo = {};
-    Object.entries(itens || {}).forEach(([tipo, qtd]) => {
-      const n = Math.floor(Number(qtd) || 0);
-      if (tipo && n > 0) limpo[tipo] = Math.min(n, 99);   // teto de sanidade
-    });
-
-    premio.itens = limpo;
+    premio.itens = itensLimpos(itens);
     ficha.ultimaEm = Date.now();
     dirty = true;
     saveToDisk();
@@ -809,14 +839,10 @@ function criarBanco(dono, opcoes) {
   // Devolve quantas foram alteradas, pra tela poder dizer o que aconteceu em
   // vez de só piscar.
   function definirItensDasPendentes(uniqueId, itens) {
-    const ficha = state.cartas[uniqueId];
+    const ficha = fichaDeCarta(uniqueId);
     if (!ficha) return 0;
 
-    const limpo = {};
-    Object.entries(itens || {}).forEach(([tipo, qtd]) => {
-      const n = Math.floor(Number(qtd) || 0);
-      if (tipo && n > 0) limpo[tipo] = Math.min(n, 99);
-    });
+    const limpo = itensLimpos(itens);
     if (!Object.keys(limpo).length) return 0;
 
     const agora = Date.now();
@@ -1737,4 +1763,4 @@ function criarBanco(dono, opcoes) {
   };
 }
 
-module.exports = { paraDono, gravarTodos, instancias };
+module.exports = { paraDono, gravarTodos, instancias, TIPOS_DE_CARTA };

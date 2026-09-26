@@ -1227,8 +1227,11 @@
     aplicarOcultarDinheiro(dinheiroOculto);
   });
 
+  // O avatar vem do TikTok e entra num atributo src: só aceita https e sai
+  // escapado, senão uma URL com aspas fecha o atributo e injeta HTML.
   function avatarOf(u) {
-    return u.avatar || FALLBACK_AVATAR;
+    const url = String((u && u.avatar) || '');
+    return /^https:\/\//.test(url) ? esc(url) : FALLBACK_AVATAR;
   }
 
   function renderPodium(list) {
@@ -1244,10 +1247,10 @@
         const u = top3[i];
         const cls = `p${i + 1}`;
         return `
-          <div class="podium-slot ${cls}" data-uid="${u.uniqueId}">
+          <div class="podium-slot ${cls}" data-uid="${esc(u.uniqueId)}">
             <div class="podium-medal">${medals[i]}</div>
             <img class="podium-avatar" src="${avatarOf(u)}" onerror="this.src='${FALLBACK_AVATAR}'">
-            <div class="podium-name">${u.nickname || u.uniqueId}</div>
+            <div class="podium-name">${esc(u.nickname || u.uniqueId)}</div>
             <div class="podium-stat">
   ${currentSort === 'comments' ? `💬 ${u.comments || 0}`
     : currentSort === 'gifts_value' ? `🎁 <span class="dinheiro">${u.gifts_value}</span>`
@@ -1298,11 +1301,11 @@
       const rankClass = i === 0 ? 'top1' : i === 1 ? 'top2' : i === 2 ? 'top3' : '';
       const crown = i === 0 ? '👑' : i === 1 ? '🥈' : i === 2 ? '🥉' : '';
       return `
-        <div class="row ${rankClass} ${rankedUp ? 'rank-up' : ''}" data-uid="${u.uniqueId}">
+        <div class="row ${rankClass} ${rankedUp ? 'rank-up' : ''}" data-uid="${esc(u.uniqueId)}">
           <div class="rank">${i + 1}</div>
           <img class="row-avatar" src="${avatarOf(u)}" onerror="this.src='${FALLBACK_AVATAR}'">
           <div class="name">
-  ${crown ? `<span class="crown">${crown}</span>` : ''}${u.nickname || u.uniqueId}
+  ${crown ? `<span class="crown">${crown}</span>` : ''}${esc(u.nickname || u.uniqueId)}
   ${u.followed ? '<span class="badge-tag">Seguiu</span>' : ''}
   ${u.shared ? '<span class="badge-tag">🔁</span>' : ''}
 </div>
@@ -1357,12 +1360,14 @@
   // remove a imagem e o emoji vira o primeiro filho — o CSS faz ele aparecer.
   // Sem isso, um caminho quebrado viraria quadradinho cinza na tela toda.
   function iconeDoItem(tipo, emoji, classe) {
+    // `tipo` só acha arquivo se estiver na lista conhecida, mas o `emoji` pode
+    // ser o começo de um nome de item desconhecido — ou seja, texto de fora.
     const arquivo = ARQUIVO_DO_ITEM[tipo];
     const img = arquivo
       ? `<img src="${CDN_CARTA}${arquivo}~tplv-resize:64:64.png" alt="" loading="lazy"
               onerror="this.remove()">`
       : '';
-    return `<span class="ico ${classe || ''}">${img}<i>${emoji || '🎴'}</i></span>`;
+    return `<span class="ico ${classe || ''}">${img}<i>${esc(emoji || '🎴')}</i></span>`;
   }
 
   const battleLiveEl = document.getElementById('battleLive');
@@ -1391,7 +1396,7 @@
     const nome = esc(b.oponente?.nickname || b.oponente?.uniqueId || 'adversário');
     battleLiveEl.classList.add('show');
     battleLiveEl.innerHTML = `
-      <img class="row-avatar" src="${b.oponente?.avatar || FALLBACK_AVATAR}"
+      <img class="row-avatar" src="${avatarOf(b.oponente)}"
            onerror="this.src='${FALLBACK_AVATAR}'">
       <span class="vs">AO VIVO vs ${nome}${
         b.formato && b.formato !== '1v1' ? ' <small>(' + esc(b.formato) + ')</small>' : ''
@@ -1424,7 +1429,7 @@
     rivalListEl.innerHTML = s.rivais.length
       ? s.rivais.map(r => `
           <div class="rival-row">
-            <img class="row-avatar" src="${r.avatar || FALLBACK_AVATAR}" onerror="this.src='${FALLBACK_AVATAR}'">
+            <img class="row-avatar" src="${avatarOf(r)}" onerror="this.src='${FALLBACK_AVATAR}'">
             <div class="name">${esc(r.nickname)}
               <span class="badge-tag">${r.batalhas}x</span>
             </div>
@@ -1492,7 +1497,7 @@
         const emoji = temEmoji ? partes[0] : '';
         const nome = temEmoji ? partes.slice(1).join(' ') : cru;
         return `<span class="pk-efeito ${falta <= 5 ? 'acabando' : ''}">
-                  <img src="${e.avatar || FALLBACK_AVATAR}"
+                  <img src="${avatarOf(e)}"
                        onerror="this.src='${FALLBACK_AVATAR}'" alt="">
                   <span><b>${esc(e.nickname)}</b> jogou ${
                     iconeDoItem(e.tipo, emoji)} ${esc(nome)}${

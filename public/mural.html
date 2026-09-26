@@ -507,6 +507,15 @@
     superfã: { left: 'star', right: 'crown' },
   };
 
+  // O nome da tropa é o apelido que a pessoa escolheu no TikTok: texto de fora,
+  // e tudo aqui é montado com innerHTML. Sem isto, um apelido com "<" injeta
+  // HTML na tela de quem está vendo o mural.
+  function esc(txt) {
+    return String(txt ?? '').replace(/[&<>"']/g, c => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+  }
+
   // ---------- Brasas de fundo ----------
   const embersEl = document.getElementById('embers');
   for (let i = 0; i < 26; i++){
@@ -628,10 +637,14 @@ socket.on('tropa_add', item => {
     }
     bibliotecaBox.style.display = 'block';
     const ordenada = [...biblioteca].sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+    // O JSON.stringify sozinho não bastava: ele fecha a string do JS, não o
+    // atributo — um nome com apóstrofo terminava o onclick='...' e o resto do
+    // nome virava HTML. Escapado, o navegador desfaz as entidades antes de o JS
+    // ler a chamada, então o nome chega inteiro na função.
     bibliotecaChips.innerHTML = ordenada.map(b => `
-      <div class="chip" onclick='usarDaBiblioteca(${JSON.stringify(b.nome)})'>
-        <span>${b.nome}</span>
-        <span class="x" onclick='removerDaBiblioteca(${JSON.stringify(b.nome)}, event)' title="Remover da biblioteca">✕</span>
+      <div class="chip" onclick='usarDaBiblioteca(${esc(JSON.stringify(b.nome))})'>
+        <span>${esc(b.nome)}</span>
+        <span class="x" onclick='removerDaBiblioteca(${esc(JSON.stringify(b.nome))}, event)' title="Remover da biblioteca">✕</span>
       </div>
     `).join('');
   }
@@ -776,7 +789,7 @@ socket.on('tropa_add', item => {
           <div class="patch ${p.tipo}">
             <span class="side-icon">${ICONS[icons.left]}</span>
             <div class="info">
-              <span class="nome">${p.nome}</span>
+              <span class="nome">${esc(p.nome)}</span>
               <span class="texto">${nivelTxt}</span>
             </div>
             <div class="patch-actions">
@@ -958,7 +971,7 @@ socket.on('tropa_add', item => {
         <div class="poster-row ${p.tipo}">
           <span class="side-icon">${ICONS[icons.left]}</span>
           <div class="info">
-            <span class="nome">${p.nome}</span>
+            <span class="nome">${esc(p.nome)}</span>
             <span class="texto">${nivelTxt}</span>
           </div>
           <span class="side-icon">${ICONS[icons.right]}</span>
