@@ -50,6 +50,33 @@ function resumo() {
          `colocar mais de uma live pra rodar.`;
 }
 
+// Um 429 do assinador NÃO chega como erro de rate limit: chega como TypeError.
+// Isto é bug da tiktok-live-connector 2.4.4, conferido no fonte dela — em
+// `fetchSignedWebSocketFromEulerRoute`, quando o status é 429:
+//
+//     throw new SignatureRateLimitError(data?.message, '...', response.data)
+//
+// e o construtor do erro lê `response.headers['retry-after']`. Como recebeu o
+// CORPO (`response.data`, um buffer) no lugar da resposta, `headers` é
+// undefined e o construtor estoura antes de existir:
+//
+//     TypeError: Cannot read properties of undefined (reading 'retry-after')
+//
+// O erro que sobe tem name 'TypeError' e nenhuma palavra sobre assinatura, então
+// as duas peneiras abaixo o deixavam passar como "erro genérico" — e o painel
+// mostrava essa mensagem crua pro streamer, sem dizer que o limite estourou.
+// Reconhecer pela assinatura do estrago (o nome do campo mais o do erro no
+// stack) é o que devolve o diagnóstico certo.
+function ehLimiteMascarado(err) {
+  if (!err) return false;
+  const msg = String(err.message || '');
+  if (!/retry-after/i.test(msg)) return false;
+  // `retry-after` só aparece assim no caminho do 429; o stack confirma a origem
+  // quando a lib o preserva, e a mensagem sozinha basta quando não preserva.
+  const pilha = String(err.stack || '');
+  return !pilha || /SignatureRateLimit|lib-|tiktok-live-connector/i.test(pilha);
+}
+
 // O erro de assinatura tem cara própria: a biblioteca tem tipos pra ele
 // (SignAPIError, SignatureRateLimitError, PremiumFeatureError) e o nome da
 // rota aparece na mensagem. Isso aqui separa "o assinador recusou" de uma
@@ -59,14 +86,16 @@ function ehErroDeAssinatura(err) {
   const nome = String(err.name || '');
   const msg = String(err.message || err);
   return /Sign(API)?Error|SignatureRateLimit|PremiumFeature/i.test(nome) ||
-         /\[Sign Error\]|fetchSignedWebSocket|sign server/i.test(msg);
+         /\[Sign Error\]|fetchSignedWebSocket|sign server/i.test(msg) ||
+         ehLimiteMascarado(err);
 }
 
 function ehLimiteEstourado(err) {
   if (!err) return false;
   const nome = String(err.name || '');
   const msg = String(err.message || err);
-  return /RateLimit/i.test(nome) || /rate.?limit|429|too many requests/i.test(msg);
+  return /RateLimit/i.test(nome) || /rate.?limit|429|too many requests/i.test(msg) ||
+         ehLimiteMascarado(err);
 }
 
 // Mensagem pro diagnóstico quando a conexão falha por causa do assinador.
@@ -77,10 +106,12 @@ function explicar(err) {
       (e.comChave
         ? 'A chave em uso bateu no teto do plano.'
         : 'Você está sem chave, então o limite é do IP do servidor — e ele é ' +
-          'compartilhado por todas as lives daqui.');
+          'compartilhado por todas as lives daqui.') +
+      ' Insistir piora: cada tentativa conta pro limite. A reconexão já está ' +
+      'esperando cada vez mais entre uma tentativa e outra.';
   }
   return 'O servidor de assinatura (' + e.servidor + ') recusou a conexão. ' +
     'Sem essa assinatura o TikTok não abre o websocket, então a live não conecta.';
 }
 
-module.exports = { PADRAO_SERVIDOR, NOMES_DE_CHAVE, estado, resumo, ehErroDeAssinatura, ehLimiteEstourado, explicar };
+module.exports = { PADRAO_SERVIDOR, NOMES_DE_CHAVE, estado, resumo, ehErroDeAssinatura, ehLimiteEstourado, ehLimiteMascarado, explicar };

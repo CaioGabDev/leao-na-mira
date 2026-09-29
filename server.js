@@ -738,6 +738,9 @@ app.use(express.static('public'));
 app.post('/api/reset', (req, res) => {
   const { db, live } = clientes.doPedido(req);
   db.resetAll();
+  // resetAll apagou a sessão que estava aberta; se a live continua no ar, ela
+  // recomeça agora — senão o painel mostra "offline" com a live rolando.
+  live.sessaoReiniciada();
   live.broadcastRanking();
   res.json({ ok: true });
 });

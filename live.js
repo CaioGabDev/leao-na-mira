@@ -39,6 +39,70 @@ function criarLive({ dono, db, emitir, criarConexao }) {
   let activeConnectionId = 0;
   let disconnectedSince = null; // marca quando a conexão caiu, sem ainda considerar a live encerrada
 
+  // ---------- UMA cadeia de reconexão, e só uma ----------
+  // Três lugares pedem "tenta de novo": a falha do connect, o evento
+  // `disconnected` e o forceReconnect do vigia. Cada um agendava o seu próprio
+  // setTimeout, sem cancelar o do outro — então uma queda podia deixar duas
+  // cadeias vivas, a seguinte deixava três, e elas se somavam. No dia 28/09 o
+  // log do Railway mostrava conn #29511, #29577 e #29578 tentando no MESMO
+  // segundo, com o contador em ~29.500 conexões: várias cadeias batendo de 10
+  // em 10s no assinador, o que mantinha o limite dele estourado pra sempre.
+  //
+  // Agora o agendamento é um só: quem quiser remarcar cancela o que estava
+  // marcado. `parar()` limpa o timer — sem isso, um cliente fechado continuava
+  // reconectando até o processo morrer.
+  let timerReconexao = null;
+  let conectando = false;       // tem um connect() em voo?
+  let conectandoDesde = 0;
+
+  // Insistir de 10 em 10s é o que mantém um limite de assinatura estourado:
+  // cada tentativa conta pro limite, e a janela nunca respira. Agora a espera
+  // dobra a cada falha seguida, em três faixas — porque as três recusas pedem
+  // paciências diferentes:
+  //
+  //   limite estourado — insistir é o que mantém o problema de pé. Começa
+  //     longe e vai até 15 min, que é o que dá pra janela do Euler respirar.
+  //   streamer offline — é o estado NORMAL de quem espera a live começar. O
+  //     teto é curto de propósito: quem sobe a live quer ser visto em menos de
+  //     um minuto. (Não é de graça: essa checagem também pede o room_id ao
+  //     assinador, então ela conta pro limite — daí o teto e não os 10s fixos.)
+  //   o resto — queda de rede, @ errado, erro do TikTok: meio-termo.
+  const ESPERA_BASE_MS = 10 * 1000;
+  const ESPERA_TETO_MS = 2 * 60 * 1000;
+  const ESPERA_OFFLINE_TETO_MS = 60 * 1000;
+  const ESPERA_LIMITE_BASE_MS = 60 * 1000;
+  const ESPERA_LIMITE_TETO_MS = 15 * 60 * 1000;
+
+  function esperaDaTentativa(err) {
+    const limite = assinatura.ehLimiteEstourado(err);
+    const offline = !limite && classificarFalha(err).motivo === 'offline';
+    const base = limite ? ESPERA_LIMITE_BASE_MS : ESPERA_BASE_MS;
+    const teto = limite ? ESPERA_LIMITE_TETO_MS
+      : offline ? ESPERA_OFFLINE_TETO_MS
+      : ESPERA_TETO_MS;
+    const expoente = Math.min(Math.max(tentativasSeguidas - 1, 0), 10);
+    const cheia = Math.min(base * Math.pow(2, expoente), teto);
+    // Sorteio entre 50% e 100% da espera: várias lives que caíram juntas (um
+    // deploy, uma queda de rede) não voltam todas no mesmo instante.
+    return Math.round(cheia * (0.5 + Math.random() * 0.5));
+  }
+
+  function cancelarReconexao() {
+    if (timerReconexao) clearTimeout(timerReconexao);
+    timerReconexao = null;
+  }
+
+  function agendarReconexao(ms, motivo, silencioso) {
+    cancelarReconexao();
+    const segundos = Math.round(ms / 1000);
+    if (!silencioso) console.log(`Tentando novamente em ${segundos}s (${motivo})...`);
+    timerReconexao = setTimeout(() => {
+      timerReconexao = null;
+      reconnecting = false;
+      startTikTokConnection();
+    }, ms);
+  }
+
   function broadcastLiveStatus() {
     emitir('live_status', { online: liveOnline });
   }
@@ -473,6 +537,19 @@ function criarLive({ dono, db, emitir, criarConexao }) {
     broadcastBattles();
   }
 
+  // O /api/reset zera o banco inteiro, e a sessão da live que está rolando vai
+  // junto (`currentSessionSnapshot` volta a null). O `liveOnline` daqui é de
+  // memória e NÃO some junto — e `markLiveOnline()` só é chamado na transição
+  // de offline pra online, que já aconteceu. Resultado: quem resetava no meio
+  // da live ficava com o painel dizendo offline e a duração parada até a
+  // próxima reconexão. Quem está no ar precisa se reapresentar ao banco.
+  function sessaoReiniciada() {
+    if (!liveOnline) return false;
+    db.markLiveOnline();
+    broadcastLiveStatus();
+    return true;
+  }
+
   function forceReconnect(motivo) {
     if (reconnecting) return;
     reconnecting = true;
@@ -486,10 +563,7 @@ function criarLive({ dono, db, emitir, criarConexao }) {
       console.error('Erro ao desconectar conexão antiga:', e?.message || e);
     }
 
-    setTimeout(() => {
-      reconnecting = false;
-      startTikTokConnection();
-    }, 5000);
+    agendarReconexao(5000, motivo);
   }
 
   function getAvatar(data) {
@@ -522,7 +596,29 @@ function criarLive({ dono, db, emitir, criarConexao }) {
   // API deles, não é bug do nosso código) — dá pra ver isso no log do servidor.
   let roomUserEventCount = 0;
 
+  // Um connect() que ainda não respondeu não pode ganhar um irmão: seria outra
+  // conexão de verdade pedindo outra assinatura, e as duas contariam pro limite.
+  // O teto de 2 min é a saída de emergência pro caso de o connect() nunca
+  // responder — sem ele, um único travamento deixaria a live sem reconectar.
+  const CONNECT_TRAVADO_MS = 2 * 60 * 1000;
+
   function startTikTokConnection() {
+    cancelarReconexao();
+    if (conectando && Date.now() - conectandoDesde < CONNECT_TRAVADO_MS) {
+      // Voltar sem remarcar nada mataria a cadeia: se esse connect() nunca
+      // responder, ninguém mais tentaria. Remarca curto e sai.
+      agendarReconexao(15000, 'esperando a tentativa anterior responder');
+      return;
+    }
+    conectando = true;
+    conectandoDesde = Date.now();
+    // Rede de segurança: um connect() que nunca responde não cai no .catch, e
+    // o vigia só age com a live JÁ no ar — ou seja, ninguém remarcaria a
+    // próxima tentativa e a live ficaria parada pra sempre. Este agendamento
+    // sai de cena sozinho assim que o connect() responde, pra um lado ou pro
+    // outro, então não aparece no log.
+    agendarReconexao(CONNECT_TRAVADO_MS + 5000, 'connect sem resposta', true);
+
     const myId = ++connectionCounter;
     const connection = criarConexao
       ? criarConexao(dono)
@@ -530,6 +626,8 @@ function criarLive({ dono, db, emitir, criarConexao }) {
     currentConnection = connection;
 
     connection.connect().then(state => {
+      conectando = false;
+      cancelarReconexao();   // desarma a rede de segurança: conectou
       console.log(`Conectado à live de @${dono} (roomId ${state.roomId}) [conn #${myId}]`);
       activeConnectionId = myId;
       lastEventAt = Date.now();
@@ -545,6 +643,7 @@ function criarLive({ dono, db, emitir, criarConexao }) {
         broadcastLiveStatus();
       }
     }).catch(err => {
+      conectando = false;
       tentativasSeguidas++;
       ultimaTentativa = { em: Date.now(), ok: false, ...classificarFalha(err) };
       console.error('Erro ao conectar na live:', err?.message || err);
@@ -559,8 +658,7 @@ function criarLive({ dono, db, emitir, criarConexao }) {
       }
 
       if (!disconnectedSince) disconnectedSince = Date.now();
-      console.log('Tentando novamente em 10s...');
-      setTimeout(startTikTokConnection, 10000);
+      agendarReconexao(esperaDaTentativa(err), `${tentativasSeguidas}ª falha seguida`);
     });
 
     connection.on('error', err => {
@@ -1935,7 +2033,7 @@ function criarLive({ dono, db, emitir, criarConexao }) {
       // OFFLINE_GRACE_MS sem conseguir reconectar.
       activeConnectionId = -1;
       if (!disconnectedSince) disconnectedSince = Date.now();
-      setTimeout(startTikTokConnection, 5000);
+      agendarReconexao(5000, 'queda de conexão');
     });
   }
 
@@ -1996,6 +2094,10 @@ function criarLive({ dono, db, emitir, criarConexao }) {
   function parar() {
     relogios.forEach(clearInterval);
     relogios = [];
+    // O timer de reconexão não é relógio: ficava de fora do clearInterval e
+    // seguia ressuscitando a conexão de um cliente já fechado.
+    cancelarReconexao();
+    conectando = false;
     activeConnectionId = -1;
     try { if (currentConnection) currentConnection.disconnect(); } catch (e) { /* já caiu */ }
     currentConnection = null;
@@ -2004,7 +2106,7 @@ function criarLive({ dono, db, emitir, criarConexao }) {
 
   return {
     dono,
-    iniciar, parar, forceReconnect,
+    iniciar, parar, forceReconnect, sessaoReiniciada,
     broadcastRanking, broadcastBattles, broadcastPowerUps,
     broadcastGlobalStats, broadcastLiveStatus,
     estaOnline: () => liveOnline,

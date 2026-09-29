@@ -310,6 +310,34 @@ O `assinatura.js` não guarda nem mostra a chave: só diz se existe uma, e sabe
 distinguir "o assinador recusou" de "a rede caiu". Sem essa distinção, limite
 estourado vira "sei lá, não conecta".
 
+### Quando o limite estoura
+
+Um HTTP 429 do EulerStream **não** chega como erro de limite: a
+`tiktok-live-connector@2.4.4` passa o corpo da resposta no lugar da resposta
+inteira ao montar o `SignatureRateLimitError`, e o construtor estoura antes:
+
+```
+TypeError: Cannot read properties of undefined (reading 'retry-after')
+```
+
+Toda vez que esse texto aparecer no log, leia como **limite de assinatura
+estourado**. O `assinatura.js` já reconhece esse disfarce (`ehLimiteMascarado`),
+então o diagnóstico do painel diz o que é de verdade.
+
+A reconexão espera cada vez mais entre as tentativas, em três faixas, porque
+cada tentativa também conta pro limite:
+
+| Situação | Primeira espera | Teto |
+|---|---|---|
+| Limite estourado | 60s | 15 min |
+| Streamer ainda não subiu | 10s | 60s |
+| Resto (rede, `@` errado, erro do TikTok) | 10s | 2 min |
+
+A espera dobra a cada falha seguida e leva um sorteio de 50% a 100%, pra várias
+lives que caíram juntas não voltarem todas no mesmo instante. Existe **uma**
+cadeia de reconexão por live: quem remarca cancela o que estava marcado, e o
+`parar()` limpa o timer.
+
 ---
 
 ## Variáveis de ambiente
@@ -353,7 +381,7 @@ cada um enxerga a própria live e nada mais.
 | `GET /api/batalhas` | Histórico de PK, rivais, aproveitamento. |
 | `GET /api/sessions` | Lives já encerradas. |
 | `GET /api/user/:uniqueId` | A ficha de uma pessoa. |
-| `POST /api/reset` | **Apaga tudo** daquela live. |
+| `POST /api/reset` | **Apaga tudo** daquela live. Se a live estiver no ar, a sessão recomeça na hora (a duração volta a contar do reset). |
 | `POST /api/tropa/limpar` | Limpa só o mural. Ranking, likes, presentes e níveis ficam de pé. |
 | `POST /api/tropa/remover` | Tira uma pessoa do mural. |
 | `POST /api/powerup/itens` | Informa quais cartas uma premiação deu. |
