@@ -324,8 +324,35 @@ Toda vez que esse texto aparecer no log, leia como **limite de assinatura
 estourado**. O `assinatura.js` já reconhece esse disfarce (`ehLimiteMascarado`),
 então o diagnóstico do painel diz o que é de verdade.
 
-A reconexão espera cada vez mais entre as tentativas, em três faixas, porque
-cada tentativa também conta pro limite:
+### Só o `connect()` custa cota
+
+Essa é a regra que governa o gasto: **cada `connect()` queima uma requisição do
+plano, o streamer estando ao vivo ou não.** Em 28/09 o painel do EulerStream
+mostrou 5.356 requisições em 6h, todas na mesma rota
+(`GET /webcast/rooms/{room_id}/connect`), com 0,2% de sucesso — a cota diária
+inteira (2.500 no plano Community) indo embora pra tentar abrir live que não
+existia.
+
+Por isso o motor **pergunta antes de gastar**. O `fetchIsLive()` do conector
+responde "ele está ao vivo?" em cascata, e as duas primeiras fontes não custam
+nada:
+
+1. HTML do TikTok (`SIGI_STATE`) — grátis
+2. API Live do TikTok (`liveRoom.status`) — grátis
+3. EulerStream (`is_live`) — **custa, e fica desligada** via
+   `IsLiveRouteConfig.skipFetchRoomIdFromEulerRoute = true`
+
+Resultado: live parada custa **zero** de cota, e a checagem pode rodar a cada
+~30s (`INTERVALO_CHECAGEM_MS`) sem culpa. O Euler só é tocado quando existe
+live de verdade pra assinar.
+
+Se as duas fontes grátis falharem 3 vezes seguidas (captcha do TikTok, mudança
+no HTML), o motor tenta conectar às cegas uma vez — gastando cota — e volta a
+perguntar. Ficar sem conectar nunca seria pior do que gastar.
+
+### Backoff
+
+Quando o `connect()` falha de verdade, a espera cresce, em três faixas:
 
 | Situação | Primeira espera | Teto |
 |---|---|---|
@@ -349,6 +376,7 @@ cadeia de reconexão por live: quem remarca cancela o que estava marcado, e o
 | `SESSION_SECRET` | Segredo do cookie de sessão. **Obrigatória**: sem ela o servidor não sobe (só sobe com `DEV_LOCAL=1`, e aí com um segredo público). |
 | `EULERSTREAM_API_KEY` / `SIGN_API_KEY` | Chave do assinador. Necessária na prática pra mais de uma live. |
 | `SIGN_API_URL` | Aponta o assinador pra outro servidor. Serve pra investigação. |
+| `INTERVALO_CHECAGEM_MS` | De quanto em quanto tempo perguntar se o streamer subiu. Padrão: `30000`. Essa pergunta não custa cota do assinador. |
 | `ADMIN_USER` / `ADMIN_PASSWORD` | Cria o primeiro administrador na subida, se ele ainda não existir. |
 | `DEV_LOCAL=1` | **Só na sua máquina.** Aceita rodar sem `SESSION_SECRET` e manda o cookie de sessão por HTTP. Em qualquer deploy, não defina: o padrão já é `trust proxy` ligado e cookie `secure`. |
 | `RAILWAY_ENVIRONMENT` | Quando existe, todos os arquivos de dados passam a morar em `/data`. |

@@ -13,9 +13,30 @@
 //              vira `io.to(sala).emit` e é a ÚNICA troca necessária pra um
 //              cliente parar de enxergar a live do outro.
 // ============================================================================
-const { TikTokLiveConnection } = require('tiktok-live-connector');
+const { TikTokLiveConnection, IsLiveRouteConfig } = require('tiktok-live-connector');
 const ConnectionClass = TikTokLiveConnection;
 const assinatura = require('./assinatura');
+
+// ============================================================================
+// A CHECAGEM DE "ELE TÁ AO VIVO?" NÃO PODE CUSTAR ASSINATURA
+// ----------------------------------------------------------------------------
+// Dado do painel do EulerStream em 28/09, janela de 6h: 5.356 requisições,
+// TODAS na mesma rota — `GET /webcast/rooms/{room_id}/connect` — com 0,2% de
+// sucesso (10 de 5.356). O plano Community dá 2.500 POR DIA. Ou seja: a cota
+// inteira do dia ia embora tentando abrir uma live que nem estava no ar.
+//
+// O `connect()` é caro: cada chamada gasta uma assinatura, o streamer estando
+// ao vivo ou não. Já o `fetchIsLive()` do conector responde a mesma pergunta
+// de graça, em cascata:
+//
+//     1. HTML do TikTok (SIGI_STATE status)   <- não custa cota
+//     2. API Live do TikTok (liveRoom.status) <- não custa cota
+//     3. EulerStream (is_live)                <- CUSTA, e é o que desligamos
+//
+// Sem desligar a fonte 3, um tropeço nas duas primeiras cairia calado no Euler
+// e a economia viraria pó justamente no dia em que o TikTok resolvesse variar
+// o HTML. Melhor falhar visível do que gastar escondido.
+IsLiveRouteConfig.skipFetchRoomIdFromEulerRoute = true;
 
 // `criarConexao` existe pro teste: o bug do prêmio perdido é sobre ORDEM DE
 // CHEGADA dos eventos, e sem poder mandá-los na ordem que eu quero o teste
@@ -602,6 +623,57 @@ function criarLive({ dono, db, emitir, criarConexao }) {
   // responder — sem ele, um único travamento deixaria a live sem reconectar.
   const CONNECT_TRAVADO_MS = 2 * 60 * 1000;
 
+  // Esperar a live começar agora é de graça (ver o bloco no topo do arquivo),
+  // então a checagem pode ser frequente sem torrar cota: o streamer sobe e o
+  // ranking aparece em menos de um minuto.
+  const INTERVALO_CHECAGEM_MS = Number(process.env.INTERVALO_CHECAGEM_MS) || 30 * 1000;
+
+  // Se as duas fontes gratuitas caírem, a alternativa seria ficar sem conectar
+  // NUNCA — o que é pior do que gastar. Depois de tantas falhas seguidas a
+  // gente tenta às cegas, gastando uma assinatura, e volta a perguntar depois.
+  const MAX_FALHAS_CHECAGEM = 3;
+  let falhasDeChecagem = 0;
+
+  // true = tem live no ar | false = não tem | 'incerto' = não deu pra saber
+  async function conferirAoVivo(connection) {
+    // conexão de teste (criarConexao) não tem o método: segue o baile
+    if (typeof connection.fetchIsLive !== 'function') return true;
+    try {
+      const vivo = await connection.fetchIsLive();
+      falhasDeChecagem = 0;
+      return !!vivo;
+    } catch (err) {
+      falhasDeChecagem++;
+      console.error(`Não consegui checar se @${dono} está ao vivo ` +
+        `(${falhasDeChecagem}/${MAX_FALHAS_CHECAGEM}):`, err?.message || err);
+      if (falhasDeChecagem >= MAX_FALHAS_CHECAGEM) {
+        falhasDeChecagem = 0;
+        registrarDiagnostico('assinatura',
+          'As fontes gratuitas de "está ao vivo?" falharam seguidas vezes. ' +
+          'Vou tentar conectar às cegas desta vez, o que gasta uma assinatura.');
+        return true;
+      }
+      return 'incerto';
+    }
+  }
+
+  // Nada a conectar: remarca a próxima pergunta sem ter gasto assinatura
+  // nenhuma. Isto é o caminho normal quando o streamer não está transmitindo,
+  // e ele tem que ser barato — é nele que a live passa a maior parte do dia.
+  function aguardarLiveComecar(motivo, recado, espera) {
+    ultimaTentativa = { em: Date.now(), ok: false, motivo, recado };
+    // "streamer offline" não é falha de conexão: zerar aqui evita que o painel
+    // mostre milhares de "tentativas" pra uma live que simplesmente não subiu.
+    tentativasSeguidas = 0;
+    if (!disconnectedSince) disconnectedSince = Date.now();
+    agendarReconexao(espera, motivo === 'offline' ? 'streamer fora do ar' : 'checagem inconclusiva');
+  }
+
+  function esperaDaChecagem(multiplicador) {
+    const cheia = INTERVALO_CHECAGEM_MS * (multiplicador || 1);
+    return Math.round(cheia * (0.6 + Math.random() * 0.4));
+  }
+
   function startTikTokConnection() {
     cancelarReconexao();
     if (conectando && Date.now() - conectandoDesde < CONNECT_TRAVADO_MS) {
@@ -625,7 +697,26 @@ function criarLive({ dono, db, emitir, criarConexao }) {
       : new ConnectionClass(dono, { signApiKey: process.env.EULERSTREAM_API_KEY });
     currentConnection = connection;
 
-    connection.connect().then(state => {
+    // A pergunta barata vem ANTES da cara: o connect() só sai se o TikTok
+    // confirmar que existe live no ar pra assinar.
+    conferirAoVivo(connection).then(aoVivo => {
+      if (aoVivo === false) {
+        conectando = false;
+        aguardarLiveComecar('offline',
+          'O streamer não está ao vivo agora. Assim que subir, conecta sozinho.',
+          esperaDaChecagem());
+        return null;
+      }
+      if (aoVivo === 'incerto') {
+        conectando = false;
+        aguardarLiveComecar('erro',
+          'Não consegui confirmar se a live está no ar. Tentando de novo em instantes.',
+          esperaDaChecagem(1 + falhasDeChecagem));
+        return null;
+      }
+      return connection.connect();
+    }).then(state => {
+      if (state === null) return;   // não tinha live pra conectar
       conectando = false;
       cancelarReconexao();   // desarma a rede de segurança: conectou
       console.log(`Conectado à live de @${dono} (roomId ${state.roomId}) [conn #${myId}]`);
