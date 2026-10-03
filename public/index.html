@@ -387,6 +387,82 @@
   .pu-barra span { display: block; height: 100%; border-radius: 2px; background: var(--grad-fire); }
   .pu-barra.urgente span { background: linear-gradient(90deg, var(--ember2), var(--ember1)); }
 
+  /* ---------- a linha limpa ---------- */
+  /* o que a pessoa tem na mão: é a informação que se usa */
+  .pu-mao-itens { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+
+  /* marcar com um toque. O rótulo diz quantas, os ícones marcam todas. */
+  .pu-marcar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px;
+  }
+  .pu-pend {
+    font-size: 11.5px; font-weight: 700; letter-spacing: .02em;
+    color: var(--gold); padding: 3px 9px; border-radius: 999px;
+    background: rgba(255,176,58,.10); border: 1px solid rgba(255,176,58,.3);
+    white-space: nowrap;
+  }
+  .pu-pend.urgente {
+    color: var(--ember1); background: rgba(255,107,107,.10);
+    border-color: rgba(255,107,107,.38);
+  }
+  .pu-rapido {
+    width: 38px; height: 38px; padding: 0; cursor: pointer; flex-shrink: 0;
+    display: grid; place-items: center; position: relative;
+    background: var(--card-2); border: 1px solid var(--line);
+    border-radius: 10px; color: var(--ink-dim);
+    transition: border-color .12s, background .12s, transform .08s;
+  }
+  .pu-rapido:hover { border-color: var(--gold); background: rgba(255,176,58,.10); }
+  .pu-rapido:active { transform: scale(.92); }
+  /* as seis cartas do TikTok são todas roxas e parecidas: a 22px dava pra
+     tocar na errada sem perceber */
+  .pu-rapido .ico img { width: 26px; height: 26px; }
+  .pu-rapido .ico i { font-size: 19px; }
+  /* o que ESTA pessoa mais joga vem primeiro e marcado — na prática é o certo
+     quase sempre, e assim não é preciso ler ícone nenhum */
+  .pu-rapido.sugerido {
+    border-color: rgba(255,176,58,.6); background: rgba(255,176,58,.09);
+  }
+  .pu-rapido.sugerido::after {
+    content: ''; position: absolute; top: -3px; right: -3px;
+    width: 7px; height: 7px; border-radius: 50%; background: var(--gold);
+  }
+  .pu-outro { font-family: 'Rajdhani', sans-serif; font-size: 17px; letter-spacing: .08em; }
+
+  /* o detalhe, atrás de um toque */
+  .pu-abrir {
+    background: none; border: 0; padding: 0; cursor: pointer;
+    color: var(--ink-faint); font: inherit; font-size: inherit;
+    text-decoration: underline dotted; text-underline-offset: 3px;
+  }
+  .pu-abrir:hover { color: var(--gold); }
+  .pu-detalhe {
+    display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;
+    padding-top: 9px; border-top: 1px dashed var(--line);
+  }
+
+  /* o aviso de desfazer */
+  .pu-toast {
+    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+    z-index: 60; display: flex; align-items: center; gap: 14px;
+    padding: 12px 16px; border-radius: var(--r-md);
+    background: #15100b; border: 1px solid rgba(255,176,58,.42);
+    box-shadow: 0 10px 30px rgba(0,0,0,.5);
+    font-size: 13.5px; color: var(--ink);
+    animation: puSobe .16s ease-out;
+  }
+  @keyframes puSobe { from { opacity: 0; transform: translate(-50%, 10px); } }
+  .pu-toast button {
+    background: none; border: 1px solid var(--line); border-radius: 8px;
+    color: var(--gold); font: inherit; font-weight: 700; font-size: 13px;
+    padding: 6px 12px; cursor: pointer; white-space: nowrap;
+  }
+  .pu-toast button:hover { border-color: var(--gold); }
+  @media (max-width: 560px) {
+    .pu-toast { left: 12px; right: 12px; bottom: 12px; transform: none; }
+    @keyframes puSobe { from { opacity: 0; } }
+  }
+
   /* ---------- power-ups: o aviso do editor ---------- */
   .pu-ed-dica {
     margin: 14px 0 0; padding: 11px 13px; border-radius: var(--r-sm);
@@ -1991,52 +2067,72 @@
           .join('');
         const totalEstoque = Object.values(p.estoque || {}).reduce((a, b) => a + b, 0);
 
-        // As premiações se separam em duas coisas com destinos diferentes:
+        // ---------- A LINHA ----------
+        // Era uma etiqueta por premiação, cada uma com a própria contagem.
+        // Onze quase idênticas numa pessoa só, mais "já jogou", mais o botão
+        // de pendência: quatro fileiras de chip e nenhuma delas acionável.
         //
-        //   IDENTIFICADAS -> viram etiqueta, porque cada uma diz algo
-        //                    diferente (qual carta, quanto falta).
-        //   PENDENTES     -> viram UM botão só. Cinco etiquetas idênticas
-        //                    dizendo "toque pra informar" enchiam a linha e
-        //                    não informavam nada.
+        // Aqui ficam as duas coisas que se faz nesta tela — ver o que a pessoa
+        // tem na mão, e marcar o que veio no que está sem item. O resto é
+        // detalhe, e detalhe fica atrás de um toque.
         const cartas = p.cartas || [];
-        const sabidas = cartas.filter(c => !c.pendente);
         const pendentes = cartas.filter(c => c.pendente && (c.expiraEmMs - decorrido) > 0);
-
-        const tudoAberto = abertos.has(String(p.uniqueId));
-        const mostrar = tudoAberto ? sabidas : sabidas.slice(0, ETIQUETAS_VISIVEIS);
-        const escondidas = sabidas.length - mostrar.length;
-
-        const premios = mostrar.map(c => {
-          const falta = Math.max(0, c.expiraEmMs - decorrido);
-          const urge = falta < DIA_MS;
-          const itens = Object.entries(c.itens)
-            .map(([t, n]) => `${iconeDoItem(t, ICONE_DO_TIPO[t])}${n > 1 ? '×' + n : ''}`)
-            .join(' ');
-          // `deduzido` = o item veio do uso, que o TikTok confirmou; vale
-          // dizer, senão parece igual ao que alguém marcou no chute
-          const marca = c.deduzido ? ' title="o TikTok confirmou pelo uso"' : '';
-          return `<button class="pu-carta ${urge ? 'urgente' : ''}" data-uid="${esc2(p.uniqueId)}" data-em="${c.ganhaEm}"${marca}>
-                    <b>${curto(falta)}</b> <i class="pu-itens">${itens}${c.deduzido ? ' ✓' : ''}</i>
-                  </button>`;
-        }).join('') + (escondidas > 0
-          ? `<button class="pu-mais" data-abrir="${esc2(p.uniqueId)}">+${escondidas}</button>`
-          : (tudoAberto && sabidas.length > ETIQUETAS_VISIVEIS
-              ? `<button class="pu-mais" data-abrir="${esc2(p.uniqueId)}">mostrar menos</button>`
-              : ''));
-
-        // O botão de pendência: um por pessoa, com a mais urgente no texto.
-        // Ele abre o editor já naquela premiação — e o editor oferece aplicar
-        // o mesmo item às outras de uma vez.
+        const aberto = abertos.has(String(p.uniqueId));
         const maisUrgente = pendentes.reduce(
           (m, c) => (!m || c.expiraEmMs < m.expiraEmMs ? c : m), null);
-        const avisar = maisUrgente
-          ? `<button class="pu-avisar ${(maisUrgente.expiraEmMs - decorrido) < DIA_MS ? 'urgente' : ''}"
-                     data-uid="${esc2(p.uniqueId)}" data-em="${maisUrgente.ganhaEm}"
-                     title="Diga qual carta veio — dá pra aplicar a todas de uma vez">
-               <span class="qtd">${pendentes.length}</span>
-               ${pendentes.length === 1 ? 'premiação sem item' : 'premiações sem item'}
-               · a mais urgente vence em ${curto(Math.max(0, maisUrgente.expiraEmMs - decorrido))}
-             </button>`
+
+        // MARCAR COM UM TOQUE. Quem joga luva ganha luva: as pendências de uma
+        // mesma pessoa são quase sempre a mesma carta. O caminho de quatro
+        // cliques era o que fazia ninguém marcar nada.
+        //
+        // A ordem dos ícones segue o que ESTA pessoa mais joga — o primeiro
+        // botão é quase sempre o certo.
+        const porMaisJogado = (a, b) => (p.jogou?.[b] || 0) - (p.jogou?.[a] || 0);
+        const atalhos = ORDEM_ITENS.slice().sort(porMaisJogado);
+
+        const marcar = pendentes.length
+          ? `<div class="pu-marcar">
+               <span class="pu-pend ${(maisUrgente.expiraEmMs - decorrido) < DIA_MS ? 'urgente' : ''}"
+                     title="vence em ${curto(Math.max(0, maisUrgente.expiraEmMs - decorrido))}">
+                 ${pendentes.length} sem item
+               </span>
+               ${atalhos.map((t, i) => {
+                 const { emoji, nome } = emojiENome(t);
+                 // só é "sugerido" se ela de fato já jogou isso; sem histórico
+                 // não há palpite nenhum a dar
+                 const sugerido = i === 0 && (p.jogou?.[t] || 0) > 0;
+                 const alvo = pendentes.length === 1 ? 'a premiação' : 'as ' + pendentes.length;
+                 return `<button class="pu-rapido${sugerido ? ' sugerido' : ''}"
+                           data-rapido="${esc2(t)}" data-uid="${esc2(p.uniqueId)}"
+                           title="marcar ${alvo} como ${esc2(nome)}${
+                             sugerido ? ' — é o que ela mais joga' : ''}">${
+                           iconeDoItem(t, emoji)}</button>`;
+               }).join('')}
+               <button class="pu-rapido pu-outro" data-uid="${esc2(p.uniqueId)}"
+                       data-em="${maisUrgente.ganhaEm}"
+                       title="escolher quantidade, ou marcar só uma">⋯</button>
+             </div>`
+          : '';
+
+        // O DETALHE: uma etiqueta por premiação, com o prazo de cada uma.
+        // Continua existindo pra quem precisa corrigir UMA — só não mora mais
+        // na cara da lista.
+        const detalhe = aberto
+          ? `<div class="pu-detalhe">
+               ${cartas.slice().sort((a, b) => a.expiraEmMs - b.expiraEmMs).map(c => {
+                 const falta = Math.max(0, c.expiraEmMs - decorrido);
+                 const itens = Object.entries(c.itens)
+                   .map(([t, n]) => `${iconeDoItem(t, ICONE_DO_TIPO[t])}${n > 1 ? '×' + n : ''}`)
+                   .join(' ');
+                 return `<button class="pu-carta ${falta < DIA_MS ? 'urgente' : ''}"
+                           data-uid="${esc2(p.uniqueId)}" data-em="${c.ganhaEm}"
+                           title="${itens ? 'corrigir' : 'informar'} esta premiação">
+                           <b>${curto(falta)}</b>
+                           <i class="pu-itens">${itens || 'sem item'}</i>
+                         </button>`;
+               }).join('')}
+               ${usosCurtos(p)}
+             </div>`
           : '';
 
         // quanto falta, em barra: o número já está escrito, a barra é pra
@@ -2045,15 +2141,6 @@
         const barra = p.premiacoes
           ? `<div class="pu-barra ${urgente ? 'urgente' : ''}"><span style="width:${(fracao * 100).toFixed(1)}%"></span></div>`
           : '';
-
-        const usos = Object.entries(p.usos || {})
-          .sort((a, b) => b[1] - a[1])
-          .map(([t, n]) => {
-            const { emoji, nome } = emojiENome(t);
-            return `<span class="pu-uso">${iconeDoItem(t, emoji)} ${esc2(nome)}${
-              n > 1 ? ' ×' + n : ''}</span>`;
-          })
-          .join('');
 
         // O CONTADOR DA DIREITA. Ele mostrava o estoque identificado, então
         // aparecia "0" pra quem tem 5 premiações pendentes — dizendo que a
@@ -2075,9 +2162,6 @@
           maoTitulo = 'nada na mão';
         }
 
-        // "tem carta" = tem premiação no prazo, identificada ou não. Antes
-        // dependia do estoque, então quem só tinha pendência ficava apagado
-        // na lista como se não tivesse nada.
         const temAlgo = totalEstoque > 0 || pendentes.length > 0;
 
         return `
@@ -2087,16 +2171,16 @@
               <div class="pu-nome">${esc2(p.nickname)}</div>
               <div class="pu-sub">${[
                 p.handle ? '@' + esc2(p.handle) : '',
-                'premiado ' + p.totalPremiacoes + 'x',
-                // "jogou 0" é ruído: a ausência já diz isso
+                `<button class="pu-abrir" data-abrir="${esc2(p.uniqueId)}">`
+                  + `${p.totalPremiacoes} premiaç${p.totalPremiacoes === 1 ? 'ão' : 'ões'}`
+                  + `${aberto ? ' ⌃' : ' ⌄'}</button>`,
                 p.usadas ? 'jogou ' + p.usadas : '',
                 p.expiradas ? p.expiradas + ' vencida(s)' : ''
               ].filter(Boolean).join(' · ')}</div>
-              ${estoque ? `<div class="pu-cartas pu-estoque"><span class="pu-rotulo">na mão</span>${estoque}</div>` : ''}
-              ${premios ? `<div class="pu-cartas"><span class="pu-rotulo">prazos</span>${premios}</div>` : ''}
-              ${avisar ? `<div class="pu-cartas">${avisar}</div>` : ''}
-              ${!estoque && !premios && !avisar ? '<div class="pu-nada">Sem carta no prazo.</div>' : ''}
-              ${usos ? `<div class="pu-cartas pu-usados"><span class="pu-rotulo">já jogou</span>${usos}</div>` : ''}
+              ${estoque ? `<div class="pu-mao-itens">${estoque}</div>` : ''}
+              ${marcar}
+              ${!estoque && !marcar ? '<div class="pu-nada">Sem carta no prazo.</div>' : ''}
+              ${detalhe}
             </div>
             <div class="pu-dir">
               <span class="pu-mao ${maoClasse}" title="${esc2(maoTitulo)}">${mao}</span>
@@ -2106,6 +2190,21 @@
           </div>
         `;
       }).join('');
+    }
+
+    // O que a pessoa costuma jogar. Saiu da cara da lista e virou uma linha
+    // dentro do detalhe: ajuda a escolher quem chamar, mas não é o que se faz
+    // aqui todo dia.
+    function usosCurtos(p) {
+      const itens = Object.entries(p.usos || {}).sort((a, b) => b[1] - a[1]);
+      if (!itens.length) return '';
+      return `<div class="pu-cartas pu-usados"><span class="pu-rotulo">já jogou</span>`
+        + itens.map(([t, n]) => {
+            const { emoji, nome } = emojiENome(t);
+            return `<span class="pu-uso">${iconeDoItem(t, emoji)} ${esc2(nome)}`
+                 + `${n > 1 ? ' ×' + n : ''}</span>`;
+          }).join('')
+        + `</div>`;
     }
 
     // ---------- editor de itens de uma premiação ----------
@@ -2297,7 +2396,60 @@
       }
     });
 
+    // ---------- MARCAR COM UM TOQUE ----------
+    // Um toque que escreve em cinco premiações só é rápido do jeito certo se
+    // tiver volta. Por isso o servidor devolve QUAIS premiações mexeu, e o
+    // aviso fica na tela oferecendo desfazer.
+    let avisoTimer = null;
+    function avisar(texto, desfazer) {
+      clearTimeout(avisoTimer);
+      document.querySelectorAll('.pu-toast').forEach(t => t.remove());
+      const el = document.createElement('div');
+      el.className = 'pu-toast';
+      const txt = document.createElement('span');
+      txt.textContent = texto;          // textContent: apelido vai como texto
+      el.appendChild(txt);
+      if (desfazer) {
+        const b = document.createElement('button');
+        b.textContent = 'Desfazer';
+        b.addEventListener('click', async () => {
+          el.remove();
+          clearTimeout(avisoTimer);
+          try { await desfazer(); } catch (err) { /* a lista se redesenha sozinha */ }
+        });
+        el.appendChild(b);
+      }
+      document.body.appendChild(el);
+      avisoTimer = setTimeout(() => el.remove(), 9000);
+    }
+
+    async function marcarRapido(uniqueId, tipo) {
+      const pessoa = ultimo.find(x => String(x.uniqueId) === String(uniqueId));
+      const { nome } = emojiENome(tipo);
+      try {
+        const res = await fetch('/api/powerup/itens-pendentes', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ uniqueId, itens: { [tipo]: 1 } })
+        });
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(d.error || 'não deu pra marcar');
+        const n = d.quantas || 0;
+        avisar(`${n} premiaç${n === 1 ? 'ão' : 'ões'} de ${pessoa ? pessoa.nickname : 'alguém'}`
+             + ` marcada${n === 1 ? '' : 's'} como ${nome}`,
+          () => fetch('/api/powerup/desfazer', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ uniqueId, mexidas: d.mexidas || [] })
+          }));
+      } catch (err) {
+        avisar(err.message || 'Não deu pra marcar.');
+      }
+    }
+
     listaEl.addEventListener('click', e => {
+      // o atalho vem antes: ele é o caminho de todo dia
+      const rapido = e.target.closest('[data-rapido]');
+      if (rapido) { marcarRapido(rapido.dataset.uid, rapido.dataset.rapido); return; }
+
       const mais = e.target.closest('[data-abrir]');
       if (mais) {
         const id = String(mais.dataset.abrir);
@@ -2305,7 +2457,8 @@
         render();
         return;
       }
-      const alvo = e.target.closest('.pu-carta[data-uid], .pu-avisar[data-uid]');
+      // o "⋯" abre o editor completo, pra quantidade ou pra marcar só uma
+      const alvo = e.target.closest('.pu-carta[data-uid], .pu-avisar[data-uid], .pu-outro[data-uid]');
       if (!alvo) return;
       abrirEditor(alvo.dataset.uid, alvo.dataset.em);
     });

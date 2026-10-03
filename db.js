@@ -724,45 +724,20 @@ function criarBanco(dono, opcoes) {
     return true;
   }
 
-  // NÃO abate da fila de premiações — e isso é de propósito.
+  // POR QUE NAO EXISTE MAIS UMA DEDUCAO AUTOMATICA AQUI.
   //
-  // Confirmado em live: UMA mensagem de prêmio pode valer VÁRIAS cartas (a pessoa
-  // ganhou 2 luvas e veio uma mensagem só), e o payload não tem quantidade nem
-  // nomeia a carta. Então "premiações" e "cartas usadas" são duas contagens
-  // diferentes e não dá pra subtrair uma da outra: se a premiação valia 2 e ela
-  // usou 1, abater a premiação inteira zerava um estoque que ainda existe.
+  // Havia uma: quando a pessoa JOGAVA uma carta, a premiação pendente mais
+  // antiga dela recebia aquele item. A lógica era boa — o TikTok afirma a
+  // carta no uso, e quem joga luva costuma ter ganhado luva.
   //
-  // O uso, ao contrário, é exato: sabe a carta, a pessoa e a quantidade.
-  // O uso é exato: a carta, a pessoa e a quantidade vêm no evento. É o lado do
-  // GASTO do estoque — o lado do GANHO vem de definirItensDaPremiacao, porque o
-  // TikTok não diz quais cartas nem quantas cada premiação deu.
-  // A premiação não diz qual carta foi — isso está provado com payload de
-  // produção: `tags` e `pieces` vêm vazios e o texto é genérico. O USO diz,
-  // porque é a única hora em que o TikTok manda o nome do item.
+  // Mas é inferência, não fato: a carta jogada pode ter vindo de antes de a
+  // gente estar ligado, ou de uma premiação que já venceu. E na tela o
+  // estrago era pior que o benefício — a linha enchia de etiqueta marcada e
+  // não dava pra saber o que era informado e o que era deduzido.
   //
-  // Então a premiação pendente mais antiga é resolvida com o item jogado.
-  // Mais antiga porque as cartas vencem em 5 dias e quem joga tende a gastar
-  // a que está pra vencer. Isso escolhe QUAL premiação recebe um item que o
-  // TikTok já afirmou — nunca inventa o item.
-  function resolverPendenteComUso(ficha, tipo, quantas) {
-    if (!tipo || !ficha || !Array.isArray(ficha.ganhas)) return 0;
-    const agora = Date.now();
-
-    const pendentes = ficha.ganhas
-      .filter(c => !c.itens || !Object.keys(c.itens).length)
-      .filter(c => agora - c.em < VALIDADE_CARTA_MS)   // vencida não conta
-      .sort((a, b) => a.em - b.em);
-
-    let resolvidas = 0;
-    for (const premio of pendentes) {
-      if (resolvidas >= quantas) break;
-      premio.itens = { [tipo]: 1 };
-      premio.tipo = tipo;
-      premio.deduzido = true;   // veio do uso, não de alguém marcando
-      resolvidas++;
-    }
-    return resolvidas;
-  }
+  // O USO continua guardado e mostrado (`usos`, `jogou`): isso é fato, o
+  // TikTok disse. O que saiu foi a inferência escrevendo dentro da premiação.
+  // Quem diz o que veio numa premiação é quem assistiu.
 
   function registrarCartaUsada(uniqueId, nickname, avatar, tipo, handle, qtd = 1) {
     const ficha = garantirFichaDeCarta(uniqueId, nickname, avatar, handle);
@@ -775,7 +750,7 @@ function criarBanco(dono, opcoes) {
     ficha.usadas += n;
 
     // o uso ensina o que a premiação era
-    if (tipo) resolverPendenteComUso(ficha, tipo, n);
+    // (a deducao automatica saiu daqui de proposito -- ver o comentario acima)
 
     // O que ESTA pessoa costuma jogar. Não vira palpite de estoque: serve pra
     // tela ajudar na hora de escolher quem chamar pra batalha.
@@ -830,14 +805,45 @@ function criarBanco(dono, opcoes) {
     return true;
   }
 
+  // Devolve ao estado de pendente as premiações marcadas por um lote.
+  //
+  // Não dá pra reaproveitar o definirItensDaPremiacao num laço: ele acha a
+  // premiação por `em`, e duas premiações podem ter a mesma hora. Num laço, a
+  // mesma seria limpa N vezes e as outras ficariam marcadas — dizendo "5
+  // voltaram" com 4 ainda lá. Aqui cada marca vale por UMA premiação.
+  function limparItensDePremiacoes(uniqueId, marcas) {
+    const ficha = state.cartas[uniqueId];
+    if (!ficha || !Array.isArray(marcas) || !marcas.length) return 0;
+
+    const restantes = marcas.map(Number).filter(Number.isFinite);
+    let limpas = 0;
+    ficha.ganhas.forEach(c => {
+      const i = restantes.indexOf(c.em);
+      if (i < 0) return;
+      restantes.splice(i, 1);      // consumida: não serve pra outra
+      c.itens = {};
+      delete c.tipo;
+      delete c.deduzido;
+      limpas++;
+    });
+
+    if (limpas) {
+      ficha.ultimaEm = Date.now();
+      dirty = true;
+      saveToDisk();
+    }
+    return limpas;
+  }
+
   // O mesmo conteúdo em TODAS as premiações pendentes e no prazo de alguém.
   //
   // Só as PENDENTES: as que já têm item (informado na mão ou deduzido de um
   // uso que o TikTok confirmou) não são tocadas — senão um clique em lote
   // apagaria informação melhor do que a que está entrando.
   //
-  // Devolve quantas foram alteradas, pra tela poder dizer o que aconteceu em
-  // vez de só piscar.
+  // Devolve a lista de premiações alteradas (a hora de cada uma). A tela usa
+  // pra dizer o que aconteceu — e pra desfazer, que é o que torna seguro
+  // marcar várias com um toque só.
   function definirItensDasPendentes(uniqueId, itens) {
     const ficha = fichaDeCarta(uniqueId);
     if (!ficha) return 0;
@@ -846,16 +852,18 @@ function criarBanco(dono, opcoes) {
     if (!Object.keys(limpo).length) return 0;
 
     const agora = Date.now();
-    let mexidas = 0;
+    // QUAIS foram mexidas, não só quantas: sem a lista não dá pra desfazer, e
+    // um toque que marca cinco premiações de uma vez precisa ter volta.
+    const mexidas = [];
     ficha.ganhas.forEach(c => {
       const pendente = !c.itens || !Object.keys(c.itens).length;
       const noPrazo = agora - c.em < VALIDADE_CARTA_MS;
       if (!pendente || !noPrazo) return;
       c.itens = { ...limpo };
-      mexidas++;
+      mexidas.push(c.em);
     });
 
-    if (mexidas) {
+    if (mexidas.length) {
       ficha.ultimaEm = agora;
       dirty = true;
       saveToDisk();
@@ -1752,7 +1760,7 @@ function criarBanco(dono, opcoes) {
   return {
     addLikes, addGift, addPowerUp, getRanking, getUserProfile, resetAll,
     registrarCartaGanha, registrarCartaUsada, getEstoqueCartas, VALIDADE_CARTA_MS,
-    definirItensDaPremiacao, definirItensDasPendentes,
+    definirItensDaPremiacao, definirItensDasPendentes, limparItensDePremiacoes,
     getGlobalStats, updateViewerCount, addComment, addFollow, addShare,
     markLiveOnline, markLiveOffline, checkLevelUp, getTropa, limparTropa, getSessions,
     heartbeat,

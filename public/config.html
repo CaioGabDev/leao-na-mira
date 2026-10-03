@@ -9,6 +9,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Bungee&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/assets/theme.css">
 <link rel="stylesheet" href="/assets/painel.css">
+<!-- reduzir/enviar a foto de fundo: a mesma conta que o mural usa -->
+<script src="/assets/fundo.js"></script>
 <style>
   /* ---------- amostra grande ---------- */
   .amostra-grande {
@@ -45,6 +47,30 @@
   .amostra-rodape .barra {
     flex: 1; height: 8px; border-radius: 4px; background: var(--grad-fire);
   }
+
+  /* ---------- a foto de fundo do mural ---------- */
+  .fundo-area { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
+  /* a prévia imita o recorte do poster: 9:16, cover, ancorado no topo — é
+     assim que a foto aparece na imagem final, e prévia que mente não serve */
+  .fundo-previa {
+    width: 72px; height: 128px; flex-shrink: 0;
+    border-radius: var(--r-md); border: 1px solid var(--line);
+    background-color: #000; background-size: cover; background-position: center top;
+    background-repeat: no-repeat;
+  }
+  /* mesmas camadas do mural: prévia que mente não serve */
+  .fundo-previa.sem-foto {
+    background-image:
+      linear-gradient(180deg, rgba(0,0,0,.42) 0%, rgba(0,0,0,.66) 70%, rgba(0,0,0,.8) 100%),
+      radial-gradient(110% 80% at 50% 2%, var(--ember1) 0%, transparent 58%),
+      radial-gradient(80% 60% at 88% 95%, var(--ember2) 0%, transparent 52%),
+      linear-gradient(170deg, var(--card) 0%, var(--bg) 100%);
+  }
+  .fundo-lado { flex: 1; min-width: 190px; display: flex; flex-direction: column; gap: 9px; }
+  .fundo-estado { font-size: 13px; color: var(--ink-dim); }
+  .fundo-estado b { color: var(--gold); }
+  .fundo-botoes { display: flex; gap: 8px; flex-wrap: wrap; }
+  .fundo-area.ocupado { opacity: .55; pointer-events: none; }
 
   /* ---------- temas prontos ---------- */
   .temas-prontos { margin-top: 16px; }
@@ -222,6 +248,28 @@
       <div class="campo">
         <label for="muralSub">Frase de baixo</label>
         <input class="app-input" type="text" id="muralSub" maxlength="160">
+      </div>
+    </div>
+
+    <!-- ---------- A FOTO DE FUNDO ---------- -->
+    <!-- Esta foto é de CADA LIVE e não se herda: quem não escolhe nenhuma fica
+         com um degradê nas cores da própria marca, nunca com a foto de outro
+         streamer. Era justamente o bug — a foto da casa cravada no HTML ia pro
+         story de todo mundo. -->
+    <div class="campo" style="margin-top:16px">
+      <label>Foto de fundo do mural</label>
+      <div class="fundo-area" id="fundoArea">
+        <div class="fundo-previa sem-foto" id="fundoPrevia"></div>
+        <div class="fundo-lado">
+          <div class="fundo-estado" id="fundoEstado">carregando…</div>
+          <div class="fundo-botoes">
+            <input type="file" id="fundoArquivo"
+                   accept="image/jpeg,image/png,image/webp" hidden>
+            <button class="app-btn" type="button" id="fundoEscolher">🖼️ Escolher foto</button>
+            <button class="app-btn" type="button" id="fundoRemover" hidden>Tirar a foto</button>
+          </div>
+          <span class="dica" id="fundoDica"></span>
+        </div>
       </div>
     </div>
   </section>
@@ -467,6 +515,96 @@
     }
   });
 
+  // ---------- a foto de fundo ----------
+  // Diferente do resto desta tela: vale na hora, sem passar pelo Salvar. A
+  // dica diz isso — esconder a diferença seria pior que explicá-la.
+  const fundoArea     = $('fundoArea');
+  const fundoPrevia   = $('fundoPrevia');
+  const fundoEstado   = $('fundoEstado');
+  const fundoDica     = $('fundoDica');
+  const fundoArquivo  = $('fundoArquivo');
+  const fundoEscolher = $('fundoEscolher');
+  const fundoRemover  = $('fundoRemover');
+
+  function mostrarFundo(info, versao) {
+    // A instalação não tem foto: é o que impede a foto da casa de virar a de
+    // todo mundo de novo. Recusa explicada, com o caminho pra resolver.
+    if (info && info.daInstalacao) {
+      fundoPrevia.className = 'fundo-previa sem-foto';
+      fundoPrevia.style.backgroundImage = '';
+      fundoEstado.innerHTML = 'A foto de fundo é <b>de cada live</b>, não da instalação.';
+      fundoDica.textContent = souAdmin
+        ? 'Escolha uma live no alto da página pra mexer na foto dela.'
+        : '';
+      fundoEscolher.hidden = true;
+      fundoRemover.hidden = true;
+      return;
+    }
+
+    fundoEscolher.hidden = false;
+    const tem = !!(info && info.temFundo);
+    fundoRemover.hidden = !tem;
+    fundoEscolher.textContent = tem ? '🖼️ Trocar a foto' : '🖼️ Escolher foto';
+
+    if (tem) {
+      fundoPrevia.className = 'fundo-previa';
+      fundoPrevia.style.backgroundImage =
+        "url('" + Fundo.url(alvoAtual, versao || info.em) + "')";
+      fundoEstado.innerHTML = 'Foto escolhida · <b>' + Fundo.kb(info.bytes) + '</b>';
+    } else {
+      fundoPrevia.className = 'fundo-previa sem-foto';
+      fundoPrevia.style.backgroundImage = '';
+      fundoEstado.innerHTML = 'Sem foto — o mural usa <b>as cores da sua marca</b>.';
+    }
+    fundoDica.textContent = 'Vale na hora, sem precisar clicar em Salvar. '
+      + 'Em pé (9:16) fica melhor: é o formato do story.';
+  }
+
+  async function carregarFundo(versao) {
+    try {
+      mostrarFundo(await Fundo.info(alvoAtual), versao);
+    } catch (e) {
+      fundoEstado.textContent = 'Não deu pra ler o estado da foto.';
+      fundoDica.textContent = '';
+    }
+  }
+
+  fundoEscolher.addEventListener('click', () => fundoArquivo.click());
+
+  fundoArquivo.addEventListener('change', async () => {
+    const file = fundoArquivo.files && fundoArquivo.files[0];
+    fundoArquivo.value = '';   // senão escolher o MESMO arquivo de novo não dispara
+    if (!file) return;
+
+    fundoArea.classList.add('ocupado');
+    fundoEstado.textContent = 'Enviando…';
+    try {
+      await Fundo.enviar(file, alvoAtual);
+      await carregarFundo(Date.now());
+      aviso(alvoAtual ? 'Foto de fundo trocada para @' + alvoAtual + '.'
+                      : 'Foto de fundo trocada.', 'ok');
+    } catch (e) {
+      await carregarFundo();
+      aviso(e.message || 'Não deu pra enviar a foto.', 'err');
+    } finally {
+      fundoArea.classList.remove('ocupado');
+    }
+  });
+
+  fundoRemover.addEventListener('click', async () => {
+    if (!confirm('Tirar a foto de fundo? O mural volta a usar as cores da marca.')) return;
+    fundoArea.classList.add('ocupado');
+    try {
+      await Fundo.remover(alvoAtual);
+      await carregarFundo(Date.now());
+      aviso('Foto removida.', 'ok');
+    } catch (e) {
+      aviso(e.message || 'Não deu pra tirar a foto.', 'err');
+    } finally {
+      fundoArea.classList.remove('ocupado');
+    }
+  });
+
   async function carregar() {
     try {
       const res = await fetch('/api/config?dono=' + encodeURIComponent(alvoAtual));
@@ -488,6 +626,8 @@
       padrao = (alvoAtual || !souAdmin) ? dados.instalacao : dados.padrao;
       preencher(dados.config);
       ajustarPainelDaLive();
+      // depois do preencher: a prévia usa as cores que acabaram de ser aplicadas
+      await carregarFundo();
       $('liveAtual').textContent = '@' + dados.liveEmUso + ' agora';
       $('liveDica').textContent = dados.config.live.usuario
         ? 'Configurado aqui. Deixe vazio pra usar a variável de ambiente.'

@@ -10,6 +10,8 @@
 <link rel="stylesheet" href="/assets/theme.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="/socket.io/socket.io.js"></script>
+<!-- reduzir/enviar a foto de fundo: o mural e a tela de aparencia usam o mesmo -->
+<script src="/assets/fundo.js"></script>
 <style>
   :root{
     --bg: #0A0807;
@@ -298,6 +300,59 @@
     background-repeat: no-repeat;
   }
 
+  /* SEM FOTO ESCOLHIDA.
+     O fundo não se herda (ver fundos.js): quem não escolheu foto não recebe a
+     de outra live. Recebe um degradê nas cores da PRÓPRIA marca — o story sai
+     apresentável mesmo assim, e o aviso em cima diz o que falta. Degradê de
+     CSS o html2canvas captura, então a imagem baixada fica igual à da tela. */
+  .poster-img-area.sem-foto{
+    background-image:
+      /* a camada escura POR CIMA: sem ela as cores da marca viram um holofote
+         laranja e o nome de quem está na lista some em cima dele. O fundo é
+         fundo -- tem que ficar atrás do que importa */
+      linear-gradient(180deg, rgba(0,0,0,.42) 0%, rgba(0,0,0,.66) 70%, rgba(0,0,0,.8) 100%),
+      radial-gradient(110% 80% at 50% 2%, var(--ember1) 0%, transparent 58%),
+      radial-gradient(80% 60% at 88% 95%, var(--ember2) 0%, transparent 52%),
+      linear-gradient(170deg, var(--card) 0%, var(--bg) 100%);
+  }
+
+  /* o convite pra escolher a foto, dentro da própria área da imagem */
+  /* O [hidden] sozinho nao vence o display:flex abaixo -- a regra do elemento
+     tem mais peso que a do navegador. Sem esta linha o convite "escolha o
+     fundo" fica escrito POR CIMA da foto de quem ja escolheu uma, e o JS jura
+     que escondeu. O mural nao carrega o painel.css, que ja traz essa regra. */
+  .fundo-vazio[hidden]{ display:none; }
+  .fundo-vazio{
+    position:absolute; inset:0; z-index:6;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:10px; padding:18px; text-align:center;
+  }
+  .fundo-vazio .tit{
+    font-family:'Bungee', sans-serif; font-size:13px; letter-spacing:.06em;
+    color:#fff; text-shadow:0 2px 10px rgba(0,0,0,.7); line-height:1.35;
+  }
+  .fundo-vazio .sub{ font-size:11px; color:rgba(255,255,255,.72); max-width:230px; line-height:1.45; }
+  .fundo-vazio button{
+    font:inherit; font-size:12px; font-weight:700; cursor:pointer;
+    padding:8px 15px; border-radius:999px; border:1.5px solid rgba(255,255,255,.35);
+    background:rgba(0,0,0,.45); color:#fff; backdrop-filter: blur(2px);
+  }
+  .fundo-vazio button:hover{ border-color:#FF7A1A; background:rgba(255,122,26,.25); }
+
+  /* a troca de foto, embaixo do poster */
+  .fundo-barra{
+    display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+    justify-content:center; margin-top:10px;
+    font-size:12px; color: var(--ink-dim);
+  }
+  .fundo-barra button{
+    font:inherit; font-size:12px; cursor:pointer;
+    padding:6px 12px; border-radius:8px;
+    border:1px solid var(--line); background:#0D0907; color: var(--ink-dim);
+  }
+  .fundo-barra button:hover{ border-color:#FF7A1A; color: var(--ink); }
+  .fundo-barra .ocupado{ opacity:.55; pointer-events:none; }
+
   .poster-vignette{
     position:absolute; inset:0;
     background:
@@ -468,9 +523,26 @@
         <div class="poster-img-area" id="posterImgArea">
           <div class="poster-vignette"></div>
           <div class="poster-img-fade"></div>
+          <!-- Só aparece enquanto a live não tem foto própria. Fica DENTRO da
+               área da imagem porque é ali que falta algo — e sai da captura
+               antes de gerar o PNG. -->
+          <div class="fundo-vazio" id="fundoVazio" hidden>
+            <div class="tit">ESCOLHA O FUNDO<br>DA SUA TROPA</div>
+            <div class="sub">Esta foto é a sua — ela vai atrás do mural no story.</div>
+            <button type="button" id="fundoEscolherVazio">🖼️ Escolher foto</button>
+          </div>
         </div>
         <div class="poster-embers" id="posterEmbers"></div>
         <div class="poster-rows" id="posterRows"></div>
+      </div>
+
+      <!-- trocar o fundo aqui, onde se vê o resultado, em vez de obrigar uma
+           ida até a tela de aparência -->
+      <div class="fundo-barra" id="fundoBarra">
+        <input type="file" id="fundoArquivo" accept="image/jpeg,image/png,image/webp" hidden>
+        <button type="button" id="fundoTrocar">🖼️ Trocar o fundo</button>
+        <button type="button" id="fundoRemover" hidden>Tirar a foto</button>
+        <span id="fundoStatus"></span>
       </div>
 
       <div class="poster-aviso" id="posterAviso" hidden></div>
@@ -823,22 +895,110 @@ socket.on('tropa_add', item => {
   // em resolução nativa, e só então aplicar como fundo. Assim o navegador é
   // obrigado a manter a versão em alta resolução decodificada e disponível
   // pro html2canvas usar na hora de gerar o PNG.
-  const FOTO_URL = './assets/foto_da_tropa_hd.jpg';
+  // A FOTO É DESTA LIVE, não do site.
+  //
+  // Era `./assets/foto_da_tropa_hd.jpg` cravado aqui — um arquivo só pro site
+  // inteiro. Resultado: todo streamer gerava o story dele com a foto da tropa
+  // do Borba. Agora o endereço é o mesmo pra todos (`/api/fundo`) e o servidor
+  // entrega a foto de quem está logado; quem não escolheu nenhuma leva 404, que
+  // aqui não é erro — é o estado "ainda não escolhi", e liga o degradê das
+  // cores da própria marca.
   let fotoPronta = false;
+  let temFundo = false;
 
-  function carregarFotoEmAltaResolucao(){
+  // o `?v=` só entra depois de uma troca: na carga normal a URL é fixa e o
+  // ETag do servidor resolve (304 quando não mudou)
+  function carregarFotoEmAltaResolucao(versao){
+    const url = Fundo.url(null, versao);
+    fotoPronta = false;
+
     const img = new Image();
-    img.src = FOTO_URL;
+    img.src = url;
     // decode() força o navegador a processar a imagem em resolução nativa
     // ANTES de resolver a promise — diferente de só esperar o evento "load".
-    const decodePromise = img.decode ? img.decode() : Promise.resolve();
-    decodePromise
-      .catch(() => {}) // se decode() falhar (ex: navegador antigo), segue o fluxo
+    const decodePromise = img.decode
+      ? img.decode()
+      : new Promise((ok, falha) => { img.onload = ok; img.onerror = falha; });
+
+    return decodePromise
       .then(() => {
-        posterImgArea.style.backgroundImage = `url('${FOTO_URL}')`;
-        fotoPronta = true;
+        posterImgArea.style.backgroundImage = `url('${url}')`;
+        posterImgArea.classList.remove('sem-foto');
+        temFundo = true;
+      })
+      .catch(() => {
+        // não carregou: ou esta live não escolheu foto (404), ou a rede falhou.
+        // Os dois acabam no mesmo lugar, e o degradê é um fundo apresentável —
+        // melhor que um retângulo preto sem explicação.
+        posterImgArea.style.backgroundImage = '';
+        posterImgArea.classList.add('sem-foto');
+        temFundo = false;
+      })
+      .then(() => {
+        fotoPronta = true;   // em qualquer um dos dois casos, dá pra gerar
+        ajustarBarraDoFundo();
       });
   }
+
+  // ---------- trocar o fundo aqui mesmo ----------
+  const fundoVazio    = document.getElementById('fundoVazio');
+  const fundoArquivo  = document.getElementById('fundoArquivo');
+  const fundoTrocar   = document.getElementById('fundoTrocar');
+  const fundoRemover  = document.getElementById('fundoRemover');
+  const fundoStatus   = document.getElementById('fundoStatus');
+  const fundoBarra    = document.getElementById('fundoBarra');
+
+  function ajustarBarraDoFundo(){
+    fundoVazio.hidden = temFundo;
+    fundoRemover.hidden = !temFundo;
+    fundoTrocar.textContent = temFundo ? '🖼️ Trocar o fundo' : '🖼️ Escolher o fundo';
+  }
+
+  // Reduzir e enviar moram no assets/fundo.js: a tela de aparência mexe na
+  // mesma foto, e duas contas diferentes fariam a mesma imagem sair com
+  // qualidade diferente dependendo de onde foi escolhida.
+  async function enviarFundo(file){
+    fundoBarra.classList.add('ocupado');
+    fundoStatus.textContent = 'Preparando…';
+    try {
+      await Fundo.enviar(file);
+      await carregarFotoEmAltaResolucao(Date.now());
+      fundoStatus.textContent = '';
+      showToast('Fundo atualizado ✓');
+      renderPoster();
+    } catch (e) {
+      fundoStatus.textContent = '';
+      alert('Não deu pra trocar o fundo: ' + (e.message || 'erro desconhecido'));
+    } finally {
+      fundoBarra.classList.remove('ocupado');
+    }
+  }
+
+  fundoTrocar.addEventListener('click', () => fundoArquivo.click());
+  document.getElementById('fundoEscolherVazio')
+    .addEventListener('click', () => fundoArquivo.click());
+
+  fundoArquivo.addEventListener('change', () => {
+    const file = fundoArquivo.files && fundoArquivo.files[0];
+    fundoArquivo.value = '';   // senão escolher o MESMO arquivo de novo não dispara
+    if (file) enviarFundo(file);
+  });
+
+  fundoRemover.addEventListener('click', async () => {
+    if (!confirm('Tirar a foto de fundo? O mural volta a usar as cores da sua marca.')) return;
+    fundoBarra.classList.add('ocupado');
+    try {
+      await Fundo.remover();
+      await carregarFotoEmAltaResolucao(Date.now());
+      showToast('Foto removida');
+      renderPoster();
+    } catch (e) {
+      alert('Não deu pra tirar a foto.');
+    } finally {
+      fundoBarra.classList.remove('ocupado');
+    }
+  });
+
   carregarFotoEmAltaResolucao();
 
   // ---------- Ajuste dinâmico pra sempre caber tudo ----------
@@ -1024,6 +1184,10 @@ socket.on('tropa_add', item => {
       scale: escala,
       useCORS: true,
       imageTimeout: 0,
+      // O convite "escolha o fundo" é instrução de tela, não parte do story:
+      // sem isto ele sairia escrito na imagem que o streamer posta. Fica aqui
+      // em vez de esconder e mostrar o elemento, pra não piscar na tela dele.
+      ignoreElements: el => el.id === 'fundoVazio',
     }).then(canvas => {
       const canvasFinal = arredondarCanvas(canvas, raioCss * escala);
       return entregarImagem(canvasFinal);

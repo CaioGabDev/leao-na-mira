@@ -286,6 +286,40 @@ título / subtítulo da **marca**, títulos do **mural**, as **cores** do tema
 (fundo, card, dourado, as duas brasas do gradiente e as duas brasinhas que sobem
 no fundo) e o `@` da **live**.
 
+### A foto de fundo do mural — a única coisa que **não** se herda
+
+O mural gera a imagem que o streamer posta no story, e o fundo dela era uma
+constante no HTML: `foto_da_tropa_hd.jpg`, um arquivo só pro site inteiro. Como
+era um só, todo streamer novo gerava o story dele com a foto da tropa de outro.
+
+A correção não foi só "deixar trocar": foi tirar a foto da herança.
+
+Todo o resto da aparência desce da instalação pro cliente — quem não escolhe
+título usa o título padrão. **Se o fundo descesse igual, a foto da casa voltaria
+a ser a de todo mundo**, que é exatamente o problema. Então:
+
+- a foto é **por live**, nunca da instalação. O administrador sem live escolhida
+  recebe **400** com o motivo escrito, em vez de gravar uma foto que vazaria
+  pra todos;
+- quem não escolheu nenhuma **não herda a de ninguém**: o mural desenha um
+  degradê nas cores da própria marca, e um convite dentro da área da imagem
+  dizendo o que falta. O convite é `ignoreElements` no `html2canvas` — ele é
+  instrução de tela, não parte do story, e sairia escrito na imagem baixada;
+- a live da casa já tinha a dela. Na primeira subida o `fundos.semear()` move a
+  foto do repositório pra dentro do fundo **daquela** live e anota num
+  `.semeados`, pra quem apagar de propósito não ver a foto voltar no restart.
+
+A foto mora no disco persistente (`/data/fundos`), **não** no `config.json`: o
+config é um arquivo pequeno que dá pra abrir e ler com o olho, e centenas de KB
+de base64 por cliente acabariam com isso. E o disco é a única verdade — não
+existe campo no config dizendo "tenho foto", porque dois lugares guardando o
+mesmo fato é um lugar a mais pra eles discordarem.
+
+Na entrada, o que decide se é imagem são os **bytes** (JPEG/PNG/WebP pela
+assinatura), nunca a extensão nem o `Content-Type`: os dois vêm de quem está
+enviando. O navegador reduz pra 1600px antes de subir — foto de celular tem
+4000px e o poster sai em 1080px, então o resto é peso puro.
+
 Tudo que entra aqui veio de um formulário e vai parar dentro de HTML e de CSS,
 então nada é aproveitado como veio: texto perde caracteres de controle e é
 cortado no limite; cor só passa se for hexadecimal de 6 dígitos — é isso que
@@ -440,6 +474,12 @@ mexe na cara da live dele. Quem decide o escopo é o `escopoDoPedido()`:
 
 `dono` vazio quer dizer "a minha", não "a da casa" — por isso não é recusa.
 
+`GET` / `POST` / `DELETE /api/fundo` seguem o mesmo escopo, com uma diferença: a
+**instalação não tem fundo** (400 com o motivo). `GET /api/fundo` devolve a
+imagem da live da sessão, ou **404** quando ela não escolheu nenhuma — 404 aqui
+não é erro, é o estado que liga o degradê da marca na tela. Imagem acima do teto
+responde **413** com o tamanho dito, não um 500 mudo.
+
 ---
 
 ## Eventos de socket
@@ -467,7 +507,8 @@ Com `RAILWAY_ENVIRONMENT` presente, todos os arquivos de dados passam a morar em
 
 O que configurar lá:
 
-- um **volume montado em `/data`**;
+- um **volume montado em `/data`**; (é onde ficam também as fotos de fundo
+  do mural, em `/data/fundos`);
 - `SESSION_SECRET` (sem ela o servidor não sobe);
 - `ADMIN_USER` / `ADMIN_PASSWORD` (pro primeiro acesso);
 - `EULERSTREAM_API_KEY`;
@@ -493,6 +534,7 @@ chaves.js          chaves de ativação
 config.js          aparência: instalação e cliente, com saneamento
 assinatura.js      o estado do assinador da conexão
 session-store.js   sessões em arquivo
+fundos.js          a foto de fundo do mural, uma por live (não se herda)
 protocru.js        lê o protobuf cru pra achar campo que a lib não conhece
 create-user.js     cadastro pela linha de comando
 
@@ -506,6 +548,11 @@ public/
   login.html       entrada
   ativar.html      troca de chave por conta
   assets/theme.css os tokens de tema e as primitivas `app-`
+  assets/fundo.js  reduzir/enviar a foto de fundo (mural e aparência usam o mesmo)
+
+teste/
+  fundos.js        o módulo da foto: assinatura dos bytes, chave virando arquivo
+  fundo-http.js    as rotas: quem pode mexer na foto de quem (sobe o servidor)
 ```
 
 ---

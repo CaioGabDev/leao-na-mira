@@ -30,8 +30,13 @@ const VALIDADE_MS = 30 * 60 * 1000;     // o cadastro acontece numa sentada só
 const ESPERA_ENTRE_TENTATIVAS_MS = 8000; // não martelar o TikTok
 const TEMPO_LIMITE_MS = 12000;
 
-const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-         + '(KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36';
+const UA_PC = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+            + '(KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36';
+// o celular recebe uma página diferente (233KB contra 420KB) pela mesma URL:
+// é outro caminho de renderização, e por isso é uma porta de verdade
+const UA_CELULAR = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) '
+                 + 'AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 '
+                 + 'Mobile/15E148 Safari/604.1';
 
 // desafios abertos, por @. Fica em memória de propósito: é um código de 30
 // minutos usado numa sessão só, e persistir isso seria guardar segredo à toa.
@@ -74,61 +79,132 @@ function doDono(dono) {
   return atual;
 }
 
-// O perfil público. Devolve o que dá pra provar: o @ que o TikTok confirmou, o
-// id numérico dele e a bio.
-async function lerPerfil(dono, buscar = fetch) {
-  const chave = normalizar(dono);
-  if (!chave) return { ok: false, motivo: 'sem @ pra conferir' };
+// ---------- AS PORTAS ----------
+// Mais de uma de propósito. Em 02/10 o TikTok barrou a leitura do perfil no
+// meio de um teste (limite por IP) — com uma porta só, o cadastro inteiro
+// pararia naquele dia. Cada porta é um caminho diferente; quando uma fecha, as
+// outras continuam.
 
+async function baixar(url, ua, buscar) {
   const parar = new AbortController();
   const relogio = setTimeout(() => parar.abort(), TEMPO_LIMITE_MS);
-  let html;
   try {
-    const r = await buscar('https://www.tiktok.com/@' + encodeURIComponent(chave), {
-      headers: { 'user-agent': UA, 'accept-language': 'pt-BR,pt;q=0.9,en;q=0.8' },
+    const r = await buscar(url, {
+      headers: {
+        'user-agent': ua,
+        'accept-language': 'pt-BR,pt;q=0.9,en;q=0.8',
+        referer: 'https://www.tiktok.com/'
+      },
       signal: parar.signal
     });
-    if (!r.ok) return { ok: false, motivo: `o TikTok respondeu ${r.status}` };
-    html = await r.text();
+    if (!r.ok) return { erro: `o TikTok respondeu ${r.status}` };
+    return { texto: await r.text() };
   } catch (e) {
     const porTempo = e && (e.name === 'AbortError' || /abort/i.test(e.message || ''));
-    return { ok: false, motivo: porTempo ? 'o TikTok demorou demais' : 'não consegui abrir o perfil' };
+    return { erro: porTempo ? 'o TikTok demorou demais' : 'não consegui abrir o perfil' };
   } finally {
     clearTimeout(relogio);
   }
+}
 
-  const bloco = html.match(
+// PORTA 1 — a melhor. JSON de 12KB, e é a rota que o próprio conector usa pra
+// descobrir a sala de um @. Contrato de dados, não formato de tela: não
+// depende de raspar um <script> de dentro de 420KB de HTML.
+async function pelaApiLive(chave, buscar) {
+  const url = 'https://www.tiktok.com/api-live/user/room/'
+            + '?aid=1988&sourceType=54&uniqueId=' + encodeURIComponent(chave);
+  const r = await baixar(url, UA_PC, buscar);
+  if (r.erro) return { ok: false, motivo: r.erro };
+
+  let dados;
+  try { dados = JSON.parse(r.texto); }
+  catch (e) { return { ok: false, motivo: 'a resposta não veio em JSON' }; }
+
+  // "esse @ não existe" é resposta, não bloqueio: para a cascata aqui em vez
+  // de bater nas outras portas à toa
+  if (dados && /not_?found/i.test(String(dados.message || ''))) {
+    return { ok: false, definitivo: true, motivo: 'esse @ não existe no TikTok' };
+  }
+  const u = dados && dados.data && dados.data.user;
+  if (!u || !u.uniqueId) return { ok: false, motivo: 'a resposta veio sem o perfil' };
+
+  return {
+    ok: true,
+    dono: normalizar(u.uniqueId),
+    userId: String(u.id || ''),
+    nickname: String(u.nickname || ''),
+    bio: String(u.signature || '')
+  };
+}
+
+// PORTAS 2 e 3 — o HTML do perfil. As duas têm a mesma estrutura, então um
+// parser só serve; o que muda é o user-agent, e com ele a página que vem.
+async function peloHtml(chave, buscar, ua) {
+  const r = await baixar('https://www.tiktok.com/@' + encodeURIComponent(chave), ua, buscar);
+  if (r.erro) return { ok: false, motivo: r.erro };
+
+  const bloco = r.texto.match(
     /<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__"[^>]*>([\s\S]*?)<\/script>/);
   // Sem o bloco: foi o TikTok que barrou (checagem de bot, limite por IP). A
-  // página de "@ não existe" VEM com o bloco, com o erro dentro — então a
-  // ausência dele não é culpa de quem digitou, e dizer "esse @ não existe"
-  // aqui jogaria a pessoa contra a parede no meio do cadastro.
-  if (!bloco) {
-    return { ok: false, barrado: true,
-             motivo: 'o TikTok não deixou ler o perfil agora. '
-                   + 'Espere alguns minutos e tente de novo.' };
-  }
+  // página de "@ não existe" VEM com o bloco, com o erro dentro.
+  if (!bloco) return { ok: false, motivo: 'a página veio sem os dados do perfil' };
 
   let dados;
   try { dados = JSON.parse(bloco[1]); }
   catch (e) { return { ok: false, motivo: 'os dados do perfil vieram quebrados' }; }
 
-  const user = dados?.['__DEFAULT_SCOPE__']?.['webapp.user-detail']?.userInfo?.user;
-  if (!user) return { ok: false, motivo: 'esse @ não existe ou está sem perfil público' };
-
-  // O @ que voltou TEM que ser o que eu pedi. Sem isto, um redirecionamento
-  // levaria a conferência pro perfil errado sem ninguém notar.
-  const voltou = normalizar(user.uniqueId);
-  if (voltou && voltou !== chave) {
-    return { ok: false, motivo: `o TikTok devolveu o perfil de @${voltou}` };
-  }
+  const u = dados?.['__DEFAULT_SCOPE__']?.['webapp.user-detail']?.userInfo?.user;
+  if (!u) return { ok: false, definitivo: true, motivo: 'esse @ não existe ou está sem perfil público' };
 
   return {
     ok: true,
-    dono: chave,
-    userId: String(user.id || ''),
-    nickname: String(user.nickname || ''),
-    bio: String(user.signature || '')
+    dono: normalizar(u.uniqueId),
+    userId: String(u.id || ''),
+    nickname: String(u.nickname || ''),
+    bio: String(u.signature || '')
+  };
+}
+
+const PORTAS = [
+  { nome: 'api-live', abrir: (c, b) => pelaApiLive(c, b) },
+  { nome: 'html', abrir: (c, b) => peloHtml(c, b, UA_PC) },
+  { nome: 'html-celular', abrir: (c, b) => peloHtml(c, b, UA_CELULAR) }
+];
+
+// O perfil público, por qualquer porta que abrir. Devolve o que dá pra provar:
+// o @ que o TikTok confirmou, o id numérico dele e a bio.
+async function lerPerfil(dono, buscar = fetch) {
+  const chave = normalizar(dono);
+  if (!chave) return { ok: false, motivo: 'sem @ pra conferir' };
+
+  const tentativas = [];
+  for (const porta of PORTAS) {
+    let r;
+    try { r = await porta.abrir(chave, buscar); }
+    catch (e) { r = { ok: false, motivo: (e && e.message) || 'estourou' }; }
+
+    if (r.ok) {
+      // O @ que voltou TEM que ser o que eu pedi. Sem isto, um redirecionamento
+      // levaria a conferência pro perfil errado sem ninguém notar.
+      if (r.dono && r.dono !== chave) {
+        return { ok: false, definitivo: true,
+                 motivo: `o TikTok devolveu o perfil de @${r.dono}` };
+      }
+      return { ...r, dono: chave, porta: porta.nome, tentativas };
+    }
+
+    tentativas.push(porta.nome + ': ' + r.motivo);
+    // resposta definitiva (o @ não existe, ou veio outro perfil): não adianta
+    // bater nas outras portas
+    if (r.definitivo) return { ok: false, motivo: r.motivo, tentativas };
+  }
+
+  // todas fechadas: é bloqueio, e não culpa de quem digitou o @
+  return {
+    ok: false,
+    barrado: true,
+    motivo: 'o TikTok não deixou ler o perfil agora. Espere alguns minutos e tente de novo.',
+    tentativas
   };
 }
 
@@ -150,7 +226,10 @@ async function conferir(dono, buscar = fetch) {
   ultimaTentativa.set(chave, agora);
 
   const perfil = await lerPerfil(chave, buscar);
-  if (!perfil.ok) return { ok: false, motivo: perfil.motivo };
+  if (!perfil.ok) {
+    return { ok: false, motivo: perfil.motivo, barrado: perfil.barrado,
+             tentativas: perfil.tentativas };
+  }
 
   // comparação frouxa de propósito: o TikTok às vezes devolve a bio com espaço
   // e quebra de linha diferentes do que a pessoa digitou
@@ -171,6 +250,8 @@ async function conferir(dono, buscar = fetch) {
     userId: perfil.userId,
     nickname: perfil.nickname,
     codigo: desafio.codigo,
+    // por qual porta a leitura passou: se uma morrer, é assim que se descobre
+    porta: perfil.porta,
     provadoEm: Date.now()
   };
 }
@@ -183,6 +264,6 @@ function esquecer(dono) {
 }
 
 module.exports = {
-  desafiar, conferir, lerPerfil, esquecer, normalizar,
+  desafiar, conferir, lerPerfil, esquecer, normalizar, PORTAS,
   VALIDADE_MS, ESPERA_ENTRE_TENTATIVAS_MS, PREFIXO
 };

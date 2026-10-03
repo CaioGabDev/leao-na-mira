@@ -14,6 +14,7 @@ const chaves = require('./chaves');
 const posse = require('./posse');
 const termos = require('./termos');
 const config = require('./config');
+const fundos = require('./fundos');
 const { FileSessionStore } = require('./session-store');
 
 // @ da live: o que o dono configurou vence; sem config, a env var de sempre.
@@ -399,6 +400,13 @@ app.post('/api/posse/conferir', async (req, res) => {
     return res.status(502).json({ error: 'Não consegui falar com o TikTok agora. Tente de novo.' });
   }
   if (!r.ok) {
+    // o que CADA porta respondeu só interessa pra quem mantém: "429 nas três"
+    // e "a primeira morreu de vez" pedem reações diferentes, e a pessoa do
+    // outro lado não tem nada com isso
+    if (r.tentativas && r.tentativas.length) {
+      console.error('[posse] nenhuma porta abriu pra @' + quem.dono + ':',
+                    r.tentativas.join(' | '));
+    }
     return res.status(400).json({ error: r.motivo, bioLida: r.bioLida, esperar: r.esperar });
   }
 
@@ -567,6 +575,20 @@ app.post('/api/powerup/itens', (req, res) => {
 // O mesmo item em TODAS as premiações pendentes de alguém. Existe porque a
 // fila de "a informar" chega a dezenas, e na prática são quase sempre a mesma
 // carta — quem joga luva ganha luva. Uma a uma é trabalho que ninguém faz.
+// Desfaz um lote: devolve as premiações informadas ao estado de pendente.
+// Existe porque marcar várias com um toque só precisa ter volta — sem isso,
+// um toque errado vira trabalho manual de desfazer uma por uma.
+app.post('/api/powerup/desfazer', (req, res) => {
+  const { uniqueId, mexidas } = req.body || {};
+  if (!uniqueId || !Array.isArray(mexidas) || !mexidas.length) {
+    return res.status(400).json({ error: 'Preciso saber quais premiações desfazer.' });
+  }
+  const { db, live } = clientes.doPedido(req);
+  const voltaram = db.limparItensDePremiacoes(uniqueId, mexidas.slice(0, 200));
+  live.broadcastPowerUps();
+  res.json({ ok: true, voltaram });
+});
+
 app.post('/api/powerup/itens-pendentes', (req, res) => {
   const { uniqueId, itens } = req.body || {};
   if (!identificadorValido(uniqueId)) {
@@ -581,13 +603,14 @@ app.post('/api/powerup/itens-pendentes', (req, res) => {
   }
 
   const { db, live } = clientes.doPedido(req);
-  const quantas = db.definirItensDasPendentes(uniqueId, itens);
-  if (!quantas) {
+  const mexidas = db.definirItensDasPendentes(uniqueId, itens);
+  if (!mexidas.length) {
     return res.status(404).json({ error: 'Essa pessoa não tem premiação pendente no prazo.' });
   }
 
   live.broadcastPowerUps();
-  res.json({ ok: true, quantas });
+  // devolve QUAIS, pra tela poder oferecer desfazer
+  res.json({ ok: true, quantas: mexidas.length, mexidas });
 });
 
 
@@ -662,6 +685,99 @@ app.post('/api/config', (req, res) => {
   const efetivo = dono ? TIKTOK_USERNAME
                        : (salvo.live.usuario || process.env.TIKTOK_USERNAME || 'vitorb0rba');
   res.json({ ok: true, dono, config: salvo, precisaReiniciar: efetivo !== TIKTOK_USERNAME });
+});
+
+// ---------- O FUNDO DO MURAL ----------
+// A foto que vai atrás do mural no story. Uma por live, e NÃO se herda: ver o
+// cabeçalho do fundos.js pro porquê.
+//
+// `express.raw` só nesta rota, nunca global: o corpo aqui são megabytes de
+// imagem, e abrir esse teto no `express.json()` do site todo daria a qualquer
+// rota um jeito de comer memória à toa. O `type` aceita octet-stream porque é
+// o que alguns navegadores mandam num Blob sem tipo — quem decide se é imagem
+// de verdade são os bytes, no fundos.guardar.
+const corpoDeImagem = express.raw({
+  type: ['image/*', 'application/octet-stream'],
+  limit: fundos.LIMITE_BYTES
+});
+
+// Entrega a foto da live de quem pediu. Sem parâmetro na URL de propósito: o
+// dono sai da sessão (e o "espiar" do admin resolve sozinho, porque o
+// clientes.doPedido já olha pra ele). Assim ninguém monta uma URL pra puxar o
+// fundo de outra live.
+app.get('/api/fundo', (req, res) => {
+  const { dono } = escopoDoPedido(req);
+  const fundo = dono ? fundos.ler(dono) : null;
+  // 404 é a resposta certa, não um erro: "esta live ainda não escolheu foto" é
+  // uma situação normal, e é ela que liga o degradê das cores da marca.
+  if (!fundo) return res.status(404).json({ temFundo: false });
+
+  res.type(fundo.mime);
+  // Revalidação em vez de cache cego. A URL é fixa, então um max-age longo
+  // deixaria a foto velha na tela depois de uma troca; o ETag pelo mtime faz o
+  // navegador gastar um 304 e só baixar quando mudou de verdade.
+  res.set('Cache-Control', 'no-cache, must-revalidate');
+  res.set('ETag', '"' + fundo.mtimeMs.toString(36) + '-' + fundo.bytes.toString(36) + '"');
+  res.sendFile(path.resolve(fundo.caminho));
+});
+
+// Diz se tem foto e de quem é, sem baixar a imagem. É o que a tela de
+// aparência usa pra saber qual estado desenhar.
+app.get('/api/fundo/info', (req, res) => {
+  const { dono, permitido } = escopoDoPedido(req);
+  if (!permitido) return res.status(403).json({ error: 'Você só pode ver a sua live.' });
+  const fundo = dono ? fundos.ler(dono) : null;
+  res.json({
+    dono,
+    daInstalacao: !dono,
+    temFundo: !!fundo,
+    bytes: fundo ? fundo.bytes : 0,
+    em: fundo ? Math.round(fundo.mtimeMs) : 0,
+    limiteBytes: fundos.LIMITE_BYTES
+  });
+});
+
+app.post('/api/fundo', corpoDeImagem, (req, res) => {
+  const { dono, permitido } = escopoDoPedido(req);
+  if (!permitido) return res.status(403).json({ error: 'Você só pode mexer na sua live.' });
+  // A instalação não tem fundo — é o que impede a foto da casa de virar a de
+  // todo mundo outra vez. Recusa explicada, não silenciosa.
+  if (!dono) {
+    return res.status(400).json({
+      error: 'O fundo é de cada live, não da instalação: escolha a live no alto da página.'
+    });
+  }
+  if (!Buffer.isBuffer(req.body) || !req.body.length) {
+    return res.status(400).json({ error: 'Não chegou imagem nenhuma.' });
+  }
+
+  const r = fundos.guardar(dono, req.body);
+  if (r.erro) return res.status(400).json({ error: r.erro });
+  console.log(`[FUNDO] @${dono} trocou o fundo do mural (${Math.round(r.bytes / 1024)}KB ${r.ext})`);
+  res.json({ ok: true, ...r });
+});
+
+// Imagem acima do teto: o body-parser corta o corpo e joga um erro que, sem
+// isto, vira um 500 mudo na tela do streamer — ele vê "deu erro" e não fica
+// sabendo que o problema é o tamanho, nem o que fazer. O navegador reduz antes
+// de enviar, então quem chega aqui é quem caiu no caminho sem redimensionamento.
+app.use('/api/fundo', (err, req, res, next) => {
+  if (err && (err.type === 'entity.too.large' || err.status === 413)) {
+    const teto = Math.round(fundos.LIMITE_BYTES / 1024 / 1024);
+    return res.status(413).json({
+      error: `A imagem passou de ${teto}MB. Mande uma menor — uma foto de celular normal já serve.`
+    });
+  }
+  next(err);
+});
+
+app.delete('/api/fundo', (req, res) => {
+  const { dono, permitido } = escopoDoPedido(req);
+  if (!permitido) return res.status(403).json({ error: 'Você só pode mexer na sua live.' });
+  if (!dono) return res.status(400).json({ error: 'A instalação não tem fundo.' });
+  const apagou = fundos.apagar(dono);
+  if (apagou) console.log(`[FUNDO] @${dono} tirou o fundo do mural`);
+  res.json({ ok: true, apagou });
 });
 
 // ---------- CLIENTES ----------
@@ -1053,6 +1169,14 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`Servidor rodando em http://localhost:${PORT}`);
   console.log(assinatura.resumo());
+
+  // O fundo do mural da casa era uma constante no HTML. Agora é um arquivo por
+  // live, e a casa já tinha o dela — então ela entra como fundo DAQUELA live,
+  // uma vez só. Sem isto, arrumar o bug de "todo mundo com a foto do Borba"
+  // começaria apagando a foto do Borba, que era a única que estava certa.
+  if (fundos.semear(TIKTOK_USERNAME, path.join(__dirname, 'public', 'assets', 'foto_da_tropa_hd.jpg'))) {
+    console.log(`[FUNDO] a foto da tropa entrou como fundo de @${TIKTOK_USERNAME}`);
+  }
 
   // A live da casa sempre sobe. Além dela, sobe uma por cliente cadastrado —
   // quem tem `dono` no users.json (ver create-user.js --dono). Enquanto não
