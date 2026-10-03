@@ -64,6 +64,22 @@
   .etiqueta.vencida, .etiqueta.cancelada { background: rgba(255,70,70,.1); color: #ff9b9b; border-color: rgba(255,70,70,.26); }
   html { background: var(--bg); }
   body::before { display: none; }
+  /* ---------- a escolha de exigir (ou não) a prova do @ ---------- */
+  .exige {
+    display: flex; gap: 10px; align-items: flex-start; cursor: pointer;
+    margin: 4px 0 12px; font-size: 13px; line-height: 1.6; color: var(--ink-dim);
+  }
+  .exige input { width: 17px; height: 17px; margin-top: 2px; flex-shrink: 0; cursor: pointer; }
+  .exige b { color: var(--ink); }
+  /* amarelo, não verde: dispensa não é prova, e a lista tem que deixar isso à vista */
+  .etiqueta.semprova {
+    background: rgba(255,176,58,.14); border: 1px solid rgba(255,176,58,.42);
+    color: #ffc46b;
+  }
+  .etiqueta.comprova {
+    background: rgba(52,211,153,.12); border: 1px solid rgba(52,211,153,.35);
+    color: #6ee7b7;
+  }
 </style>
 </head>
 <body>
@@ -161,6 +177,20 @@
       <div class="campo campo--curto">
         <button class="app-btn app-btn--primary" id="gerarChaveBtn">🔑 Gerar chave</button>
       </div>
+    </div>
+
+    <label class="exige">
+      <input type="checkbox" id="chaveExige" checked>
+      <span><b>Pedir que o streamer prove o @</b> — ele cola um código na bio do
+        TikTok e o sistema confere. Desmarque só se você já confirmou de outro
+        jeito que a live é dessa pessoa.</span>
+    </label>
+    <div class="campo" id="campoMotivo" hidden>
+      <label for="chaveMotivo">Como você confirmou que a live é dessa pessoa?</label>
+      <input class="app-input" type="text" id="chaveMotivo" maxlength="200"
+             placeholder="ex: chamada de vídeo em 02/10, ele abriu o painel de criador na minha frente">
+      <span class="dica">Fica guardado junto do cadastro, com o seu nome e a data.
+        É o que responde por essa live se alguém perguntar.</span>
     </div>
 
     <div class="chave-nova" id="chaveNova" hidden>
@@ -491,6 +521,12 @@
 
   const linkDaChave = chave => location.origin + '/ativar.html?k=' + encodeURIComponent(chave);
 
+  // o campo de motivo só existe quando a prova é dispensada
+  $('chaveExige').addEventListener('change', () => {
+    $('campoMotivo').hidden = $('chaveExige').checked;
+    if ($('chaveExige').checked) $('chaveMotivo').value = '';
+  });
+
   // navigator.clipboard só existe em https (ou localhost). No http de um IP
   // interno ele nem aparece — daí o caminho de baixo, com um campo escondido.
   async function copiar(texto, oQue) {
@@ -529,6 +565,12 @@
         + '<span class="codigo">' + esc(c.chave) + '</span>'
         + '<span class="etiqueta ' + c.situacao + '">' + est.rotulo + '</span>'
         + '<span class="arroba">@' + esc(c.dono) + '</span>'
+        // dispensada aparece em amarelo, com o motivo no title: a lista tem que
+        // mostrar onde você está apoiado só na sua palavra
+        + (c.exigeProva === false
+            ? '<span class="etiqueta semprova" title="' + esc(c.motivoSemProva || '') + '">'
+              + '✋ sem prova do @</span>'
+            : '<span class="etiqueta comprova">🔒 prova pela bio</span>')
         + (c.observacao ? '<span class="quem">' + esc(c.observacao) + '</span>' : '')
         + '<span class="quando">' + detalhe + '</span>'
         + '<span class="spacer"></span>'
@@ -562,6 +604,12 @@
     const btn = $('gerarChaveBtn');
     const dono = $('chaveDono').value.trim();
     if (!dono) return aviso('Falta o @ da live que essa chave libera.', 'err');
+    // o servidor confere de novo; isto aqui é só pra o aviso chegar antes
+    if (!$('chaveExige').checked && $('chaveMotivo').value.trim().length < 15) {
+      $('chaveMotivo').focus();
+      return aviso('Pra dispensar a prova do @, escreva como você confirmou que '
+                 + 'a live é dessa pessoa.', 'err');
+    }
 
     btn.disabled = true;
     aviso('Gerando...');
@@ -571,7 +619,9 @@
         body: JSON.stringify({
           dono,
           validadeDias: Number($('chaveDias').value) || undefined,
-          observacao: $('chaveNota').value.trim()
+          observacao: $('chaveNota').value.trim(),
+          exigeProva: $('chaveExige').checked,
+          motivoSemProva: $('chaveMotivo').value.trim()
         })
       });
       const dados = await res.json();

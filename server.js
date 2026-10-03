@@ -11,6 +11,8 @@ const dbFabrica = require('./db');   // só pela lista de tipos de carta
 const assinatura = require('./assinatura');
 const auth = require('./auth');
 const chaves = require('./chaves');
+const posse = require('./posse');
+const termos = require('./termos');
 const config = require('./config');
 const { FileSessionStore } = require('./session-store');
 
@@ -238,7 +240,12 @@ function requireAuth(req, res, next) {
 // atrás do login, ativar seria impossível.
 const SEM_LOGIN = new Set([
   '/login.html', '/api/login',
-  '/ativar.html', '/api/ativar', '/api/ativar/info'
+  '/ativar.html', '/api/ativar', '/api/ativar/info',
+  // os termos abrem pra qualquer um: ninguém deve precisar de conta pra ler o
+  // que vai aceitar
+  '/termos.html', '/api/termos',
+  // a prova de posse acontece ANTES de a conta existir
+  '/api/posse/desafio', '/api/posse/conferir'
 ]);
 
 app.use((req, res, next) => {
@@ -310,7 +317,123 @@ app.get('/api/ativar/info', (req, res) => {
     return res.status(404).json({ error: conferida.motivo });
   }
   limparChutes(req);
-  res.json({ ok: true, dono: conferida.dono, expiraEm: conferida.expiraEm });
+  res.json({
+    ok: true, dono: conferida.dono, expiraEm: conferida.expiraEm,
+    // a tela pula o passo da bio quando a chave dispensa
+    exigeProva: conferida.exigeProva
+  });
+});
+
+// Quem sou eu, pra tela decidir o que mostrar. A pagina de termos abre
+// deslogado (ninguem deve precisar de conta pra ler o que vai aceitar), entao
+// ela pergunta aqui e aceita levar 401 como resposta.
+app.get('/api/eu', (req, res) => {
+  const usuario = req.session.user;
+  const ehAdmin = auth.ehAdmin(usuario);
+  const aceite = auth.aceiteDe(usuario);
+  res.json({
+    usuario,
+    admin: ehAdmin,
+    dono: auth.donoDoUsuario(usuario) || null,
+    aceiteValido: termos.aceiteValido(aceite),
+    versaoAceita: aceite ? aceite.versao : null,
+    // ja provou a posse do @ alguma vez? (na ativacao ou depois)
+    temProva: !!(aceite && aceite.prova)
+  });
+});
+
+// ---------- OS TERMOS ----------
+app.get('/api/termos', (req, res) => {
+  res.json({
+    versao: termos.VERSAO,
+    titulo: termos.TITULO,
+    impressao: termos.impressao(),
+    secoes: termos.SECOES
+  });
+});
+
+// ---------- PROVA DE POSSE DO @ ----------
+// De qual live é o desafio: quem está logado prova a PRÓPRIA live; quem não
+// está (cadastro) prova a live da chave que tem na mão.
+function donoDoDesafio(req) {
+  const usuario = req.session && req.session.user;
+  if (usuario) return { ok: true, dono: auth.donoDoUsuario(usuario) || '', logado: true };
+
+  if (estaDeCastigo(req)) {
+    return { ok: false, codigo: 429, motivo: 'Muitas chaves erradas. Espere alguns minutos.' };
+  }
+  const conferida = chaves.conferir((req.body && req.body.chave) || '');
+  if (!conferida.ok) {
+    chuteiAChave(req);
+    return { ok: false, codigo: 400, motivo: conferida.motivo };
+  }
+  limparChutes(req);
+  return { ok: true, dono: conferida.dono, logado: false };
+}
+
+app.post('/api/posse/desafio', (req, res) => {
+  const quem = donoDoDesafio(req);
+  if (!quem.ok) return res.status(quem.codigo).json({ error: quem.motivo });
+  if (!quem.dono) return res.status(400).json({ error: 'Essa conta não está ligada a nenhuma live.' });
+
+  const desafio = posse.desafiar(quem.dono);
+  res.json({
+    ok: true,
+    dono: desafio.dono,
+    codigo: desafio.codigo,
+    expiraEm: desafio.expiraEm,
+    perfil: 'https://www.tiktok.com/@' + desafio.dono
+  });
+});
+
+app.post('/api/posse/conferir', async (req, res) => {
+  const quem = donoDoDesafio(req);
+  if (!quem.ok) return res.status(quem.codigo).json({ error: quem.motivo });
+  if (!quem.dono) return res.status(400).json({ error: 'Essa conta não está ligada a nenhuma live.' });
+
+  let r;
+  try {
+    r = await posse.conferir(quem.dono);
+  } catch (e) {
+    console.error('prova de posse estourou:', e && e.message);
+    return res.status(502).json({ error: 'Não consegui falar com o TikTok agora. Tente de novo.' });
+  }
+  if (!r.ok) {
+    return res.status(400).json({ error: r.motivo, bioLida: r.bioLida, esperar: r.esperar });
+  }
+
+  // A prova fica na SESSÃO deste navegador. É o que amarra "provou" a "cadastrou":
+  // sem isso, provar numa aba e cadastrar em outra passaria batido.
+  req.session.provaDePosse = {
+    metodo: 'bio', dono: r.dono, userId: r.userId,
+    nickname: r.nickname, codigo: r.codigo, em: new Date().toISOString()
+  };
+  req.session.save(() => res.json({
+    ok: true, dono: r.dono, nickname: r.nickname, userId: r.userId
+  }));
+});
+
+// ---------- ACEITE DE QUEM JÁ TEM CONTA ----------
+// Cliente que o administrador cadastrou na mão, ou que já existia antes dos
+// termos: aceita aqui, e a prova de posse entra junto se ele tiver feito.
+app.post('/api/aceitar', (req, res) => {
+  const usuario = req.session && req.session.user;
+  if (!usuario) return res.status(401).json({ error: 'Entre primeiro.' });
+  const { aceito, declaracoes } = req.body || {};
+  if (!aceito) return res.status(400).json({ error: 'É preciso aceitar os termos.' });
+
+  const dono = auth.donoDoUsuario(usuario) || '';
+  const prova = req.session.provaDePosse;
+  const vale = prova && posse.normalizar(prova.dono) === posse.normalizar(dono);
+
+  auth.registrarAceite(usuario, termos.registroDeAceite({
+    dono,
+    ip: req.ip,
+    userAgent: req.get('user-agent'),
+    prova: vale ? prova : null,
+    declaracoes
+  }));
+  res.json({ ok: true, versao: termos.VERSAO, comProva: !!vale });
 });
 
 app.post('/api/ativar', (req, res) => {
@@ -330,6 +453,40 @@ app.post('/api/ativar', (req, res) => {
 
   const problema = validarCredenciais(nome, senha);
   if (problema) return res.status(400).json({ error: problema });
+
+  // A AUTORIZAÇÃO DO STREAMER. Sem a prova de posse do @, a chave sozinha
+  // deixaria qualquer um que a visse cadastrar a live de outra pessoa.
+  //
+  // A chave pode dispensar a prova — mas aí ela carrega o motivo escrito por
+  // quem a criou, e isso vai pro registro no lugar da prova. "Sem prova" e
+  // "dispensado pelo Caio em 02/10 porque fechou pessoalmente" são coisas
+  // muito diferentes na hora de responder por isso.
+  const naSessao = req.session && req.session.provaDePosse;
+  const provou = naSessao
+    && posse.normalizar(naSessao.dono) === posse.normalizar(conferida.dono);
+
+  let prova;
+  if (provou) {
+    prova = naSessao;
+  } else if (conferida.exigeProva === false) {
+    prova = {
+      metodo: 'dispensada',
+      dono: conferida.dono,
+      por: conferida.criadaPor || null,
+      motivo: conferida.motivoSemProva || null,
+      em: new Date().toISOString()
+    };
+  } else {
+    return res.status(403).json({
+      error: 'Falta provar que o @ é seu. Volte e confira o código na bio.',
+      precisaProvar: true
+    });
+  }
+  // E o aceite. Ele é gravado junto com a conta, não depois — conta criada sem
+  // aceite é exatamente o buraco que isto fecha.
+  if (!req.body.aceito) {
+    return res.status(400).json({ error: 'É preciso aceitar os termos para ativar.' });
+  }
   if (auth.loadUsers().some(u => u.username === nome)) {
     return res.status(409).json({ error: 'Já existe alguém com esse nome de usuário.' });
   }
@@ -340,7 +497,16 @@ app.post('/api/ativar', (req, res) => {
   const gasto = chaves.usar(chave, nome);
   if (!gasto.ok) return res.status(400).json({ error: gasto.motivo });
 
-  auth.upsertUser(nome, String(senha), { dono: gasto.dono });
+  auth.upsertUser(nome, String(senha), {
+    dono: gasto.dono,
+    aceite: termos.registroDeAceite({
+      dono: gasto.dono,
+      ip: req.ip,
+      userAgent: req.get('user-agent'),
+      prova,
+      declaracoes: req.body.declaracoes
+    })
+  });
 
   let ligado = false;
   try {
@@ -646,13 +812,31 @@ app.post('/api/chaves', (req, res) => {
   const dono = config.usuarioTikTok((req.body && req.body.dono) || '');
   if (!dono) return res.status(400).json({ error: 'A chave precisa do @ da live.' });
 
-  const registro = chaves.gerar({
-    dono,
-    criadaPor: (req.session && req.session.user) || null,
-    validadeDias: req.body && req.body.validadeDias,
-    observacao: req.body && req.body.observacao
-  });
+  let registro;
+  try {
+    registro = chaves.gerar({
+      dono,
+      criadaPor: (req.session && req.session.user) || null,
+      validadeDias: req.body && req.body.validadeDias,
+      observacao: req.body && req.body.observacao,
+      exigeProva: req.body && req.body.exigeProva,
+      motivoSemProva: req.body && req.body.motivoSemProva
+    });
+  } catch (e) {
+    // dispensar a prova sem escrever o motivo cai aqui
+    return res.status(400).json({ error: e.message });
+  }
   res.json({ ok: true, ...registro });
+});
+
+// Virar a exigência de uma chave já enviada. É a saída pro cliente travado
+// porque o TikTok barrou a leitura do perfil: o link que ele tem continua
+// valendo, só deixa de pedir a bio.
+app.post('/api/chaves/exigencia', (req, res) => {
+  const { chave, exigeProva, motivoSemProva } = req.body || {};
+  const r = chaves.trocarExigencia(chave, exigeProva, motivoSemProva);
+  if (!r.ok) return res.status(400).json({ error: r.motivo });
+  res.json(r);
 });
 
 app.post('/api/chaves/revogar', (req, res) => {
@@ -688,7 +872,8 @@ app.get('/api/espiar/sair', (req, res) => {
 // express.static de propósito: senão ele entrega o arquivo cru.
 // Lista fechada de nomes — nada de montar caminho com o que veio na URL.
 const PAGINAS = new Set(['index.html', 'mural.html', 'login.html', 'ativar.html',
-                         'painel.html', 'diagnostico.html', 'admin.html', 'config.html']);
+                         'painel.html', 'diagnostico.html', 'admin.html', 'config.html',
+                         'termos.html']);
 // as telas que pertencem a UMA live — o administrador não mora nelas
 const PAGINAS_DE_CLIENTE = new Set(['index.html', 'mural.html', 'painel.html', 'diagnostico.html']);
 const cachePagina = new Map();   // nome|variante -> { mtimeMs, versao, html }
@@ -704,6 +889,16 @@ app.use((req, res, next) => {
   const souDono = !!(req.session && req.session.user && auth.ehAdmin(req.session.user));
   if (souDono && PAGINAS_DE_CLIENTE.has(nome) && !(req.session && req.session.espiando)) {
     return res.redirect('/admin.html');
+  }
+
+  // O ACEITE É A PORTA. Cliente sem aceite — ou com aceite de uma versão
+  // anterior dos termos — só abre a página dos termos. O administrador fica de
+  // fora: ele é a casa, não um streamer, e trancá-lo aqui tiraria dele a única
+  // tela de onde se conserta qualquer coisa.
+  const logado = req.session && req.session.user;
+  if (logado && !souDono && nome !== 'termos.html' && nome !== 'login.html'
+      && !termos.aceiteValido(auth.aceiteDe(logado))) {
+    return res.redirect('/termos.html');
   }
 
   const arquivo = path.join(__dirname, 'public', nome);

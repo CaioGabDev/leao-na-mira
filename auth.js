@@ -41,8 +41,17 @@ function upsertUser(username, password, opcoes) {
   // padrão da instalação (ver clientes.js) — que é o caso de todo mundo hoje.
   const eraDono = idx >= 0 ? users[idx].dono : null;
   const querDono = opcoes && opcoes.dono !== undefined ? opcoes.dono : eraDono;
-  const dono = String(querDono || '').trim().toLowerCase();
+  // sem o @, pelo mesmo motivo do chaves.js: o dono e a chave da live
+  const dono = String(querDono || '').trim().replace(/^@+/, '').toLowerCase();
   if (dono) record.dono = dono;
+
+  // O ACEITE DOS TERMOS. Preservado igual ao `admin` e ao `dono`, e pelo mesmo
+  // motivo ao quadrado: este `record` nasce do zero a cada upsert, então um
+  // campo que ninguém copie some na primeira troca de senha. Perder o aceite
+  // é perder a prova de que a pessoa aceitou.
+  const eraAceite = idx >= 0 ? users[idx].aceite : null;
+  const querAceite = opcoes && opcoes.aceite !== undefined ? opcoes.aceite : eraAceite;
+  if (querAceite) record.aceite = querAceite;
   if (idx >= 0) users[idx] = record;
   else users.push(record);
   saveUsers(users);
@@ -154,6 +163,23 @@ function seedFromEnv() {
 // A conta ainda existe? Apagar alguém tem que valer pra quem já está logado,
 // então isto é conferido a cada requisição. O arquivo é pequeno (dezenas de
 // linhas), então ler e parsear sai mais barato que manter cache coerente.
+// Guarda o aceite sem mexer em senha nenhuma. Separado do upsertUser porque
+// quem aceita os termos depois (cliente que o admin cadastrou na mão) não tem
+// senha pra informar de novo.
+function registrarAceite(username, aceite) {
+  const users = loadUsers();
+  const idx = users.findIndex(u => u.username === username);
+  if (idx < 0) return false;
+  users[idx].aceite = aceite;
+  saveUsers(users);
+  return true;
+}
+
+function aceiteDe(username) {
+  const u = loadUsers().find(x => x.username === username);
+  return (u && u.aceite) || null;
+}
+
 function existe(username) {
   if (!username) return false;
   return loadUsers().some(u => u.username === username);
@@ -172,11 +198,13 @@ function setDono(username, dono) {
   const users = loadUsers();
   const u = users.find(x => x.username === username);
   if (!u) return false;
-  const limpo = String(dono || '').trim().toLowerCase();
+  // sem o @, igual ao upsertUser: e a chave da live
+  const limpo = String(dono || '').trim().replace(/^@+/, '').toLowerCase();
   if (limpo) u.dono = limpo; else delete u.dono;
   saveUsers(users);
   return true;
 }
 
 module.exports = { USERS_FILE, loadUsers, saveUsers, hashPassword, upsertUser, setAdmin, ehAdmin, existe, garantirDono,
-                   donoDoUsuario, setDono, verifyCredentials, seedFromEnv };
+                   donoDoUsuario, setDono, verifyCredentials, seedFromEnv,
+                   registrarAceite, aceiteDe };

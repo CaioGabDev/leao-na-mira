@@ -82,8 +82,11 @@ function diasValidos(dias) {
 
 // Gera uma chave amarrada a UMA live. `dono` é o @ que o cliente vai
 // acompanhar — quem ativa não escolhe isso, e é esse o ponto.
-function gerar({ dono, criadaPor, validadeDias, observacao } = {}) {
-  const alvo = String(dono || '').trim().toLowerCase();
+function gerar({ dono, criadaPor, validadeDias, observacao,
+                exigeProva, motivoSemProva } = {}) {
+  // sem o @: o registro de clientes usa o arroba pelado como chave, e
+  // "@fulano" ali dentro vira uma live diferente de "fulano"
+  const alvo = String(dono || '').trim().replace(/^@+/, '').toLowerCase();
   if (!alvo) throw new Error('A chave precisa de uma live (@) pra apontar.');
 
   const lista = carregar();
@@ -91,9 +94,20 @@ function gerar({ dono, criadaPor, validadeDias, observacao } = {}) {
   do { chave = novaChave(); } while (lista.some(c => c.chave === chave));
 
   const agora = Date.now();
+  // Dispensar a prova é decisão consciente e precisa de motivo escrito. O
+  // padrão é EXIGIR: quem não disser nada cai no caminho seguro.
+  const exige = exigeProva === undefined ? true : !!exigeProva;
+  const motivo = String(motivoSemProva || '').trim().slice(0, 200);
+  if (!exige && motivo.length < 15) {
+    throw new Error('Pra dispensar a verificação do @, escreva como você confirmou '
+                  + 'que a live é dessa pessoa (pelo menos 15 caracteres).');
+  }
+
   const registro = {
     chave,
     dono: alvo,
+    exigeProva: exige,
+    motivoSemProva: exige ? null : motivo,
     criadaEm: agora,
     criadaPor: String(criadaPor || '') || null,
     expiraEm: agora + diasValidos(validadeDias) * 24 * 60 * 60 * 1000,
@@ -126,7 +140,13 @@ function conferir(bruta) {
   if (registro.revogadaEm) return { ok: false, motivo: 'Essa chave foi cancelada.' };
   if (Date.now() > registro.expiraEm) return { ok: false, motivo: 'Essa chave venceu.' };
 
-  return { ok: true, chave, dono: registro.dono, expiraEm: registro.expiraEm };
+  return {
+    ok: true, chave, dono: registro.dono, expiraEm: registro.expiraEm,
+    // chave antiga (criada antes disto existir) exige prova: o padrão seguro
+    exigeProva: registro.exigeProva !== false,
+    motivoSemProva: registro.motivoSemProva || null,
+    criadaPor: registro.criadaPor || null
+  };
 }
 
 // Marca como usada. Confere DE NOVO na hora de gravar: entre o conferir() e o
@@ -150,6 +170,29 @@ function usar(bruta, username) {
 }
 
 // Cancelar não apaga: o painel continua mostrando que existiu e o que houve.
+// Vira a exigência de uma chave que já existe. Serve pro caso que a escolha na
+// criação não cobre: o cliente travado no meio do cadastro porque o TikTok
+// barrou a leitura do perfil. Em vez de queimar a chave e mandar outra, o admin
+// dispensa esta — com motivo, igual.
+function trocarExigencia(bruta, exigeProva, motivoSemProva) {
+  const chave = normalizar(bruta);
+  const lista = carregar();
+  const registro = lista.find(c => c.chave === chave);
+  if (!registro) return { ok: false, motivo: 'Chave não encontrada.' };
+  if (registro.usadaEm) return { ok: false, motivo: 'Essa chave já foi usada.' };
+
+  const exige = !!exigeProva;
+  const motivo = String(motivoSemProva || '').trim().slice(0, 200);
+  if (!exige && motivo.length < 15) {
+    return { ok: false, motivo: 'Escreva como você confirmou que a live é dessa '
+                              + 'pessoa (pelo menos 15 caracteres).' };
+  }
+  registro.exigeProva = exige;
+  registro.motivoSemProva = exige ? null : motivo;
+  gravar(lista);
+  return { ok: true, chave, exigeProva: exige };
+}
+
 function revogar(bruta) {
   const chave = normalizar(bruta);
   if (!chave) return false;
@@ -191,6 +234,7 @@ function listar() {
 }
 
 module.exports = {
+  trocarExigencia,
   ARQUIVO, ALFABETO, VALIDADE_PADRAO_DIAS, VALIDADE_MAXIMA_DIAS,
   gerar, conferir, usar, revogar, apagar, listar, buscar, normalizar, carregar, gravar
 };

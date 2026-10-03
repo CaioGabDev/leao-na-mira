@@ -22,7 +22,10 @@ function criarRegistro({ io, donoPadrao }) {
 
   const abertos = new Map();
 
-  const normalizar = dono => String(dono || '').trim().toLowerCase();
+  // Tira o @ TAMBEM na hora de resolver, e nao so na hora de gravar: assim
+  // quem ja foi gravado como "@fulano" antes deste conserto volta a cair na
+  // live certa, em vez de ficar num banco vazio pra sempre.
+  const normalizar = dono => String(dono || '').trim().replace(/^@+/, '').toLowerCase();
 
   // Prefixo de propósito: o nome da sala nunca colide com um evento ou com
   // um id de socket.

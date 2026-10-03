@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Termos de uso — {{produto.nome}}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  /* ===========================================================================
+     Igual ao login e ao ativar: esta tela é DO PRODUTO, não de um streamer.
+     Quem abre aqui pode nem ter conta — e quem tem, está parado na porta até
+     aceitar. Nada de bloco de tema do cliente.
+
+     (E o nome dos marcadores de tema não se escreve aqui: o template troca
+     eles em qualquer lugar do arquivo, inclusive dentro de comentário. Já
+     fechou o <style> cedo e deixou a tela branca uma vez.)
+     =========================================================================== */
+  :root {
+    --preto:    #05070c;
+    --painel:   #0c111c;
+    --linha:    #1a2333;
+    --linha-luz:#232f44;
+    --ink:      #e9eefb;
+    --ink-dim:  #94a3bd;
+    --ink-fraco:#5d6b85;
+    --azul:     #3b82f6;
+    --azul-luz: #7aa7ff;
+    --azul-esc: #1d4ed8;
+    --verde:    #34d399;
+    --vermelho: #f87171;
+    --r-md: 14px; --r-lg: 20px;
+  }
+  * { box-sizing: border-box; }
+  html { height: 100%; background: var(--preto); }
+  body {
+    margin: 0; min-height: 100%; padding: 32px 20px 60px;
+    font-family: 'Inter', system-ui, sans-serif;
+    color: var(--ink); -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: ''; position: fixed; inset: 0; z-index: -2; pointer-events: none;
+    background:
+      radial-gradient(900px 560px at 15% -10%, rgba(59,130,246,.16), transparent 62%),
+      radial-gradient(760px 620px at 100% 8%,  rgba(29,78,216,.13),  transparent 58%);
+  }
+  main { max-width: 760px; margin: 0 auto; }
+
+  .topo { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+  h1 { font-size: 26px; margin: 0; letter-spacing: -.02em; }
+  .versao {
+    font-size: 12px; color: var(--ink-fraco); border: 1px solid var(--linha);
+    padding: 3px 9px; border-radius: 999px;
+  }
+  .abre { color: var(--ink-dim); font-size: 14.5px; line-height: 1.6; margin: 8px 0 26px; }
+
+  section {
+    background: var(--painel); border: 1px solid var(--linha);
+    border-radius: var(--r-lg); padding: 20px 22px; margin-bottom: 14px;
+  }
+  section h2 { font-size: 16px; margin: 0 0 10px; color: var(--azul-luz); }
+  section p { margin: 0 0 10px; font-size: 14.5px; line-height: 1.7; color: var(--ink-dim); }
+  section p:last-child { margin-bottom: 0; }
+
+  /* o aceite, pra quem está logado e ainda não aceitou */
+  .aceitar {
+    background: linear-gradient(180deg, rgba(59,130,246,.10), rgba(59,130,246,.04));
+    border: 1px solid rgba(122,167,255,.3);
+  }
+  .marcar {
+    display: flex; gap: 10px; align-items: flex-start; cursor: pointer;
+    margin: 12px 0; font-size: 14px; line-height: 1.6; color: var(--ink-dim);
+  }
+  .marcar input { width: 17px; height: 17px; margin-top: 2px; flex-shrink: 0; cursor: pointer; }
+  button {
+    width: 100%; margin-top: 8px; padding: 13px; border: 0; border-radius: var(--r-md);
+    background: linear-gradient(180deg, var(--azul), var(--azul-esc));
+    color: #fff; font: inherit; font-weight: 700; font-size: 15px; cursor: pointer;
+  }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.fantasma {
+    background: none; border: 1px solid var(--linha-luz); color: var(--ink-dim);
+    font-weight: 600; font-size: 14px; padding: 11px;
+  }
+  .aviso { display: none; margin-top: 10px; padding: 10px 12px; border-radius: 10px; font-size: 13.5px; white-space: pre-wrap; }
+  .aviso.ruim { display: block; background: rgba(248,113,113,.1); border: 1px solid rgba(248,113,113,.3); color: #fca5a5; }
+  .aviso.bom  { display: block; background: rgba(52,211,153,.1); border: 1px solid rgba(52,211,153,.3); color: #6ee7b7; }
+
+  .codigo {
+    display: flex; align-items: center; gap: 10px; margin: 12px 0 6px;
+    padding: 13px 15px; border-radius: 12px; border: 1px dashed var(--linha-luz);
+    background: rgba(122,167,255,.07);
+  }
+  .codigo code { flex: 1; font-size: 19px; letter-spacing: .06em; font-weight: 700; color: var(--azul-luz); word-break: break-all; }
+  .codigo button { width: auto; margin: 0; padding: 8px 14px; font-size: 13px; flex-shrink: 0; }
+  .dica { font-size: 12.5px; color: var(--ink-fraco); line-height: 1.6; display: block; }
+  .dica a { color: var(--azul-luz); }
+
+  .rodape { margin-top: 22px; text-align: center; font-size: 13px; color: var(--ink-fraco); }
+  .rodape a { color: var(--azul-luz); }
+</style>
+</head>
+<body>
+<main>
+  <div class="topo">
+    <h1 id="titulo">Termos de uso</h1>
+    <span class="versao" id="versao"></span>
+  </div>
+  <p class="abre">Leia antes de aceitar. Guardamos a versão que você aceitou e o
+    dia — por isso, quando o texto mudar, vamos pedir de novo.</p>
+
+  <div id="corpo"></div>
+
+  <!-- só aparece pra quem está logado e ainda não aceitou esta versão -->
+  <section class="aceitar" id="caixaAceite" hidden>
+    <h2>Autorizar e aceitar</h2>
+
+    <div id="blocoPosse" hidden>
+      <p>Confirme que a live <b id="posseArroba"></b> é sua: cole este código na
+        bio do seu perfil do TikTok, salve, e toque em conferir. Depois pode tirar.</p>
+      <div class="codigo">
+        <code id="codigoPosse">—</code>
+        <button type="button" id="copiar">Copiar</button>
+      </div>
+      <span class="dica"><a id="abrirPerfil" href="#" target="_blank" rel="noopener">Abrir meu perfil</a></span>
+      <div class="aviso" id="avisoPosse"></div>
+      <button type="button" class="fantasma" id="btnPosse">Já salvei, conferir</button>
+    </div>
+
+    <label class="marcar">
+      <input type="checkbox" id="aceiteDono">
+      <span>Sou a pessoa dona deste @, ou tenho autorização dela, e autorizo
+        este serviço a acompanhar a live.</span>
+    </label>
+    <label class="marcar">
+      <input type="checkbox" id="aceiteTermos">
+      <span>Li e aceito os termos acima.</span>
+    </label>
+
+    <div class="aviso" id="avisoAceite"></div>
+    <button type="button" id="btnAceitar" disabled>Aceitar e continuar</button>
+  </section>
+
+  <div class="rodape" id="rodape"></div>
+</main>
+
+<script>
+  const $ = id => document.getElementById(id);
+  const mostrar = (el, texto, bom) => {
+    el.textContent = texto;
+    el.className = 'aviso ' + (bom ? 'bom' : 'ruim');
+  };
+  const esconder = el => { el.className = 'aviso'; el.textContent = ''; };
+  const esc = t => String(t == null ? '' : t)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  // ------------------------------------------------ o texto
+  (async () => {
+    try {
+      const r = await fetch('/api/termos');
+      const d = await r.json();
+      $('titulo').textContent = d.titulo;
+      $('versao').textContent = 'versão ' + d.versao;
+      $('corpo').innerHTML = (d.secoes || []).map(s =>
+        '<section><h2>' + esc(s.t) + '</h2>'
+        + (s.p || []).map(p => '<p>' + esc(p) + '</p>').join('')
+        + '</section>').join('');
+    } catch (e) {
+      $('corpo').innerHTML = '<section><p>Não consegui carregar os termos agora.</p></section>';
+    }
+  })();
+
+  // ------------------------------------------------ quem está vendo isto
+  // A caixa de aceite só faz sentido pra quem já tem conta. Quem chegou aqui
+  // deslogado está só lendo — e tem que poder ler sem ser empurrado pra lugar
+  // nenhum.
+  (async () => {
+    let eu = null;
+    try {
+      const r = await fetch('/api/eu');
+      if (r.ok) eu = await r.json();
+    } catch (e) { /* deslogado */ }
+
+    if (!eu || !eu.usuario) {
+      $('rodape').innerHTML = 'Já tem conta? <a href="/login.html">Entrar</a>';
+      return;
+    }
+    if (eu.aceiteValido) {
+      $('rodape').innerHTML = 'Você já aceitou esta versão. <a href="/">Ir para o painel</a>';
+      return;
+    }
+    if (eu.admin) {
+      $('rodape').innerHTML = '<a href="/admin.html">Voltar ao painel</a>';
+      return;
+    }
+
+    $('caixaAceite').hidden = false;
+    $('rodape').innerHTML = '<a href="#" id="sair">Sair</a>';
+    $('sair').addEventListener('click', async ev => {
+      ev.preventDefault();
+      await fetch('/api/logout', { method: 'POST' }).catch(() => {});
+      location.href = '/login.html';
+    });
+
+    // a prova de posse só aparece pra quem ainda não provou
+    if (eu.dono && !eu.temProva) {
+      $('blocoPosse').hidden = false;
+      $('posseArroba').textContent = '@' + eu.dono;
+      $('abrirPerfil').href = 'https://www.tiktok.com/@' + eu.dono;
+      pedirCodigo();
+    }
+  })();
+
+  async function pedirCodigo() {
+    $('codigoPosse').textContent = 'pedindo...';
+    try {
+      const r = await fetch('/api/posse/desafio', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}'
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'não consegui gerar o código');
+      $('codigoPosse').textContent = d.codigo;
+    } catch (e) {
+      $('codigoPosse').textContent = '—';
+      mostrar($('avisoPosse'), e.message);
+    }
+  }
+
+  $('copiar').addEventListener('click', async () => {
+    const texto = $('codigoPosse').textContent.trim();
+    if (!texto || texto === '—') return;
+    try {
+      await navigator.clipboard.writeText(texto);
+      $('copiar').textContent = 'Copiado!';
+    } catch (e) {
+      $('copiar').textContent = 'Copie aí';
+    }
+    setTimeout(() => { $('copiar').textContent = 'Copiar'; }, 2500);
+  });
+
+  $('btnPosse').addEventListener('click', async () => {
+    esconder($('avisoPosse'));
+    const b = $('btnPosse');
+    b.disabled = true;
+    b.textContent = 'Conferindo a bio...';
+    try {
+      const r = await fetch('/api/posse/conferir', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}'
+      });
+      const d = await r.json();
+      if (!r.ok) {
+        let recado = d.error || 'não consegui conferir';
+        // mostrar a bio lida evita o "mas eu salvei!" sem saída
+        if (d.bioLida !== undefined) {
+          recado += '\n\nA bio que eu li agora:\n' + (d.bioLida || '(vazia)');
+        }
+        return mostrar($('avisoPosse'), recado);
+      }
+      mostrar($('avisoPosse'), 'Confirmado: @' + d.dono + ' é seu. Pode tirar o código da bio.', true);
+      $('blocoPosse').querySelector('.codigo').style.display = 'none';
+      b.hidden = true;
+    } catch (e) {
+      mostrar($('avisoPosse'), 'Erro ao conectar com o servidor.');
+    } finally {
+      b.disabled = false;
+      b.textContent = 'Já salvei, conferir';
+    }
+  });
+
+  function conferirCaixas() {
+    $('btnAceitar').disabled = !($('aceiteDono').checked && $('aceiteTermos').checked);
+  }
+  $('aceiteDono').addEventListener('change', conferirCaixas);
+  $('aceiteTermos').addEventListener('change', conferirCaixas);
+
+  $('btnAceitar').addEventListener('click', async () => {
+    esconder($('avisoAceite'));
+    const b = $('btnAceitar');
+    b.disabled = true;
+    b.textContent = 'Salvando...';
+    try {
+      const r = await fetch('/api/aceitar', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          aceito: true,
+          // o texto exato do que foi marcado: "aceitou" sem dizer O QUE não
+          // prova nada meses depois
+          declaracoes: [...document.querySelectorAll('.marcar input:checked')]
+            .map(c => c.parentElement.textContent.trim().replace(/\s+/g, ' '))
+        })
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'não consegui salvar');
+      mostrar($('avisoAceite'), 'Aceite registrado. Abrindo o painel...', true);
+      setTimeout(() => { location.href = '/'; }, 800);
+    } catch (e) {
+      b.disabled = false;
+      b.textContent = 'Aceitar e continuar';
+      mostrar($('avisoAceite'), e.message);
+    }
+  });
+</script>
+</body>
+</html>

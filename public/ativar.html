@@ -173,6 +173,47 @@
   .aviso.bom  { background: rgba(6,78,59,.3);   border: 1px solid rgba(52,211,153,.3);  color: #6ee7b7; }
 
   /* de qual live é a chave */
+  /* o código que vai pra bio */
+  .codigo {
+    display: flex; align-items: center; gap: 10px;
+    margin: 14px 0 4px; padding: 14px 16px;
+    border-radius: 12px; border: 1px dashed var(--linha-luz);
+    background: rgba(122,167,255,.07);
+  }
+  .codigo code {
+    flex: 1; font-size: 20px; letter-spacing: .06em; font-weight: 700;
+    color: var(--azul-luz); word-break: break-all;
+  }
+  .codigo button {
+    width: auto; margin: 0; padding: 8px 14px; font-size: 13px; flex-shrink: 0;
+  }
+  .passos-bio {
+    margin: 2px 0 14px; padding-left: 20px; font-size: 13.5px;
+    color: var(--ink-dim); line-height: 1.75;
+  }
+  .passos-bio b { color: var(--ink); }
+  /* link em linha propria: no celular ele quebrava no meio da frase e parecia
+     texto quebrado, nao link */
+  .link-perfil {
+    display: inline-block; margin-top: 8px; font-size: 13px;
+    color: var(--azul-luz); text-decoration: none;
+  }
+  .link-perfil:hover { text-decoration: underline; }
+  .bio-lida {
+    margin-top: 8px; padding: 9px 11px; border-radius: 8px;
+    background: rgba(255,255,255,.03); border: 1px solid var(--linha);
+    font-size: 12.5px; color: var(--ink-dim); white-space: pre-wrap;
+    word-break: break-word;
+  }
+  /* o aceite */
+  .marcar {
+    display: flex; gap: 10px; align-items: flex-start;
+    margin: 12px 0; font-size: 13.5px; line-height: 1.6; color: var(--ink-dim);
+    cursor: pointer;
+  }
+  .marcar input { width: 17px; height: 17px; margin-top: 2px; flex-shrink: 0; cursor: pointer; }
+  .marcar a { color: var(--azul-luz); }
+
   .alvo {
     margin: 0 0 22px; padding: 15px 16px; border-radius: var(--r-md);
     background: linear-gradient(180deg, rgba(59,130,246,.11), rgba(59,130,246,.05));
@@ -220,7 +261,9 @@
   <div class="passos">
     <span class="passo" id="passo1"><span class="bolha">1</span>Chave</span>
     <span class="traco"></span>
-    <span class="passo" id="passo2"><span class="bolha">2</span>Seu login</span>
+    <span class="passo" id="passo2"><span class="bolha">2</span>Autorização</span>
+    <span class="traco" id="traco2"></span>
+    <span class="passo" id="passo3"><span class="bolha" id="bolha3">3</span>Seu login</span>
   </div>
 
   <!-- ---------- passo 1: a chave ---------- -->
@@ -235,7 +278,35 @@
     <button type="submit" id="btnChave">Conferir chave</button>
   </form>
 
-  <!-- ---------- passo 2: usuário e senha ---------- -->
+  <!-- ---------- passo 2: provar que o @ é seu ---------- -->
+  <form id="formPosse" novalidate hidden>
+    <div class="alvo">
+      <div class="rotulo">Confirme que esta live é sua</div>
+      <div class="arroba" id="posseArroba"></div>
+    </div>
+
+    <ol class="passos-bio">
+      <li>Copie o código abaixo.</li>
+      <li>Cole na <b>bio do seu perfil</b> do TikTok e salve.</li>
+      <li>Volte aqui e toque em <b>Já salvei</b>.</li>
+    </ol>
+
+    <div class="codigo">
+      <code id="codigoPosse">—</code>
+      <button type="button" id="copiar">Copiar</button>
+    </div>
+    <span class="dica">Depois de confirmar, você pode tirar o código da bio.</span>
+    <a class="link-perfil" id="abrirPerfil" href="#" target="_blank" rel="noopener">
+      Abrir meu perfil no TikTok ↗</a>
+
+    <div class="aviso ruim" id="erroPosse" role="alert"></div>
+    <div class="aviso bom" id="okPosse" role="status"></div>
+
+    <button type="submit" id="btnPosse">Já salvei, conferir</button>
+    <button type="button" class="fantasma" id="voltar1">← Usar outra chave</button>
+  </form>
+
+  <!-- ---------- passo 3: usuário e senha ---------- -->
   <form id="formConta" novalidate hidden>
     <div class="alvo">
       <div class="rotulo">Você vai acompanhar a live</div>
@@ -260,11 +331,21 @@
       <input type="password" id="senha2" autocomplete="new-password" placeholder="de novo" required>
     </div>
 
+    <label class="marcar">
+      <input type="checkbox" id="aceiteDono">
+      <span>Sou a pessoa dona deste @, ou tenho autorização dela, e autorizo
+        este serviço a acompanhar a live.</span>
+    </label>
+    <label class="marcar">
+      <input type="checkbox" id="aceiteTermos">
+      <span>Li e aceito os <a href="/termos.html" target="_blank" rel="noopener">termos de uso</a>.</span>
+    </label>
+
     <div class="aviso ruim" id="erroConta" role="alert"></div>
     <div class="aviso bom" id="okConta" role="status"></div>
 
     <button type="submit" id="btnConta">Criar minha conta</button>
-    <button type="button" class="fantasma" id="voltar">← Usar outra chave</button>
+    <button type="button" class="fantasma" id="voltar">← Voltar</button>
   </form>
 
   <div class="rodape" id="rodape">
@@ -275,6 +356,8 @@
 <script>
   const $ = id => document.getElementById(id);
   let chaveBoa = null;
+  // a chave diz se exige a prova da bio; o padrão é exigir
+  let exigeProva = true;
 
   // ------------------------------------------------ formatação da chave
   // A pessoa vai colar de uma mensagem, digitar sem traço, com espaço no meio.
@@ -289,10 +372,13 @@
   const esconder = el => el.classList.remove('ver');
 
   function irPara(passo) {
-    $('passo1').className = 'passo' + (passo === 1 ? ' ativo' : ' feito');
-    $('passo2').className = 'passo' + (passo === 2 ? ' ativo' : '');
+    [1, 2, 3].forEach(n => {
+      $('passo' + n).className = 'passo'
+        + (passo === n ? ' ativo' : (passo > n ? ' feito' : ''));
+    });
     $('formChave').hidden = passo !== 1;
-    $('formConta').hidden = passo !== 2;
+    $('formPosse').hidden = passo !== 2;
+    $('formConta').hidden = passo !== 3;
   }
   irPara(1);
 
@@ -312,9 +398,24 @@
       if (!res.ok) return mostrar($('erroChave'), dados.error || 'Essa chave não serve.');
 
       chaveBoa = valor;
+      exigeProva = dados.exigeProva !== false;
       $('alvoArroba').textContent = '@' + dados.dono;
+
+      // Chave que dispensa a verificação: o passo 2 não existe pra quem recebeu
+      // ela. Mostrar um passo riscado só levantaria a pergunta "o que eu pulei?"
+      if (!exigeProva) {
+        $('passo2').hidden = true;
+        $('traco2').hidden = true;
+        $('bolha3').textContent = '2';
+        irPara(3);
+        $('usuario').focus();
+        return;
+      }
+
+      $('posseArroba').textContent = '@' + dados.dono;
+      $('abrirPerfil').href = 'https://www.tiktok.com/@' + dados.dono;
       irPara(2);
-      $('usuario').focus();
+      await pedirCodigo();
     } catch (e) {
       mostrar($('erroChave'), 'Erro ao conectar com o servidor.');
     } finally {
@@ -323,11 +424,86 @@
     }
   });
 
-  $('voltar').addEventListener('click', () => {
+  // ------------------------------------------------ passo 2: a bio
+  async function pedirCodigo() {
+    esconder($('erroPosse'));
+    $('codigoPosse').textContent = 'pedindo...';
+    try {
+      const res = await fetch('/api/posse/desafio', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chave: chaveBoa })
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error || 'não consegui gerar o código');
+      $('codigoPosse').textContent = d.codigo;
+    } catch (e) {
+      $('codigoPosse').textContent = '—';
+      mostrar($('erroPosse'), e.message);
+    }
+  }
+
+  $('copiar').addEventListener('click', async () => {
+    const texto = $('codigoPosse').textContent.trim();
+    if (!texto || texto === '—') return;
+    try {
+      await navigator.clipboard.writeText(texto);
+      $('copiar').textContent = 'Copiado!';
+    } catch (e) {
+      // sem permissão de área de transferência: seleciona pra pessoa copiar
+      const faixa = document.createRange();
+      faixa.selectNodeContents($('codigoPosse'));
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(faixa);
+      $('copiar').textContent = 'Copie aí';
+    }
+    setTimeout(() => { $('copiar').textContent = 'Copiar'; }, 2500);
+  });
+
+  $('formPosse').addEventListener('submit', async e => {
+    e.preventDefault();
+    esconder($('erroPosse'));
+    esconder($('okPosse'));
+    const botao = $('btnPosse');
+    botao.disabled = true;
+    botao.textContent = 'Conferindo a bio...';
+    try {
+      const res = await fetch('/api/posse/conferir', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chave: chaveBoa })
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        let recado = d.error || 'não consegui conferir agora';
+        // mostrar a bio que o servidor leu evita o "mas eu salvei!" sem saída
+        if (d.bioLida !== undefined) {
+          recado += '\n\nA bio que eu li agora:\n' + (d.bioLida || '(vazia)');
+        }
+        return mostrar($('erroPosse'), recado);
+      }
+      mostrar($('okPosse'), 'Confirmado: @' + d.dono + ' é seu. Pode tirar o código da bio.');
+      setTimeout(() => { irPara(3); $('usuario').focus(); }, 900);
+    } catch (e) {
+      mostrar($('erroPosse'), 'Erro ao conectar com o servidor.');
+    } finally {
+      botao.disabled = false;
+      botao.textContent = 'Já salvei, conferir';
+    }
+  });
+
+  $('voltar1').addEventListener('click', () => {
     chaveBoa = null;
-    esconder($('erroConta'));
+    esconder($('erroPosse'));
+    esconder($('okPosse'));
     irPara(1);
     campoChave.focus();
+  });
+
+  $('voltar').addEventListener('click', () => {
+    esconder($('erroConta'));
+    // sem passo 2, voltar é voltar pra chave
+    irPara(exigeProva ? 2 : 1);
+    if (!exigeProva) campoChave.focus();
   });
 
   // ------------------------------------------------ força da senha
@@ -344,8 +520,20 @@
   });
 
   // ------------------------------------------------ passo 2
+  // as duas caixas destravam o botao -- e o servidor confere de novo, porque
+  // tela nao e trava
+  function conferirAceite() {
+    $('btnConta').disabled = !($('aceiteDono').checked && $('aceiteTermos').checked);
+  }
+  $('aceiteDono').addEventListener('change', conferirAceite);
+  $('aceiteTermos').addEventListener('change', conferirAceite);
+  conferirAceite();
+
   $('formConta').addEventListener('submit', async e => {
     e.preventDefault();
+    if (!$('aceiteDono').checked || !$('aceiteTermos').checked) {
+      return mostrar($('erroConta'), 'Marque as duas confirmações para continuar.');
+    }
     esconder($('erroConta'));
     esconder($('okConta'));
 
@@ -364,7 +552,14 @@
       const res = await fetch('/api/ativar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chave: chaveBoa, usuario, senha })
+        body: JSON.stringify({
+          chave: chaveBoa, usuario, senha,
+          aceito: true,
+          // o texto exato do que foi marcado vai junto: meses depois, "ele
+          // aceitou" sem dizer O QUE nao serve de prova nenhuma
+          declaracoes: [...document.querySelectorAll('.marcar input:checked')]
+            .map(c => c.parentElement.textContent.trim().replace(/\s+/g, ' '))
+        })
       });
       const dados = await res.json().catch(() => ({}));
       if (!res.ok) {
