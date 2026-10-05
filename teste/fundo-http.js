@@ -244,6 +244,44 @@ function subirServidor() {
          g.cabecalhos['content-type']);
     }
 
+    console.log('\n=== o administrador ESPIANDO uma live ===');
+    {
+      // Administrador não mora no mural de ninguém: ele chega lá por "Espiar".
+      // Enquanto espia, as rotas do fundo têm que falar da live espiada, não da
+      // instalação -- que nem tem fundo.
+      await pedir({ method: 'GET', path: '/api/espiar?dono=streamer-b', headers: comoEle(casa) });
+
+      const g = await pedir({ method: 'GET', path: '/api/fundo', headers: comoEle(casa) });
+      ok(g.status === 200, 've a foto da live espiada, nao 404 da instalacao', g.status);
+      ok(g.bytes.equals(JPG), 'e e a foto dela mesmo');
+
+      const i = await pedir({ method: 'GET', path: '/api/fundo/info', headers: comoEle(casa) });
+      ok(i.json().dono === 'streamer-b', 'o /info aponta pra live espiada', i.json().dono);
+      ok(i.json().daInstalacao === false, 'e nao se diz instalacao');
+
+      const p = await pedir({
+        method: 'POST', path: '/api/fundo',
+        headers: comoEle(casa, { 'Content-Type': 'image/png', 'Content-Length': PNG.length })
+      }, PNG);
+      ok(p.status === 200, 'e consegue trocar a foto dali mesmo', p.status + ' ' + p.texto.slice(0, 60));
+
+      const gb = await pedir({ method: 'GET', path: '/api/fundo', headers: comoEle(b) });
+      ok(gb.bytes.equals(PNG), 'e o streamer dono ve a troca');
+
+      // saindo do espiar, o administrador volta a ser a casa -- e a casa nao
+      // tem fundo, que e o que impede a foto dele de virar a de todo mundo
+      await pedir({ method: 'GET', path: '/api/espiar/sair', headers: comoEle(casa) });
+      const fora = await pedir({ method: 'GET', path: '/api/fundo/info', headers: comoEle(casa) });
+      ok(fora.json().daInstalacao === true, 'fora do espiar, volta pra instalacao',
+         fora.texto.slice(0, 60));
+
+      // devolve a foto que o teste seguinte espera
+      await pedir({
+        method: 'POST', path: '/api/fundo?dono=streamer-b',
+        headers: comoEle(casa, { 'Content-Type': 'image/jpeg', 'Content-Length': JPG.length })
+      }, JPG);
+    }
+
     console.log('\n=== tirar a foto ===');
     {
       const r = await pedir({ method: 'DELETE', path: '/api/fundo', headers: comoEle(a) });

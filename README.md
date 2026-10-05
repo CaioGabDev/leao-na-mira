@@ -49,10 +49,40 @@ npm install
 # o primeiro usuário (só precisa na primeira vez)
 node create-user.js caio umaSenhaBoa --admin
 
-npm start
+# na sua máquina: DEV_LOCAL=1 (Git Bash / Linux / Mac)
+DEV_LOCAL=1 npm start
 ```
 
+No PowerShell, **não use `npm`**: ele roda por um `npm.ps1`, e a política de
+execução padrão do Windows barra script `.ps1` com um erro que não tem nada a
+ver com o projeto (`UnauthorizedAccess`). Como `npm start` é literalmente
+`node server.js`, chame o node direto:
+
+```powershell
+$env:DEV_LOCAL="1"; node server.js
+```
+
+Se quiser o `npm` funcionando no PowerShell pra valer, ou use `npm.cmd start`
+(que não passa pelo `.ps1`), ou libere a política uma vez:
+`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
+
 O site sobe em `http://localhost:3000` (ou na porta de `PORT`).
+
+**`DEV_LOCAL=1` não é opcional aqui.** Sem ela o servidor nem sobe (exige
+`SESSION_SECRET`) e, se subisse, o cookie de sessão sairia `secure` — o
+navegador não devolveria o cookie por HTTP puro e o login nunca passaria. Em
+produção ela não existe: lá o padrão seguro é o certo.
+
+### Ver o mural antes de subir pro Railway
+
+O administrador **não mora nas telas de uma live** — abrir `/mural.html` logado
+como administrador manda ele de volta pro `/admin.html`. Pra ver o mural de uma
+live, entre nela pelo **👁️ Ver a live** do painel; daí em diante a sessão diz de
+quem é a tela, e o mural, o fundo e as cores são os daquela live.
+
+A lista de pessoas do mural fica no `localStorage` do navegador, não no
+servidor: dá pra inventar nome e nível à vontade pra ver como a arte fica, sem
+sujar dado nenhum.
 
 Rode **de dentro da pasta do projeto**. Os arquivos de dados (`users.json`,
 `dados.db`, `config.json`, …) e o `express.static('public')` são relativos ao
@@ -315,6 +345,80 @@ de base64 por cliente acabariam com isso. E o disco é a única verdade — não
 existe campo no config dizendo "tenho foto", porque dois lugares guardando o
 mesmo fato é um lugar a mais pra eles discordarem.
 
+**O fundo do poster puxa a cor da foto.** A base embaixo da arte era `#000`
+cravado, então arte azul em cima e preto puro embaixo pareciam duas peças
+coladas, com a emenda à mostra. A correção não é escolher "uma cor bonita": é
+amostrar **a borda de baixo do que aparece na tela** — o pixel que encosta no
+corte — e continuar ela pra baixo escurecendo. A emenda some porque os dois
+lados saem do mesmo pixel. As brasinhas seguem o mesmo acento: faísca laranja
+numa arte azul destoa.
+
+**Mas a cor fica só na emenda.** A primeira versão pintava o poster inteiro com
+o matiz da foto. Deu certo numa arte azul e virou lama numa arte quente — porque
+aí o fundo ficou do mesmo tom do laranja das pílulas, e poster de um tom só não
+tem o que saltar. O preto que estava lá antes era **neutro**, e neutro deixa a
+cor aparecer no que importa: a foto, os níveis, os tipos. Então a cor faz só o
+trabalho que justificou ela existir — matar a emenda — e morre em ~30%: o corpo
+do poster é quase preto (luz 4%), com um sopro do matiz.
+
+A **pílula de cada pessoa** segue a mesma régua: era um marrom cravado
+(`rgba(15,11,8)`), que numa arte azul ficava boiando. Agora é um cinza-escuro do
+matiz (saturação ≤14%), nunca o matiz cheio — é ela que precisa deixar o
+laranja/azul/roxo do tipo saltar.
+
+E ela pinta a partir **do corte, não antes**: a faixa das linhas sobe 34px por
+cima da foto (`margin-top: -34px`) e tem z-index maior. Com fundo preto isso
+nunca apareceu — preto sobre preto. Com a cor da foto virou uma tarja clara
+atravessada embaixo do retrato.
+
+Na linha, **o acento substituiu o contorno**. Cada linha tinha três anéis na
+cor do tipo — a borda da pílula, a borda do disco do ícone e a borda do selo do
+nível — mais um halo em volta. Contorno em tudo é o que faz uma composição ler
+como interface de jogo em vez de arte: o olho não tem onde descansar e nada tem
+peso maior que o resto.
+
+Então: o tipo virou uma **barra de 3,5px na esquerda**; o nível perdeu a caixa e
+virou **número grande na cor do tipo** com o rótulo miúdo em cima (como placar e
+escalação são desenhados); o disco perdeu a borda; e a borda que sobrou é neutra
+e quase invisível, só pra separar a linha do fundo. O `box-shadow` saiu de vez —
+ele não chega no PNG e, na tela, era mais um halo numa composição que já tinha
+contorno demais.
+
+A barra é uma camada com `background-size`/`no-repeat` explícitos, **não** uma
+parada seca no gradiente: medido no PNG, a parada seca deixava um fiapo de 2px
+da cor na borda **direita** da linha.
+
+Quem não tem nível (superfã) mantém o ícone à direita, pra linha não terminar
+num vazio.
+
+Três decisões seguram a qualidade disso, e estão travadas em
+`teste/fundo-cores.js`: foto cinza **não** vira cor (inventar matiz onde não tem
+é pior que preto); a base entra com saturação cortada e luz baixa, senão o nome
+de quem está na lista briga com ela pra ser lido; e a cor sai em
+`hsl(h, s%, l%)` **com vírgula**, que é a forma que o parser do html2canvas lê —
+cor que ele não entende vira preto, e o PNG baixado é o produto.
+
+### O que o html2canvas renderiza (e o que ele estraga)
+
+O PNG baixado é o produto, então o poster só usa efeito que sai igual nos dois
+lados. Medido nesta versão da biblioteca (1.4.1):
+
+| efeito | sai no PNG? |
+|---|---|
+| `linear-gradient` / `radial-gradient` | sim, idêntico |
+| imagem em `data:` URL (o grão) | sim |
+| `box-shadow` | **não — e estraga**: preenche o elemento inteiro com a cor da sombra |
+| `filter: blur()` / `mix-blend-mode` | não, somem |
+
+Por isso o brilho de cada pílula é um `radial-gradient` e não um `box-shadow`, e
+o grão é um PNG de ruído gerado na hora em vez de um filtro. O `box-shadow` que
+sobrou nas linhas é só pra tela, e só não estraga o arquivo porque o
+`background` delas é imagem e cobre o estrago.
+
+**O grão** é o que mais separa "imagem" de "tela de aplicativo" — superfície
+lisa demais lê como interface. Entra com alfa baixo e esparso: na primeira
+tentativa foi alfa 30 em metade dos pixels e o poster virou chiado de JPEG ruim.
+
 Na entrada, o que decide se é imagem são os **bytes** (JPEG/PNG/WebP pela
 assinatura), nunca a extensão nem o `Content-Type`: os dois vêm de quem está
 enviando. O navegador reduz pra 1600px antes de subir — foto de celular tem
@@ -553,6 +657,8 @@ public/
 teste/
   fundos.js        o módulo da foto: assinatura dos bytes, chave virando arquivo
   fundo-http.js    as rotas: quem pode mexer na foto de quem (sobe o servidor)
+  fundo-cores.js   a cor que a base do poster puxa da foto (conta pura)
+  navegar.js       abre a página num Chrome de verdade, mexe nela e fotografa
 ```
 
 ---

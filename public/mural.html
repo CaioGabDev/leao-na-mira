@@ -283,7 +283,11 @@
     margin: 0 auto;
     border-radius: var(--poster-radius);
     border: none;
-    background: #000;
+    /* Quase preto, com um sopro do matiz da foto (ver `pintarComAFoto`). A COR
+       de verdade não mora aqui -- ela fica só na emenda, logo abaixo da foto.
+       Pintar o poster todo com o matiz deixou o conjunto num tom só, e tom só
+       não tem o que saltar. O #000 é o padrão de quem não escolheu foto. */
+    background: var(--poster-base-2, #000);
     display:flex;
     flex-direction:column;
     isolation:isolate;
@@ -294,7 +298,7 @@
     width:100%;
     flex: 0 0 var(--photo-basis, 56%);
     overflow:hidden;
-    background-color:#000;
+    background-color: var(--poster-base, #000);
     background-size: cover;
     background-position: center top;
     background-repeat: no-repeat;
@@ -366,12 +370,13 @@
   .poster-img-fade{
     position:absolute; left:0; right:0; bottom:0;
     height:42%;
+    /* morre na cor da base, nao no preto: se morresse no preto, a emenda
+       voltava -- a foto apagaria pra uma cor e a faixa de baixo seria outra */
     background: linear-gradient(to bottom,
       rgba(0,0,0,0) 0%,
       rgba(0,0,0,.15) 25%,
       rgba(0,0,0,.6) 55%,
-      rgba(0,0,0,.92) 80%,
-      rgba(0,0,0,1) 100%);
+      var(--poster-base, #000) 100%);
     pointer-events:none;
     z-index:3;
     opacity:0;
@@ -383,11 +388,25 @@
     opacity:1;
   }
 
+  /* O GRÃO.
+     É o que mais separa "imagem" de "tela de aplicativo": superfície lisa
+     demais lê como interface. Vai como PNG gerado na hora (ver `tecerGrao`),
+     não como `filter: noise` nem blend mode -- o html2canvas não entende nenhum
+     dos dois, e aí a tela teria textura e o arquivo baixado não. */
+  .poster-grao{
+    position:absolute; inset:0; z-index:6;
+    pointer-events:none;
+    background-repeat: repeat;
+    background-size: 128px 128px;
+  }
+
   .poster-embers{ position:absolute; inset:0; z-index:4; pointer-events:none; overflow:hidden; }
   .poster-ember{
     position:absolute;
     border-radius:50%;
-    background: radial-gradient(circle, #FFD9A8 0%, #FF7A1A 55%, transparent 100%);
+    background: radial-gradient(circle,
+      var(--poster-brasa-clara, #FFD9A8) 0%,
+      var(--poster-brasa, #FF7A1A) 55%, transparent 100%);
     filter: blur(.5px);
     animation: posterFloat ease-in-out infinite;
   }
@@ -406,7 +425,19 @@
     gap: var(--row-gap, 8px);
     padding: 10px 14px 16px;
     margin-top: -34px;
-    background: #000;
+    /* A EMENDA, e os 34px que ela NÃO pode pintar.
+       Esta faixa sobe 34px por cima da foto (o margin-top negativo logo acima) e
+       tem z-index maior, então o que ela pinta cobre o pé da imagem. Com fundo
+       preto isso nunca apareceu — preto sobre preto. Com a cor da foto virou
+       uma tarja clara atravessada embaixo do retrato.
+       Por isso a cor só começa NO corte: até lá, transparente, e quem pinta é o
+       degradê do pé da própria foto, que morre exatamente nesta mesma cor — as
+       duas se encontram sem linha. E morre em 32%: passando disso ela vira o
+       tom do poster inteiro, que foi o erro da primeira versão. */
+    background: linear-gradient(180deg,
+      transparent 0, transparent 34px,
+      var(--poster-base, transparent) 34px,
+      transparent 32%);
     overflow:hidden;
   }
   .poster-rows:empty{ margin-top:0; padding:0; background:none; }
@@ -438,24 +469,119 @@
     display:flex; align-items:center; justify-content:space-between;
     gap: 10px;
     padding: var(--row-pad-v, 9px) var(--row-pad-h, 14px);
-    border-radius: 999px;
-    background: linear-gradient(90deg, rgba(15,11,8,.92), rgba(23,17,12,.92));
-    border: 1.5px solid var(--line);
+    /* 999px é forma de botão. Canto macio continua macio com 12px, e aí a
+       barra de acento da esquerda tem onde existir sem ser comida pela curva. */
+    border-radius: 12px;
+    /* Três camadas, de cima pra baixo:
+         1. a LUZ: uma claridade no topo, como se viesse de cima. Sem ela a
+            pílula é um preenchimento chapado, e chapado lê como botão;
+         2. o BRILHO do tipo, atrás do selo do nível -- cada linha fica acesa
+            pela própria cor em vez de todas iguais;
+         3. a COR DA FOTO, igual à base (ver `pintarComAFoto`). O marrom é o
+            padrão de quem não tem foto.
+       Gradiente, não box-shadow: medido, o html2canvas preenche o elemento
+       inteiro com a cor da sombra. */
+    /* Quatro camadas, de cima pra baixo:
+         1. a BARRA do tipo na esquerda -- parada seca no gradiente. Ela
+            substitui o anel colorido em volta da linha inteira: diz a mesma
+            coisa num traço em vez de num contorno fechado;
+         2. a LUZ de cima, pra não ser preenchimento chapado;
+         3. o BRILHO do tipo saindo da barra, como se a cor iluminasse a linha;
+         4. a COR DA FOTO (ver `pintarComAFoto`).
+       Gradiente em todas: medido, o html2canvas preenche o elemento inteiro
+       com a cor de qualquer box-shadow, e o PNG baixado é o produto. */
+    background:
+      /* A barra com tamanho e repetição ditos na cara, em vez de uma parada seca
+         no gradiente: medido no PNG, a parada seca deixava um fiapo da cor na
+         borda DIREITA da linha (2px, bem visível numa arte escura). Aqui a
+         camada tem a largura da barra e `no-repeat` -- não sobra nada pra
+         aparecer do outro lado. */
+      linear-gradient(90deg, var(--cor-tipo, transparent), var(--cor-tipo, transparent))
+        left center / var(--barra, 3.5px) 100% no-repeat,
+      linear-gradient(180deg, rgba(255,255,255,.065) 0%, rgba(255,255,255,0) 46%),
+      radial-gradient(ellipse 46% 150% at 0% 50%, var(--brilho-tipo, transparent) 0%, transparent 72%),
+      linear-gradient(90deg,
+        var(--poster-pilula, rgba(15,11,8,.92)),
+        var(--poster-pilula-2, rgba(23,17,12,.92)));
+    /* borda neutra e quase invisível: ela separa a linha do fundo e só. O anel
+       colorido virou a barra. */
+    border: 1px solid rgba(255,255,255,.07);
     flex-shrink:0;
   }
-  .poster-row.presenteador{ border-color: rgba(62,123,250,.65); box-shadow: 0 0 14px -4px var(--presenteador-glow); }
-  .poster-row.membro{ border-color: rgba(255,122,26,.65); box-shadow: 0 0 14px -4px var(--membro-glow); }
-  .poster-row.superfã{ border-color: rgba(198,79,242,.65); box-shadow: 0 0 14px -4px var(--superfa-glow); }
+  /* Uma cor por tipo, num lugar só: a barra, o brilho, o disco e o número
+     saem todos de `--cor-tipo` / `--brilho-tipo`. O box-shadow saiu de vez --
+     ele não chega no PNG e, na tela, era mais um halo numa composição que já
+     tinha contorno demais. */
+  .poster-row.presenteador{ --cor-tipo: var(--presenteador); --brilho-tipo: var(--presenteador-bg); }
+  .poster-row.membro{ --cor-tipo: var(--membro); --brilho-tipo: var(--membro-bg); }
+  .poster-row.superfã{ --cor-tipo: var(--superfa); --brilho-tipo: var(--superfa-bg); }
+
+  /* A PRIMEIRA LINHA PUXA O OLHO.
+     Toda linha igual à anterior é o que mais faz a lista parecer gerada por
+     máquina. A de cima abre o poster: barra mais grossa e número maior -- não
+     uma borda mais grossa, que era voltar ao contorno. */
+  .poster-row.topo{ --barra: 6px; }
+  .poster-row.topo .nome{ font-size: calc(var(--row-font-nome, 13px) * 1.12); }
+  .poster-row.topo .nivel b{ font-size: calc(var(--row-font-nome, 13px) * 1.62); }
 
   .poster-row .side-icon{ flex-shrink:0; width: var(--row-icon, 20px); height: var(--row-icon, 20px); display:flex; align-items:center; justify-content:center; }
   .poster-row .side-icon svg{ width:100%; height:100%; }
-  .poster-row.presenteador .side-icon{ color: var(--presenteador); }
-  .poster-row.membro .side-icon{ color: var(--membro); }
-  .poster-row.superfã .side-icon{ color: var(--superfa); }
+
+  /* O ícone ganha um disco atrás: vira o lugar da pessoa na linha, em vez de um
+     glifo solto encostado na borda. Cresce junto com o resto quando a lista
+     aperta, senão o disco ficaria gigante ao lado de um ícone espremido. */
+  /* O disco perdeu a borda: era o segundo anel da linha. Disco chapado na cor
+     do tipo, bem apagado, com o ícone aceso em cima. */
+  .poster-row .marca{
+    flex-shrink:0;
+    width: calc(var(--row-icon, 20px) * 1.7);
+    height: calc(var(--row-icon, 20px) * 1.7);
+    border-radius: 50%;
+    display:flex; align-items:center; justify-content:center;
+    background: var(--brilho-tipo, rgba(255,255,255,.07));
+    border: 0;
+  }
+  .poster-row .marca .side-icon{ width: var(--row-icon, 20px); height: var(--row-icon, 20px); }
+
+  /* O SELO DO NÍVEL. O número é a notícia da linha -- estava enterrado numa
+     frase de 10px ("atingiu o nível 42 de membro"), do lado do texto cinza que
+     ninguém lê. Aqui ele toma o lugar do ícone da direita, que só repetia o da
+     esquerda. */
+  /* O NÍVEL PERDEU A CAIXA.
+     Era o terceiro anel da linha, e caixa em volta de número é chrome: o número
+     já é a coisa mais importante do lado direito, não precisa de moldura pra
+     provar isso. Vira o número grande na cor do tipo, com o rótulo miúdo em
+     cima -- que é como placar e escalação são desenhados. */
+  .poster-row .nivel{
+    flex-shrink:0;
+    display:flex; flex-direction:column; align-items:flex-end;
+    padding:0; border:0; background:none;
+    line-height:1;
+  }
+  .poster-row .nivel i{
+    font-style:normal; font-weight:800;
+    font-size: calc(var(--row-font-texto, 10.5px) * .66);
+    letter-spacing:.2em; text-transform:uppercase;
+    color:#8B7A68;
+    margin-bottom: .18em;
+  }
+  .poster-row .nivel b{
+    font-family:'Bungee', sans-serif; font-weight:400; line-height:.9;
+    font-size: calc(var(--row-font-nome, 13px) * 1.42);
+    color: var(--cor-tipo, inherit);
+  }
+  .poster-row .side-icon{ color: var(--cor-tipo, currentColor); }
 
   .poster-row .info{ flex:1; display:flex; flex-direction:row; align-items:baseline; gap: 8px; min-width:0; }
-  .poster-row .nome{ font-family:'Bungee', sans-serif; font-weight:400; font-size: var(--row-font-nome, 13px); color:#FBEFE1; white-space:nowrap; flex-shrink:0; }
-  .poster-row .texto{ font-size: var(--row-font-texto, 10.5px); color:#C9B9A6; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; flex:1; }
+  .poster-row .nome{ font-family:'Bungee', sans-serif; font-weight:400; font-size: var(--row-font-nome, 13px); color:#FFF6EA; white-space:nowrap; flex-shrink:0; letter-spacing:.01em; }
+  /* O rótulo do tipo fica, mas bem quieto: numa lista de sete membros ele se
+     repete sete vezes, e repetição em peso alto é ruído. Quem identifica o tipo
+     à primeira vista é a barra e o ícone; o rótulo só confirma. */
+  .poster-row .texto{
+    font-size: calc(var(--row-font-texto, 10.5px) * .82); color:#7D6D5D;
+    font-weight:700; letter-spacing:.14em; text-transform:uppercase;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; flex:1;
+  }
 
   .poster-actions{
     display:flex; gap:10px; justify-content:center; margin-top:16px; flex-wrap:wrap;
@@ -925,6 +1051,7 @@ socket.on('tropa_add', item => {
         posterImgArea.style.backgroundImage = `url('${url}')`;
         posterImgArea.classList.remove('sem-foto');
         temFundo = true;
+        pintarComAFoto(img);   // a base do poster sai da borda desta foto
       })
       .catch(() => {
         // não carregou: ou esta live não escolheu foto (404), ou a rede falhou.
@@ -933,6 +1060,7 @@ socket.on('tropa_add', item => {
         posterImgArea.style.backgroundImage = '';
         posterImgArea.classList.add('sem-foto');
         temFundo = false;
+        limparCoresDaFoto();
       })
       .then(() => {
         fotoPronta = true;   // em qualquer um dos dois casos, dá pra gerar
@@ -1000,6 +1128,68 @@ socket.on('tropa_add', item => {
   });
 
   carregarFotoEmAltaResolucao();
+
+  // ---------- O FUNDO PUXA A COR DA FOTO ----------
+  // A conta mora no assets/fundo.js (`Fundo.coresDoPoster`), com teste. Aqui
+  // fica só o que precisa da tela: amostrar a foto DO JEITO QUE ELA APARECE.
+
+  // `cover` ancorado no topo, igual ao CSS. Amostrar o arquivo inteiro daria a
+  // cor de um pedaço que ninguém vê -- e a borda de baixo, que é a que importa,
+  // sairia errada.
+  function amostrarComoNaTela(img) {
+    const L = 40;
+    const prop = (posterImgArea.clientHeight || 1) / (posterImgArea.clientWidth || 1);
+    const A = Math.max(10, Math.round(L * prop));
+    const c = document.createElement('canvas');
+    c.width = L; c.height = A;
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    const e = Math.max(L / img.naturalWidth, A / img.naturalHeight);
+    const l = img.naturalWidth * e, a = img.naturalHeight * e;
+    ctx.drawImage(img, (L - l) / 2, 0, l, a);   // center top, igual ao CSS
+    return { dados: ctx.getImageData(0, 0, L, A).data, L, A };
+  }
+
+  const VARS_DA_FOTO = ['--poster-base', '--poster-base-2', '--poster-brasa',
+                       '--poster-brasa-clara', '--poster-pilula', '--poster-pilula-2'];
+
+  function pintarComAFoto(img) {
+    // Dependência faltando é erro, não "sem cor": sem este aviso, um
+    // assets/fundo.js que não carregou faz o poster voltar pro preto em
+    // silêncio, e a tela parece só uma foto sem cor nenhuma. Já me custou uma
+    // rodada de teste procurando no lugar errado.
+    if (typeof Fundo === 'undefined' || !Fundo.coresDoPoster) {
+      console.error('[mural] assets/fundo.js não carregou — o fundo fica preto');
+      return limparCoresDaFoto();
+    }
+    let cores = null;
+    try {
+      const { dados, L, A } = amostrarComoNaTela(img);
+      cores = Fundo.coresDoPoster(dados, L, A);
+    } catch (e) {
+      // foto de outra origem suja o canvas e o getImageData joga
+      console.warn('[mural] não deu pra ler a cor da foto:', e.message);
+      cores = null;
+    }
+    if (!cores) return limparCoresDaFoto();
+
+    posterWrap.style.setProperty('--poster-base', cores.base);
+    posterWrap.style.setProperty('--poster-base-2', cores.base2);
+    posterWrap.style.setProperty('--poster-pilula', cores.pilula);
+    posterWrap.style.setProperty('--poster-pilula-2', cores.pilula2);
+    if (cores.brasa) {
+      posterWrap.style.setProperty('--poster-brasa', cores.brasa);
+      posterWrap.style.setProperty('--poster-brasa-clara', cores.brasaClara);
+    } else {
+      posterWrap.style.removeProperty('--poster-brasa');
+      posterWrap.style.removeProperty('--poster-brasa-clara');
+    }
+  }
+
+  // Sem foto (ou foto sem cor pra puxar) o poster volta pro preto e pro degradê
+  // da marca: é o valor padrão das variáveis no CSS.
+  function limparCoresDaFoto() {
+    VARS_DA_FOTO.forEach(v => posterWrap.style.removeProperty(v));
+  }
 
   // ---------- Ajuste dinâmico pra sempre caber tudo ----------
   // Em vez de "adivinhar" o encolhimento pela quantidade de pessoas, aqui a
@@ -1091,23 +1281,65 @@ socket.on('tropa_add', item => {
     return fora;
   }
 
-  function gerarBrasasDoPoster(qtd = 16){
+  // AS PARTÍCULAS, EM DUAS CAMADAS.
+  // Eram 16 pontinhos todos do mesmo tamanho -- e um tamanho só não tem
+  // profundidade: lê como ruído colado, não como brasa no ar. Agora tem as
+  // longe (grandes e apagadas, o fundo) e as perto (pequenas e acesas), que é
+  // o que dá sensação de espaço.
+  //
+  // As duas camadas ficam no z-index 4, ATRÁS das linhas (que são 5): o Caio
+  // pediu partículas atrás de quem sobe de nível, não por cima.
+  function gerarBrasasDoPoster(qtd = 46){
     posterEmbersEl.innerHTML = '';
     for (let i = 0; i < qtd; i++){
       const d = document.createElement('div');
       d.className = 'poster-ember';
-      const size = 1.5 + Math.random() * 3;
-      const top = 60 + Math.random() * 40;
-      const left = Math.random() * 100;
-      d.style.top = top + '%';
-      d.style.left = left + '%';
-      d.style.width = size + 'px';
-      d.style.height = size + 'px';
-      d.style.opacity = (0.18 + Math.random() * 0.32).toFixed(2);
-      d.style.animationDuration = (5 + Math.random() * 6).toFixed(1) + 's';
-      d.style.animationDelay = (Math.random() * 5).toFixed(1) + 's';
+      // um terço são as "de longe": maiores, bem apagadas, sem brilho forte
+      const longe = i % 3 === 0;
+      const size = longe ? (5 + Math.random() * 7) : (1.2 + Math.random() * 2.8);
+      // concentra na metade de baixo, onde ficam as pessoas, mas sem deixar o
+      // resto do poster vazio
+      const top = 34 + Math.random() * 66;
+      d.style.top = top.toFixed(1) + '%';
+      d.style.left = (Math.random() * 100).toFixed(1) + '%';
+      d.style.width = size.toFixed(1) + 'px';
+      d.style.height = size.toFixed(1) + 'px';
+      d.style.opacity = (longe ? 0.05 + Math.random() * 0.09
+                               : 0.16 + Math.random() * 0.34).toFixed(2);
+      d.style.animationDuration = (5 + Math.random() * 8).toFixed(1) + 's';
+      d.style.animationDelay = (Math.random() * 6).toFixed(1) + 's';
       posterEmbersEl.appendChild(d);
     }
+  }
+
+  // O GRÃO.
+  // Imagem de verdade tem textura; interface não tem. É a diferença que mais
+  // pesa no "parece uma foto" sem mexer em mais nada.
+  //
+  // Vai como PNG gerado aqui, não como `filter` nem `mix-blend-mode`: medi os
+  // dois no html2canvas e nenhum sai no arquivo -- a tela teria grão e o PNG
+  // que o streamer posta, não. Data-URL sai idêntico (variância 19.7 contra 0
+  // numa superfície lisa).
+  function tecerGrao(){
+    const g = document.createElement('canvas');
+    g.width = g.height = 128;
+    const ctx = g.getContext('2d');
+    const im = ctx.createImageData(128, 128);
+    for (let i = 0; i < im.data.length; i += 4){
+      // branco com alfa variável: pontinho de luz esparso, não um véu cinza por
+      // cima de tudo (véu cinza clareia o poster inteiro, que é o que ele já
+      // reclamou uma vez)
+      im.data[i] = im.data[i + 1] = im.data[i + 2] = 255;
+      // Alfa baixo e esparso. Na primeira tentativa foi 30 em metade dos
+      // pixels e o poster virou chiado de JPEG ruim -- grão de filme é pra ser
+      // sentido, não visto. Aqui some no olho e continua tirando a lisura.
+      im.data[i + 3] = Math.random() < 0.68 ? 0 : Math.random() * 11;
+    }
+    ctx.putImageData(im, 0, 0);
+    const camada = document.createElement('div');
+    camada.className = 'poster-grao';
+    camada.style.backgroundImage = `url('${g.toDataURL('image/png')}')`;
+    posterWrap.appendChild(camada);
   }
 
   function renderPoster(){
@@ -1122,19 +1354,29 @@ socket.on('tropa_add', item => {
         .forEach(p => linhas.push(p));
     });
 
-    posterRows.innerHTML = linhas.map(p => {
+    posterRows.innerHTML = linhas.map((p, i) => {
       const icons = TIPO_ICONS[p.tipo];
-      const nivelTxt = p.tipo === 'superfã'
-        ? 'se tornou superfã'
-        : (p.nivel ? `atingiu o nível ${p.nivel} de ${p.tipo}` : `é ${p.tipo}`);
+
+      // O NÚMERO SAI DA FRASE. Era "atingiu o nível 42 de membro" inteiro em
+      // 10px cinza -- a conquista escondida dentro da própria descrição dela.
+      // Agora o rótulo diz o tipo e o selo diz o número, que é a notícia.
+      const temNivel = p.tipo !== 'superfã' && p.nivel;
+      const rotulo = p.tipo === 'superfã' ? 'novo superfã' : p.tipo;
+
+      // sem nível não há selo: aí o ícone da direita volta, pra linha não
+      // terminar num vazio
+      const direita = temNivel
+        ? `<span class="nivel"><i>nível</i><b>${esc(p.nivel)}</b></span>`
+        : `<span class="side-icon">${ICONS[icons.right]}</span>`;
+
       return `
-        <div class="poster-row ${p.tipo}">
-          <span class="side-icon">${ICONS[icons.left]}</span>
+        <div class="poster-row ${p.tipo}${i === 0 ? ' topo' : ''}">
+          <span class="marca"><span class="side-icon">${ICONS[icons.left]}</span></span>
           <div class="info">
             <span class="nome">${esc(p.nome)}</span>
-            <span class="texto">${nivelTxt}</span>
+            <span class="texto">${esc(rotulo)}</span>
           </div>
-          <span class="side-icon">${ICONS[icons.right]}</span>
+          ${direita}
         </div>`;
     }).join('');
 
@@ -1288,6 +1530,7 @@ socket.on('tropa_add', item => {
   renderTipoOptions();
   renderBiblioteca();
   gerarBrasasDoPoster();
+  tecerGrao();
   render();
 
   // As fontes (Bungee) chegam DEPOIS do primeiro render e mudam a altura das

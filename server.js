@@ -701,12 +701,36 @@ const corpoDeImagem = express.raw({
   limit: fundos.LIMITE_BYTES
 });
 
+// O ESCOPO DO FUNDO, que não é igual ao do resto da aparência.
+//
+// O `escopoDoPedido` responde "a instalação" pro administrador que não passou
+// `?dono=` — certo pro /api/config, onde a instalação é um alvo de verdade.
+// Aqui não existe fundo de instalação, e o administrador só chega no mural de
+// uma live ESPIANDO ela. Sem esta ponte, ele abria o mural de um cliente e via
+// "escolha uma foto" numa live que já tinha a sua, e o upload batia em 400.
+//
+// A ponte só vale espiando: fora disso o administrador continua caindo na
+// instalação, que é o que faz a recusa explicada aparecer na tela de aparência.
+function escopoDoFundo(req) {
+  const escopo = escopoDoPedido(req);
+  const pediuAlguem = !!((req.query && req.query.dono) || (req.body && req.body.dono));
+  if (escopo.dono || !escopo.permitido || pediuAlguem) return escopo;
+
+  if (req.session && req.session.espiando
+      && auth.ehAdmin((req.session && req.session.user) || null)) {
+    try {
+      const espiado = clientes.doPedido(req).dono;
+      if (espiado) return { dono: espiado, permitido: true };
+    } catch (e) { /* sem motor aberto: segue como estava */ }
+  }
+  return escopo;
+}
+
 // Entrega a foto da live de quem pediu. Sem parâmetro na URL de propósito: o
-// dono sai da sessão (e o "espiar" do admin resolve sozinho, porque o
-// clientes.doPedido já olha pra ele). Assim ninguém monta uma URL pra puxar o
-// fundo de outra live.
+// dono sai da sessão. Assim ninguém monta uma URL pra puxar o fundo de outra
+// live.
 app.get('/api/fundo', (req, res) => {
-  const { dono } = escopoDoPedido(req);
+  const { dono } = escopoDoFundo(req);
   const fundo = dono ? fundos.ler(dono) : null;
   // 404 é a resposta certa, não um erro: "esta live ainda não escolheu foto" é
   // uma situação normal, e é ela que liga o degradê das cores da marca.
@@ -724,7 +748,7 @@ app.get('/api/fundo', (req, res) => {
 // Diz se tem foto e de quem é, sem baixar a imagem. É o que a tela de
 // aparência usa pra saber qual estado desenhar.
 app.get('/api/fundo/info', (req, res) => {
-  const { dono, permitido } = escopoDoPedido(req);
+  const { dono, permitido } = escopoDoFundo(req);
   if (!permitido) return res.status(403).json({ error: 'Você só pode ver a sua live.' });
   const fundo = dono ? fundos.ler(dono) : null;
   res.json({
@@ -738,7 +762,7 @@ app.get('/api/fundo/info', (req, res) => {
 });
 
 app.post('/api/fundo', corpoDeImagem, (req, res) => {
-  const { dono, permitido } = escopoDoPedido(req);
+  const { dono, permitido } = escopoDoFundo(req);
   if (!permitido) return res.status(403).json({ error: 'Você só pode mexer na sua live.' });
   // A instalação não tem fundo — é o que impede a foto da casa de virar a de
   // todo mundo outra vez. Recusa explicada, não silenciosa.
@@ -772,7 +796,7 @@ app.use('/api/fundo', (err, req, res, next) => {
 });
 
 app.delete('/api/fundo', (req, res) => {
-  const { dono, permitido } = escopoDoPedido(req);
+  const { dono, permitido } = escopoDoFundo(req);
   if (!permitido) return res.status(403).json({ error: 'Você só pode mexer na sua live.' });
   if (!dono) return res.status(400).json({ error: 'A instalação não tem fundo.' });
   const apagou = fundos.apagar(dono);
