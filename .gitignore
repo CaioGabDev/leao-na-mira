@@ -1,12 +1,9 @@
 /node_modules
 .env
 /users.json
-/chaves.json
 /sessions.json
 /live.json
-/config.json
 /live.json.pre-sqlite
 /dados.db
 /dados.db-wal
 /dados.db-shm
-/fundos

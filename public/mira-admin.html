@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Indicações · TEM LEÃO NA MIRA!</title>
+<title>Admin · TEM LEÃO NA MIRA!</title>
 <link rel="stylesheet" href="/assets/theme.css">
 <style>
   /* Só o administrador chega aqui: o servidor barra no requireAdmin antes de
@@ -38,6 +38,19 @@
   .sim { color: var(--green); font-weight: 700; }
   .nao { color: var(--ink-dim); }
   .vazio { color: var(--ink-dim); text-align: center; padding: 20px; }
+  h2 { margin: 0 0 12px; font-size: 16px; }
+  .status { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  .status li {
+    display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 4px 10px;
+    padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card-2);
+  }
+  .status .bola { width: 10px; height: 10px; border-radius: 50%; background: var(--ink-dim); }
+  .status .on .bola { background: var(--green); box-shadow: 0 0 8px var(--green); }
+  .status .arroba { font-weight: 700; overflow: hidden; text-overflow: ellipsis; }
+  .status .estado { font-size: 13px; font-weight: 600; color: var(--ink-dim); }
+  .status .on .estado { color: var(--green); }
+  .status .quando, .status .recado { grid-column: 2 / -1; font-size: 12.5px; color: var(--ink-dim); }
+  .status li.vazio { display: block; }
   @media (max-width: 560px) {
     form { grid-template-columns: 1fr; }
     thead { display: none; }
@@ -50,7 +63,7 @@
 <body>
 <main>
   <div class="topo">
-    <h1>Indicações — TEM LEÃO NA MIRA! 🎯</h1>
+    <h1>Admin — TEM LEÃO NA MIRA! 🎯</h1>
     <div>
       <a href="/mira.html" target="_blank" rel="noopener">Ver ranking</a>
       &nbsp;
@@ -59,6 +72,12 @@
   </div>
 
   <div class="caixa">
+    <h2>Lives dos snipers</h2>
+    <ul class="status" id="status"><li class="vazio">Carregando…</li></ul>
+  </div>
+
+  <div class="caixa">
+    <h2>Indicações</h2>
     <form id="form">
       <label>Quem indicou (sniper)
         <select name="indicador" id="indicador" required></select>
@@ -208,6 +227,50 @@
     } catch (e) { aviso(e.message, 'erro'); }
   });
 
+  // ---------- status das lives ----------
+  // "Atualizado" é a última vez que o servidor soube algo da live: o último
+  // evento do TikTok com ela no ar, ou a última checagem com ela fora do ar.
+  function quando(ms, agora) {
+    if (!ms) return 'Sem notícia desde que o servidor subiu';
+    const d = new Date(ms);
+    const hoje = new Date(agora).toDateString() === d.toDateString();
+    const hora = d.toLocaleTimeString('pt-BR');
+    const texto = hoje ? hora : d.toLocaleDateString('pt-BR') + ' ' + hora;
+    const min = Math.floor((agora - ms) / 60000);
+    return 'Atualizado às ' + texto + (min >= 1 ? ` (há ${min} min)` : ' (agora há pouco)');
+  }
+
+  async function carregarStatus() {
+    const dados = await api('GET', '/api/mira/status');
+    const ul = $('status');
+    ul.replaceChildren();
+    if (!dados.snipers.length) {
+      ul.append(el('li', 'vazio', 'Nenhum sniper configurado.'));
+      return;
+    }
+    dados.snipers.forEach(s => {
+      const li = el('li', s.conectado ? 'on' : '');
+      li.append(
+        el('span', 'bola'),
+        el('span', 'arroba', '@' + s.arroba),
+        el('span', 'estado', s.conectado ? 'Live conectada' : 'Desconectada'),
+        el('span', 'quando', quando(s.atualizadoEm, dados.agora))
+      );
+      if (s.recado) li.append(el('span', 'recado', s.recado));
+      ul.append(li);
+    });
+  }
+
+  function atualizarStatus() {
+    carregarStatus().catch(e => {
+      $('status').replaceChildren(el('li', 'vazio', 'Não consegui ler o status: ' + e.message));
+    });
+  }
+
+  // a cada 30s, e só com a aba à vista: ninguém precisa de status em aba escondida
+  setInterval(() => { if (!document.hidden) atualizarStatus(); }, 30000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) atualizarStatus(); });
+
   $('cancelar').onclick = () => { limparForm(); aviso(''); };
 
   $('sair').onclick = async () => {
@@ -216,6 +279,7 @@
   };
 
   carregar().catch(e => aviso(e.message, 'erro'));
+  atualizarStatus();
 </script>
 </body>
 </html>

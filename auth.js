@@ -25,33 +25,18 @@ function hashPassword(password, salt) {
   return { salt, hash };
 }
 
-// `admin` e `dono` só entram no registro quando têm valor, pra não reescrever
-// os usuarios antigos com campo a mais sem necessidade.
+// Troca só a senha e a marca de admin. O resto do registro antigo fica como
+// estava: o users.json veio do ranking de taps, com campos (`dono`, `aceite`)
+// que este site não usa mais, e trocar uma senha não é motivo pra apagá-los.
 function upsertUser(username, password, opcoes) {
   const users = loadUsers();
   const { salt, hash } = hashPassword(password);
   const idx = users.findIndex(u => u.username === username);
-  const record = { username, salt, hash };
+  const record = { ...(idx >= 0 ? users[idx] : {}), username, salt, hash };
   // quem já era admin continua sendo, a menos que se diga o contrário agora
   const eraAdmin = idx >= 0 && users[idx].admin === true;
   const querAdmin = opcoes && opcoes.admin !== undefined ? !!opcoes.admin : eraAdmin;
-  if (querAdmin) record.admin = true;
-
-  // `dono` é o @ da live que esta pessoa acompanha. Quem não tem cai no dono
-  // padrão da instalação (ver clientes.js) — que é o caso de todo mundo hoje.
-  const eraDono = idx >= 0 ? users[idx].dono : null;
-  const querDono = opcoes && opcoes.dono !== undefined ? opcoes.dono : eraDono;
-  // sem o @, pelo mesmo motivo do chaves.js: o dono e a chave da live
-  const dono = String(querDono || '').trim().replace(/^@+/, '').toLowerCase();
-  if (dono) record.dono = dono;
-
-  // O ACEITE DOS TERMOS. Preservado igual ao `admin` e ao `dono`, e pelo mesmo
-  // motivo ao quadrado: este `record` nasce do zero a cada upsert, então um
-  // campo que ninguém copie some na primeira troca de senha. Perder o aceite
-  // é perder a prova de que a pessoa aceitou.
-  const eraAceite = idx >= 0 ? users[idx].aceite : null;
-  const querAceite = opcoes && opcoes.aceite !== undefined ? opcoes.aceite : eraAceite;
-  if (querAceite) record.aceite = querAceite;
+  if (querAdmin) record.admin = true; else delete record.admin;
   if (idx >= 0) users[idx] = record;
   else users.push(record);
   saveUsers(users);
@@ -68,52 +53,24 @@ function setAdmin(username, admin) {
   return true;
 }
 
-// Quem pode abrir a página de configuração: quem tem `admin: true`. Só isso.
-//
-// Já foi mais esperto que isso e deu errado: a regra antiga dizia "se só
-// existe um usuário, é ele", e aí criar o primeiro cliente tirava o acesso do
-// dono — porque passavam a existir dois. Permissão não pode depender de
-// quantas contas existem. Quem decide quem é dono é o garantirDono(), uma vez,
-// na subida do servidor, e a marca fica gravada no users.json.
+// Quem pode entrar no site: quem tem `admin: true`. Só isso. As outras contas
+// do users.json (clientes do ranking de taps) continuam lá, mas não entram.
 function ehAdmin(username) {
   if (!username) return false;
   const eu = loadUsers().find(u => u.username === username);
   return !!(eu && eu.admin === true);
 }
 
-// Garante que a instalação tenha um dono marcado. Roda na subida.
-//
-// Se ninguém está marcado (o caso de quem vem da versão antiga, onde o campo
-// nem existia), escolhe nesta ordem:
-//   1. o ADMIN_USER das env vars, se ele existir no cadastro
-//   2. o único usuário, se só houver um
-//   3. a conta mais antiga SEM `dono` — cliente sempre tem `dono`, então a
-//      conta sem ele é a da casa
-// Não achando ninguém, avisa alto: é melhor gritar do que deixar a
-// configuração aberta ou trancada em silêncio.
-function garantirDono() {
-  const users = loadUsers();
-  if (!users.length) return null;
-  if (users.some(u => u.admin === true)) return null;   // já tem dono
-
-  let escolhido = null;
-  if (process.env.ADMIN_USER) {
-    escolhido = users.find(u => u.username === process.env.ADMIN_USER) || null;
-  }
-  if (!escolhido && users.length === 1) escolhido = users[0];
-  if (!escolhido) escolhido = users.find(u => !u.dono) || null;
-
-  if (!escolhido) {
-    console.warn(
-      'AVISO: nenhuma conta é dona desta instalação, então a página de ' +
-      'configuração fica inacessível. Rode: node create-user.js <usuario> <senha> --admin'
-    );
-    return null;
-  }
-
-  setAdmin(escolhido.username, true);
-  console.log(`Conta "${escolhido.username}" marcada como dona da instalação.`);
-  return escolhido.username;
+// Roda na subida. Não promove ninguém sozinho: o users.json pode ter vindo
+// do ranking de taps, e eleger uma conta qualquer como admin abriria a área
+// de indicações pra um cliente antigo. Sem admin, só avisa alto.
+function avisarSemAdmin() {
+  if (loadUsers().some(u => u.admin === true)) return;
+  console.warn(
+    'AVISO: nenhuma conta é administradora, então ninguém consegue entrar. ' +
+    'Rode: node create-user.js <usuario> <senha> --admin ' +
+    '(ou defina ADMIN_USER/ADMIN_PASSWORD).'
+  );
 }
 
 // O salt de mentira serve pra uma coisa só: gastar o mesmo tempo quando o
@@ -163,48 +120,10 @@ function seedFromEnv() {
 // A conta ainda existe? Apagar alguém tem que valer pra quem já está logado,
 // então isto é conferido a cada requisição. O arquivo é pequeno (dezenas de
 // linhas), então ler e parsear sai mais barato que manter cache coerente.
-// Guarda o aceite sem mexer em senha nenhuma. Separado do upsertUser porque
-// quem aceita os termos depois (cliente que o admin cadastrou na mão) não tem
-// senha pra informar de novo.
-function registrarAceite(username, aceite) {
-  const users = loadUsers();
-  const idx = users.findIndex(u => u.username === username);
-  if (idx < 0) return false;
-  users[idx].aceite = aceite;
-  saveUsers(users);
-  return true;
-}
-
-function aceiteDe(username) {
-  const u = loadUsers().find(x => x.username === username);
-  return (u && u.aceite) || null;
-}
-
 function existe(username) {
   if (!username) return false;
   return loadUsers().some(u => u.username === username);
 }
 
-// De qual live este usuário é. null = usa o dono padrão da instalação.
-function donoDoUsuario(username) {
-  if (!username) return null;
-  const u = loadUsers().find(x => x.username === username);
-  if (!u || !u.dono) return null;
-  return String(u.dono).trim().toLowerCase() || null;
-}
-
-// Amarra um usuário a uma live (ou solta ele, com dono vazio).
-function setDono(username, dono) {
-  const users = loadUsers();
-  const u = users.find(x => x.username === username);
-  if (!u) return false;
-  // sem o @, igual ao upsertUser: e a chave da live
-  const limpo = String(dono || '').trim().replace(/^@+/, '').toLowerCase();
-  if (limpo) u.dono = limpo; else delete u.dono;
-  saveUsers(users);
-  return true;
-}
-
-module.exports = { USERS_FILE, loadUsers, saveUsers, hashPassword, upsertUser, setAdmin, ehAdmin, existe, garantirDono,
-                   donoDoUsuario, setDono, verifyCredentials, seedFromEnv,
-                   registrarAceite, aceiteDe };
+module.exports = { USERS_FILE, loadUsers, saveUsers, hashPassword, upsertUser, setAdmin, ehAdmin, existe,
+                   avisarSemAdmin, verifyCredentials, seedFromEnv };

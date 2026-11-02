@@ -1,16 +1,16 @@
 {
-  "name": "tiktok-live-tracker",
+  "name": "leao-na-mira",
   "version": "1.0.0",
   "private": true,
   "type": "commonjs",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test \"teste/*.js\""
   },
   "dependencies": {
     "express": "^4.19.2",
     "express-session": "^1.19.0",
-    "socket.io": "^4.7.5",
     "tiktok-live-connector": "^2.4.4"
   },
   "engines": {

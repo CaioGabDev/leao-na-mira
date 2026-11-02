@@ -85,7 +85,30 @@ function criarCampanha({ clientes }) {
   // indicação mudou: o próximo pedido recalcula em vez de esperar o cache vencer
   function invalidar() { cache = null; }
 
-  return { getRanking, invalidar, snipers: () => [...config.snipers] };
+  // Status da conexão de cada sniper, pro admin (não passa pelo cache: é
+  // barato e precisa estar fresco). "Atualizado em" é a última vez que o
+  // servidor soube algo daquela live: com ela no ar, o último evento do
+  // TikTok; fora do ar, a última checagem de se ela tinha começado.
+  function status() {
+    return config.snipers.map(arroba => {
+      try {
+        const c = clientes.abrir(arroba).live.estadoDaConexao();
+        const checagem = (c.ultimaTentativa && c.ultimaTentativa.em) || null;
+        return {
+          arroba,
+          conectado: !!c.online,
+          atualizadoEm: c.online ? Math.max(c.ultimoEventoEm || 0, checagem || 0) : checagem,
+          // o recado é o texto pra gente ler ("não está ao vivo agora"…)
+          recado: (!c.online && c.ultimaTentativa && c.ultimaTentativa.recado) || null
+        };
+      } catch (e) {
+        console.error(`[MIRA] não li o status de @${arroba}:`, e.message);
+        return { arroba, conectado: false, atualizadoEm: null, recado: 'Erro ao ler o status.' };
+      }
+    });
+  }
+
+  return { getRanking, invalidar, status, snipers: () => [...config.snipers] };
 }
 
 module.exports = criarCampanha;

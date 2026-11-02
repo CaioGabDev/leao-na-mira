@@ -2226,7 +2226,9 @@ function criarLive({ dono, db, emitir, criarConexao }) {
       online: liveOnline,
       ligado: relogios.length > 0,
       tentativasSeguidas,
-      ultimaTentativa
+      ultimaTentativa,
+      // nasce com a hora da criação do motor: só quer dizer algo com a live no ar
+      ultimoEventoEm: lastEventAt
     }),
     feed: () => liveFeed,
     diagnostico: () => diagnostico

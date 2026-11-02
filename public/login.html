@@ -3,33 +3,19 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Entrar — {{produto.nome}}</title>
+<title>Entrar — TEM LEÃO NA MIRA! 🎯</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
   /* ===========================================================================
-     ESTA TELA É DO PRODUTO, NÃO DE UM STREAMER.
+     ENTRADA DO ADMINISTRADOR DA CAMPANHA.
      -------------------------------------------------------------------------
-     Duas coisas de propósito, e as duas já estiveram erradas aqui:
+     Só administrador entra (o servidor recusa as outras contas). O público
+     não passa por aqui: o ranking é aberto em /mira.html.
 
-     1. Esta página NÃO recebe o bloco de tema do cliente. Ele pinta a tela
-        com as cores de quem contratou — e quem chega no login ainda não é de
-        live nenhuma. Com ele, a porta de entrada do produto aparecia laranja,
-        vestida de um streamer específico.
-     2. Nem os marcadores de marca, que também são do cliente. Aqui valem os
-        de produto, que são da casa que vende o site.
-
-     (E os nomes daqueles marcadores não se escrevem aqui, nem entre as chaves
-     duplas: o template troca marcador em qualquer lugar do arquivo, INCLUSIVE
-     dentro de comentário. Citar o de tema nesta explicação despejou o CSS do
-     cliente no meio do comentário, fechou o bloco de estilo cedo e a tela veio
-     branca. Deixar só as chaves soltas também não serve: elas viram falso
-     alarme de "sobrou marcador" no teste.)
-
-     Também não usa /assets/theme.css: o gate só libera esta página e a de
-     ativar, então CSS externo seria redirecionado e a tela cairia pelada.
-     A paleta é a mesma do painel do administrador — os dois são bastidor.
+     Não usa /assets/theme.css: o gate só libera esta página antes do login,
+     então CSS externo seria redirecionado e a tela cairia pelada.
      =========================================================================== */
   :root {
     --preto:    #05070c;
@@ -214,12 +200,6 @@
   }
   .erro.ver { display: block; }
 
-  .rodape-form {
-    margin-top: 26px; padding-top: 20px; border-top: 1px solid var(--linha);
-    text-align: center; font-size: 13.5px; color: var(--ink-fraco); font-weight: 400;
-  }
-  .rodape-form a { color: var(--azul-luz); text-decoration: none; font-weight: 600; }
-  .rodape-form a:hover { text-decoration: underline; }
 
   :where(input, button, a):focus-visible { outline: 2px solid var(--azul-luz); outline-offset: 2px; }
 
@@ -248,21 +228,21 @@
       </svg>
     </div>
 
-    <h1>{{produto.nome}}</h1>
-    <p class="lema">{{produto.lema}}</p>
+    <h1>TEM LEÃO NA MIRA! 🎯</h1>
+    <p class="lema">Área do administrador da campanha</p>
 
     <ul class="itens">
       <li>
         <span class="tique"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.3 4.6 9 10 3.3"/></svg></span>
-        <span>Ranking da tropa ao vivo, direto da sua live</span>
+        <span>Horas de live e diamantes contados direto do TikTok</span>
       </li>
       <li>
         <span class="tique"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.3 4.6 9 10 3.3"/></svg></span>
-        <span>Power-ups do PK contados sozinhos</span>
+        <span>Cadastro das indicações de cada sniper</span>
       </li>
       <li>
         <span class="tique"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.3 4.6 9 10 3.3"/></svg></span>
-        <span>A página fica com a sua cara: cores, nome e emoji</span>
+        <span>Status da conexão da live de cada sniper</span>
       </li>
     </ul>
 
@@ -274,7 +254,7 @@
 
   <section class="lado-form">
     <h2>Entrar</h2>
-    <p class="abre">Use o login da sua conta.</p>
+    <p class="abre">Acesso só para administradores.</p>
 
     <form id="formLogin" novalidate>
       <div class="campo">
@@ -303,9 +283,6 @@
       <button type="submit" class="entrar" id="entrar">Entrar</button>
     </form>
 
-    <div class="rodape-form">
-      Recebeu uma chave de acesso? <a href="/ativar.html">Ativar minha conta</a>
-    </div>
   </section>
 </main>
 
@@ -356,11 +333,14 @@
       });
       if (res.ok) {
         const params = new URLSearchParams(location.search);
-        // Quem pediu uma página específica vai pra ela. Fora isso, quem manda
-        // é o servidor: o dono do negócio cai no painel, o cliente no ranking
-        // da live dele.
+        // Quem pediu uma página específica vai pra ela — mas só se for daqui
+        // de dentro: um ?next=https://... levaria quem acabou de logar pra
+        // outro site. Fora isso, quem manda é o servidor.
         const dados = await res.json().catch(() => ({}));
-        location.href = params.get('next') || dados.destino || '/';
+        const pedido = params.get('next') || '';
+        // "/x" é daqui; "//site" e "/\site" o navegador lê como outro domínio
+        const interno = /^\/(?![\/\\])/.test(pedido);
+        location.href = (interno && pedido) || dados.destino || '/mira-admin.html';
         return;
       }
       const dados = await res.json().catch(() => ({}));
