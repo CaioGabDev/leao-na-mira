@@ -51,6 +51,11 @@
   .status .on .estado { color: var(--green); }
   .status .quando, .status .recado { grid-column: 2 / -1; font-size: 12.5px; color: var(--ink-dim); }
   .status li.vazio { display: block; }
+  input[type=datetime-local] {
+    background: var(--card-2); color: var(--ink); border: 1px solid var(--line);
+    border-radius: 10px; padding: 10px; font: inherit; width: 100%; color-scheme: dark;
+  }
+  .origem { grid-column: 1 / -1; margin: 0; font-size: 12.5px; color: var(--ink-dim); }
   @media (max-width: 560px) {
     form { grid-template-columns: 1fr; }
     thead { display: none; }
@@ -74,6 +79,24 @@
   <div class="caixa">
     <h2>Lives dos snipers</h2>
     <ul class="status" id="status"><li class="vazio">Carregando…</li></ul>
+  </div>
+
+  <div class="caixa">
+    <h2>Período da campanha</h2>
+    <form id="formPeriodo">
+      <label>Início
+        <input type="datetime-local" id="inicio" required>
+      </label>
+      <label>Fim
+        <input type="datetime-local" id="fim" required>
+      </label>
+      <p class="origem" id="origemPeriodo"></p>
+      <div class="acoes">
+        <button type="submit" class="principal">Salvar período</button>
+        <button type="button" id="padraoPeriodo" hidden>Voltar ao padrão</button>
+      </div>
+    </form>
+    <div class="msg" id="msgPeriodo"></div>
   </div>
 
   <div class="caixa">
@@ -271,6 +294,58 @@
   setInterval(() => { if (!document.hidden) atualizarStatus(); }, 30000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) atualizarStatus(); });
 
+  // ---------- período da campanha ----------
+  // O campo datetime-local é a hora do relógio de quem está usando (Brasília,
+  // pro admin daqui); o servidor recebe e guarda em milissegundos, sem fuso.
+  const dois = n => String(n).padStart(2, '0');
+  function paraCampo(ms) {
+    const d = new Date(ms);
+    return `${d.getFullYear()}-${dois(d.getMonth() + 1)}-${dois(d.getDate())}T${dois(d.getHours())}:${dois(d.getMinutes())}`;
+  }
+  const doCampo = texto => (texto ? new Date(texto).getTime() : NaN);
+
+  function avisoPeriodo(texto, tipo) {
+    $('msgPeriodo').textContent = texto || '';
+    $('msgPeriodo').className = 'msg ' + (tipo || '');
+  }
+
+  function mostrarPeriodo(p) {
+    $('inicio').value = paraCampo(p.inicio);
+    // o fim é guardado no último milissegundo do minuto escolhido; o campo
+    // mostra só até o minuto, então 23:59:59 aparece como 23:59
+    $('fim').value = paraCampo(p.fim);
+    $('origemPeriodo').textContent = p.origem === 'admin'
+      ? `Definido${p.autor ? ' por ' + p.autor : ''} em ${new Date(p.em).toLocaleString('pt-BR')}.`
+      : 'Usando o padrão do servidor (MIRA_INICIO/MIRA_FIM ou campanha.config.js).';
+    $('padraoPeriodo').hidden = p.origem !== 'admin';
+  }
+
+  async function carregarPeriodo() {
+    mostrarPeriodo((await api('GET', '/api/mira/periodo')).periodo);
+  }
+
+  $('formPeriodo').addEventListener('submit', async ev => {
+    ev.preventDefault();
+    const inicio = doCampo($('inicio').value);
+    // fim inclui o minuto escolhido inteiro: "30/11 23:59" vale até 23:59:59
+    const fim = doCampo($('fim').value) + 59999;
+    if (!confirm('Mudar o período recalcula o ranking na hora. Lives fora do novo período deixam de contar. Continuar?')) return;
+    try {
+      const r = await api('PUT', '/api/mira/periodo', { inicio, fim });
+      mostrarPeriodo(r.periodo);
+      avisoPeriodo('Período salvo. O ranking já usa as novas datas.', 'ok');
+    } catch (e) { avisoPeriodo(e.message, 'erro'); }
+  });
+
+  $('padraoPeriodo').onclick = async () => {
+    if (!confirm('Voltar ao período padrão do servidor? O ranking é recalculado na hora.')) return;
+    try {
+      const r = await api('DELETE', '/api/mira/periodo');
+      mostrarPeriodo(r.periodo);
+      avisoPeriodo('Voltou ao período padrão.', 'ok');
+    } catch (e) { avisoPeriodo(e.message, 'erro'); }
+  };
+
   $('cancelar').onclick = () => { limparForm(); aviso(''); };
 
   $('sair').onclick = async () => {
@@ -280,6 +355,7 @@
 
   carregar().catch(e => aviso(e.message, 'erro'));
   atualizarStatus();
+  carregarPeriodo().catch(e => avisoPeriodo(e.message, 'erro'));
 </script>
 </body>
 </html>

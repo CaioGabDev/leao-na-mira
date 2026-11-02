@@ -5,8 +5,8 @@ cada sniper no TikTok, guarda as horas de live e os diamantes de cada uma e
 soma com as indicações que o administrador cadastra.
 
 - **Visitante**: abre `/` (ou `/mira.html`) sem login, sem cadastro. Só leitura.
-- **Administrador**: entra em `/login.html` e cuida das indicações e do status
-  das lives em `/mira-admin.html`.
+- **Administrador**: entra em `/login.html` e, em `/mira-admin.html`, define o
+  período da campanha, cadastra as indicações e acompanha o status das lives.
 
 Este projeto nasceu de uma cópia do ranking de taps. O que era só de lá foi
 removido; o módulo de coleta do TikTok (`live.js`, `db.js`, `banco.js`,
@@ -125,8 +125,16 @@ Empate: mais diamantes, depois mais horas.
   conferido numa live real**. Sem foto, ou com foto vencida (a URL é assinada), a
   tela mostra o avatar padrão.
 
+**Período**: o administrador define início e fim em `/mira-admin.html`, e o
+ranking é recalculado na hora. O que ele salva fica no `dados.db` e **vence** o
+padrão (`MIRA_INICIO`/`MIRA_FIM` ou `campanha.config.js`) — assim uma env var
+esquecida no deploy não desfaz o que foi decidido na tela. O botão **Voltar ao
+padrão** apaga o salvo. As datas da tela estão no fuso do navegador de quem
+salva; o fim inclui o minuto escolhido inteiro (23:59 vale até 23:59:59).
+Aumentar o período não traz de volta live que o servidor não acompanhou.
+
 **Cache**: o ranking é recalculado no máximo a cada `MIRA_CACHE_MS`, e na hora
-quando uma indicação muda. Se o cálculo de um sniper falha, ele fica com a
+quando uma indicação ou o período muda. Se o cálculo de um sniper falha, ele fica com a
 última linha boa. Se falha tudo, vale o último ranking.
 
 **Status das lives** (no topo do `/mira-admin.html`, atualiza a cada 30s):
@@ -145,6 +153,7 @@ começou. Fora do ar, aparece também o motivo ("não está ao vivo agora",
 | `POST /api/logout` | administrador |
 | `GET /mira-admin.html` | administrador |
 | `GET /api/mira/status` | administrador |
+| `GET/PUT/DELETE /api/mira/periodo` | administrador |
 | `GET/POST /api/mira/indicacoes`, `PUT/DELETE /api/mira/indicacoes/:id` | administrador |
 
 ---
@@ -182,7 +191,7 @@ sorteio, pra várias lives não voltarem no mesmo instante.
 | `SESSION_SECRET` | Segredo do cookie de sessão. **Obrigatória**: sem ela o servidor não sobe (só sobe com `DEV_LOCAL=1`, e aí com um segredo público). |
 | `ADMIN_USER` / `ADMIN_PASSWORD` | Cria o primeiro administrador na subida, se ele ainda não existir. |
 | `MIRA_SNIPERS` | `@` dos snipers, separados por vírgula. Cada um vira uma live monitorada na subida. Sem ela, vale a lista do `campanha.config.js`. |
-| `MIRA_INICIO` / `MIRA_FIM` | Período da campanha, em ISO com fuso (`2026-11-01T00:00:00-03:00`). Sem elas, vale o que está no `campanha.config.js`. |
+| `MIRA_INICIO` / `MIRA_FIM` | Período **padrão**, em ISO com fuso (`2026-11-01T00:00:00-03:00`). Sem elas, vale o `campanha.config.js`. O período salvo pelo admin na tela vence as duas. |
 | `MIRA_CACHE_MS` | De quanto em quanto tempo o ranking é recalculado. Padrão: `60000`. |
 | `EULERSTREAM_API_KEY` / `SIGN_API_KEY` | Chave do assinador. Necessária na prática pra mais de uma live. |
 | `SIGN_API_URL` | Aponta o assinador pra outro servidor. Serve pra investigação. |
@@ -190,7 +199,8 @@ sorteio, pra várias lives não voltarem no mesmo instante.
 | `DEV_LOCAL=1` | **Só na sua máquina.** Aceita rodar sem `SESSION_SECRET` e manda o cookie de sessão por HTTP. Em qualquer deploy, não defina. |
 | `RAILWAY_ENVIRONMENT` | Quando existe, todos os arquivos de dados passam a morar em `/data`. |
 
-Trocar os snipers ou o período pede restart: são lidos uma vez, na subida.
+Trocar os snipers pede restart: são lidos uma vez, na subida. O período não —
+muda pela tela, na hora.
 
 ---
 
@@ -198,7 +208,7 @@ Trocar os snipers ou o período pede restart: são lidos uma vez, na subida.
 
 | Arquivo | O que guarda |
 |---|---|
-| `dados.db` | SQLite: as lives de cada sniper (uma linha por registro, com a coluna `dono`) e a tabela `indicacoes`. |
+| `dados.db` | SQLite: as lives de cada sniper (uma linha por registro, com a coluna `dono`) e as tabelas `indicacoes` e `campanha_ajustes` (o período salvo pelo admin). |
 | `users.json` | Contas: usuário, salt, hash, `admin`. Gravado com permissão 0600. |
 | `sessions.json` | Sessões abertas. |
 
@@ -217,7 +227,7 @@ O que configurar lá:
 - um **volume montado em `/data`**;
 - `SESSION_SECRET` (sem ela o servidor não sobe);
 - `ADMIN_USER` / `ADMIN_PASSWORD` (pro primeiro acesso);
-- `MIRA_SNIPERS`, e `MIRA_INICIO` / `MIRA_FIM` se o período mudar;
+- `MIRA_SNIPERS` (o período dá pra ajustar depois, pela tela);
 - `EULERSTREAM_API_KEY`;
 - Node 24+ (o `.node-version` já pede).
 
@@ -242,15 +252,17 @@ campanha.config.js valores da pontuação, período, snipers
 pontuacao.js       a conta da campanha (pura, testada)
 campanha.js        o ranking com cache e último dado bom, e o status das lives
 indicacoes.js      quem indicou quem (tabela `indicacoes` no dados.db)
+periodo.js         início e fim da campanha: o salvo pelo admin, ou o padrão
 
 public/
   mira.html        ranking público (sem login)
-  mira-admin.html  status das lives e indicações (só administrador)
+  mira-admin.html  status das lives, período e indicações (só administrador)
   login.html       entrada do administrador
   assets/theme.css os tokens de tema
 
 teste/
   pontuacao.js     a conta da campanha (node --test)
+  periodo.js       o período salvo pelo admin vence o padrão (banco temporário)
 ```
 
 ---

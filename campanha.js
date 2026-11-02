@@ -10,13 +10,14 @@
 // ============================================================================
 const config = require('./campanha.config');
 const indicacoes = require('./indicacoes');
+const periodo = require('./periodo');
 const { calcularPontuacao, somarLivesNoPeriodo, ordenarRanking } = require('./pontuacao');
 
 function criarCampanha({ clientes }) {
-  let cache = null;               // { atualizadoEm, ranking }
+  let cache = null;               // { atualizadoEm, ranking, periodo }
   const ultimaBoa = new Map();    // sniper -> última linha calculada sem erro
 
-  function linhaDoSniper(arroba, oficiais, agora) {
+  function linhaDoSniper(arroba, oficiais, agora, { inicio, fim }) {
     const { db } = clientes.abrir(arroba);
     const sessoes = db.getSessions();
 
@@ -24,7 +25,7 @@ function criarCampanha({ clientes }) {
     const atual = db.numerosDaLiveAtual();
     if (atual) sessoes.push({ startedAt: atual.comecouEm, endedAt: agora, totalDiamonds: atual.diamantes });
 
-    const soma = somarLivesNoPeriodo(sessoes, config.inicio, config.fim);
+    const soma = somarLivesNoPeriodo(sessoes, inicio, fim);
     const nIndicacoes = oficiais.get(arroba) || 0;
     const pontos = calcularPontuacao({ segundosDeLive: soma.segundos, diamantes: soma.diamantes, indicacoes: nIndicacoes });
     const perfil = db.getPerfilDoStreamer();
@@ -43,11 +44,13 @@ function criarCampanha({ clientes }) {
 
   function recalcular() {
     const agora = Date.now();
+    // lido a cada recálculo: o administrador pode mudar o período na tela
+    const p = periodo.get();
     const oficiais = indicacoes.oficiaisPorIndicador();
     const linhas = [];
     for (const arroba of config.snipers) {
       try {
-        const linha = linhaDoSniper(arroba, oficiais, agora);
+        const linha = linhaDoSniper(arroba, oficiais, agora, p);
         ultimaBoa.set(arroba, linha);
         linhas.push(linha);
       } catch (e) {
@@ -55,14 +58,14 @@ function criarCampanha({ clientes }) {
         if (ultimaBoa.has(arroba)) linhas.push(ultimaBoa.get(arroba));
       }
     }
-    return { atualizadoEm: agora, ranking: ordenarRanking(linhas) };
+    return { atualizadoEm: agora, ranking: ordenarRanking(linhas), periodo: p };
   }
 
   // O que sai pro público: só o que a tela mostra. Diamante e horas ficam de
   // fora de propósito — servem pro desempate, não pra vitrine.
-  function publico({ atualizadoEm, ranking }) {
+  function publico({ atualizadoEm, ranking, periodo: p }) {
     return {
-      campanha: { nome: config.nome, inicio: config.inicio, fim: config.fim },
+      campanha: { nome: config.nome, inicio: p.inicio, fim: p.fim },
       atualizadoEm,
       ranking: ranking.map(l => ({
         posicao: l.posicao, arroba: l.arroba, nome: l.nome, avatar: l.avatar, aoVivo: l.aoVivo, total: l.total
@@ -77,12 +80,12 @@ function criarCampanha({ clientes }) {
     } catch (e) {
       // sem cache nenhum ainda, não há o que mostrar além da lista vazia
       console.error('[MIRA] falhou o recálculo do ranking:', e.message);
-      if (!cache) return publico({ atualizadoEm: null, ranking: [] });
+      if (!cache) return publico({ atualizadoEm: null, ranking: [], periodo: periodo.get() });
     }
     return publico(cache);
   }
 
-  // indicação mudou: o próximo pedido recalcula em vez de esperar o cache vencer
+  // indicação ou período mudou: o próximo pedido recalcula em vez de esperar o cache vencer
   function invalidar() { cache = null; }
 
   // Status da conexão de cada sniper, pro admin (não passa pelo cache: é

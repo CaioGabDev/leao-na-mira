@@ -9,6 +9,7 @@ const { FileSessionStore } = require('./session-store');
 const campanhaConfig = require('./campanha.config');
 const criarCampanha = require('./campanha');
 const indicacoes = require('./indicacoes');
+const periodo = require('./periodo');
 
 const app = express();
 const server = http.createServer(app);
@@ -236,6 +237,30 @@ app.get('/api/mira/ranking', (req, res) => {
 app.get('/api/mira/status', requireAdmin, (req, res) => {
   res.set('Cache-Control', 'no-store');
   res.json({ agora: Date.now(), snipers: campanha.status() });
+});
+
+// Início e fim da campanha. O que o admin salva aqui vence o padrão
+// (MIRA_INICIO/MIRA_FIM ou campanha.config.js); o DELETE volta pro padrão.
+// As datas vêm em milissegundos: quem converte do fuso do admin é o navegador.
+function respostaDoPeriodo(res, r) {
+  if (r.erro) return res.status(400).json({ error: r.erro });
+  campanha.invalidar();
+  res.json({ ok: true, periodo: r.periodo });
+}
+
+app.get('/api/mira/periodo', requireAdmin, (req, res) => {
+  res.json({ periodo: periodo.get() });
+});
+
+app.put('/api/mira/periodo', requireAdmin, (req, res) => {
+  const r = periodo.salvar(req.body, req.session.user);
+  if (!r.erro) console.log(`[MIRA] período alterado por ${req.session.user}:`, new Date(r.periodo.inicio).toISOString(), '→', new Date(r.periodo.fim).toISOString());
+  respostaDoPeriodo(res, r);
+});
+
+app.delete('/api/mira/periodo', requireAdmin, (req, res) => {
+  console.log(`[MIRA] período voltou ao padrão por ${req.session.user}`);
+  respostaDoPeriodo(res, periodo.voltarAoPadrao());
 });
 
 app.get('/api/mira/indicacoes', requireAdmin, (req, res) => {
