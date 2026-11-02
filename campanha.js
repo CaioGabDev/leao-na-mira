@@ -66,7 +66,8 @@ function criarCampanha({ clientes }) {
   // fora de propósito — servem pro desempate, não pra vitrine.
   function publico({ atualizadoEm, ranking, periodo: p }) {
     return {
-      campanha: { nome: config.nome, inicio: p.inicio, fim: p.fim },
+      // as regras vão junto pra tela mostrar "1h = 10 pts" sem repetir os números
+      campanha: { nome: config.nome, inicio: p.inicio, fim: p.fim, regras: config.regras },
       atualizadoEm,
       ranking: ranking.map(l => ({
         posicao: l.posicao, arroba: l.arroba, nome: l.nome, avatar: l.avatar, aoVivo: l.aoVivo, total: l.total

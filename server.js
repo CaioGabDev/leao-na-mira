@@ -210,7 +210,9 @@ function requireAdmin(req, res, next) {
 // escrita — passa pelo requireAdmin.
 const PUBLICO = new Set([
   '/', '/mira.html', '/api/mira/ranking',
-  '/login.html', '/api/login'
+  '/login.html', '/api/login',
+  // o logo aparece no ranking e no login, que o visitante abre sem conta
+  '/assets/mira-logo.png'
 ]);
 
 app.use((req, res, next) => {

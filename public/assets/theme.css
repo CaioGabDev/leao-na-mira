@@ -1,43 +1,46 @@
 /* ============================================================================
-   Tema compartilhado — Ranking da Live
+   Tema compartilhado — painel do administrador
    Só tokens, base e primitivas com prefixo `app-`/`ui-`.
-   Componentes de cada página continuam no <style> da própria página, então
-   este arquivo nunca colide com o CSS existente (mural, poster, etc).
+   Componentes de cada página continuam no <style> da própria página.
+
+   A paleta é a do site da MIRA (teammira.com.br): preto e o vermelho da marca.
+   O `--gold` virou o vermelho: o nome ficou de quando o tema era brasa, e
+   trocar o nome em toda parte não muda nada na tela.
    ========================================================================= */
 
 :root {
   /* superfícies */
-  --bg:        #0a0807;
-  --card:      #150f0b;
-  --card-2:    #0f0b08;
-  --card-3:    #1c1510;
-  --line:      #2b2119;
-  --line-soft: #201810;
+  --bg:        #08080b;
+  --card:      #111116;
+  --card-2:    #0d0d12;
+  --card-3:    #1a1a21;
+  --line:      #25252d;
+  --line-soft: #1a1a20;
 
   /* texto */
-  --ink:       #f3e9dc;
-  --ink-dim:   #9c8b7d;
-  --ink-faint: #5a4c40;
+  --ink:       #f5f5f7;
+  --ink-dim:   #a1a1aa;
+  --ink-faint: #62626e;
 
-  /* acentos (a brasa) */
-  --gold:      #ffb03a;
-  --gold-soft: #ffe9b0;
-  --ember1:    #ff7a1a;
-  --ember2:    #ff2d2d;
-  --green:     #6ee787;
-  --red:       #ff6b6b;
+  /* acentos (o vermelho da MIRA) */
+  --gold:      #ff3347;
+  --gold-soft: #ff8a96;
+  --ember1:    #e32636;
+  --ember2:    #ff3347;
+  --green:     #4ade80;
+  --red:       #ff5a6a;
   --blue:      #3e7bfa;
 
   /* As brasinhas do canvas. Em "r, g, b" porque o script monta o rgba() com a
      opacidade dele — é isso que permite trocar a cor delas por cliente. */
-  --brasa-1: 255, 170, 60;
-  --brasa-2: 255, 60, 20;
+  --brasa-1: 255, 51, 71;
+  --brasa-2: 227, 38, 54;
 
   --grad-fire: linear-gradient(180deg, var(--gold), var(--ember1));
-  --grad-ink:  linear-gradient(180deg, #ffe9b0 0%, var(--gold) 30%, var(--ember1) 65%, #a3230f 100%);
+  --grad-ink:  linear-gradient(180deg, #ffffff 0%, #ffd0d5 40%, var(--gold) 100%);
 
   /* raios */
-  --r-xs: 8px;
+  --r-xs: 4px;
   --r-sm: 10px;
   --r-md: 14px;
   --r-lg: 18px;

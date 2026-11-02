@@ -4,147 +4,307 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>TEM LEÃO NA MIRA! 🎯</title>
-<meta name="description" content="Ranking oficial da campanha TEM LEÃO NA MIRA!">
+<meta name="description" content="Ranking oficial da campanha TEM LEÃO NA MIRA! da MIRA Agency.">
+<meta name="theme-color" content="#08080b">
+<link rel="icon" href="/assets/mira-logo.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
   /* ===========================================================================
      Página pública: não usa /assets/theme.css porque o gate de login só libera
-     esta página e a API do ranking. A paleta é a mesma do ranking da live.
+     esta página, a API do ranking e o logo. O visual segue o site da MIRA
+     (teammira.com.br): preto, vermelho, Space Grotesk nos títulos e os
+     rótulos "técnicos" em monoespaçada.
      Nada aqui escreve: é só leitura do /api/mira/ranking.
      =========================================================================== */
   :root {
-    --bg: #0a0807;
-    --card: #150f0b;
-    --card-2: #1c1510;
-    --line: #2b2119;
-    --ink: #f3e9dc;
-    --ink-dim: #9c8b7d;
-    --gold: #ffb03a;
-    --ember: #ff7a1a;
-    --prata: #d7dde6;
-    --bronze: #e0915a;
-    --ao-vivo: #ff2d55;
+    --ink: #08080b;
+    --surface: #111116;
+    --card: #0d0d12;
+    --borda: #323037;
+    --line: #25252d;
+    --red: #e32636;
+    --red-bright: #ff3347;
+    --white: #f5f5f7;
+    --gray: #a1a1aa;
+    --dim: #777782;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --titulo: "Space Grotesk", Inter, system-ui, sans-serif;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; }
   body {
-    background: radial-gradient(120% 60% at 50% 0%, #2a1408 0%, var(--bg) 60%) fixed, var(--bg);
-    color: var(--ink);
+    background: var(--ink);
+    color: var(--white);
     font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
     min-height: 100vh;
     -webkit-font-smoothing: antialiased;
+    overflow-x: clip;
   }
-  main { max-width: 720px; margin: 0 auto; padding: 24px 16px 48px; }
+  ::selection { background: var(--red); color: var(--white); }
+  h1, h2 { font-family: var(--titulo); font-weight: 700; margin: 0; }
 
-  header { text-align: center; margin-bottom: 28px; }
-  h1 {
-    margin: 0;
-    font-size: clamp(28px, 8vw, 44px);
-    font-weight: 900;
-    letter-spacing: -0.02em;
-    line-height: 1.05;
+  .technical {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--dim);
   }
-  /* o degradê fica só no texto: no emoji ele pintava o alvo de laranja */
-  h1 .fogo {
-    background: linear-gradient(180deg, #ffe9b0 0%, var(--gold) 40%, var(--ember) 100%);
-    -webkit-background-clip: text; background-clip: text; color: transparent;
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 10px;
+    font-size: 11px; font-weight: 600; letter-spacing: .16em; text-transform: uppercase;
+    color: #c2c2cb;
   }
-  .periodo { margin-top: 8px; color: var(--ink-dim); font-size: 14px; }
+  .eyebrow svg { color: var(--red-bright); flex: none; }
+  .live-dot {
+    display: inline-block; flex: none; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--red-bright); box-shadow: 0 0 8px rgba(255,51,71,.6);
+  }
+  .tag {
+    font-family: var(--mono); font-size: 9px; letter-spacing: .1em;
+    color: #cf626e; border: 1px solid rgba(227,38,54,.35); border-radius: 2px; padding: 3px 7px;
+  }
+
+  /* ---------- topo ---------- */
+  .topo {
+    display: flex; justify-content: space-between; align-items: center; gap: 16px;
+    padding: 14px 6%; border-bottom: 1px solid rgba(255,255,255,.04);
+  }
+  .brand { display: flex; flex-direction: column; align-items: center; width: 96px; text-decoration: none; color: var(--white); }
+  .brand img { width: 100%; height: 46px; object-fit: contain; }
+  .brand span { font-size: 7px; letter-spacing: .65em; padding-left: .65em; margin-top: -2px; }
+  .topo .technical { border-left: 1px solid rgba(227,38,54,.35); padding-left: 12px; }
+
+  /* ---------- hero ---------- */
+  .hero {
+    position: relative; isolation: isolate; overflow: hidden;
+    background: radial-gradient(ellipse at 78% 40%, #1b0b12 0%, var(--ink) 62%);
+    padding: 56px 6% 48px;
+  }
+  /* as linhas horizontais do fundo, iguais às do site da MIRA */
+  .hero::before {
+    content: ""; position: absolute; inset: 0; z-index: -1; opacity: .35;
+    background-image: linear-gradient(rgba(255,255,255,.03) 1px, transparent 1px);
+    background-size: 100% 56px;
+  }
+  .alvo {
+    position: absolute; z-index: -1; width: 560px; max-width: none;
+    top: 50%; right: -120px; transform: translateY(-50%); opacity: .8;
+  }
+  .alvo .gira { transform-origin: 400px 400px; animation: gira 60s linear infinite; }
+  @keyframes gira { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .alvo .gira { animation: none; } }
+
+  .hero-conteudo { max-width: 960px; margin: 0 auto; }
+  .hero h1 {
+    margin: 22px 0 18px;
+    font-size: clamp(40px, 9vw, 84px); line-height: 1.04; letter-spacing: -.05em;
+    text-transform: uppercase;
+  }
+  .hero h1 span { color: var(--red-bright); }
+  .periodo { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; color: var(--gray); font-size: 14px; }
+  .periodo .technical { color: var(--red-bright); }
+
+  .regras { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 24px; }
+  .regra {
+    display: flex; align-items: baseline; gap: 8px;
+    background: rgba(17,17,22,.7); border: 1px solid #38383f; border-radius: 4px; padding: 9px 12px;
+    font-size: 12px; color: #c5c5ce;
+  }
+  .regra b { font-family: var(--titulo); font-size: 15px; color: var(--white); }
+  .regra .technical { color: var(--red-bright); font-size: 9px; }
+
+  /* ---------- seções ---------- */
+  main { max-width: 960px; margin: 0 auto; padding: 0 6% 40px; }
+  @media (min-width: 1100px) { main { padding-left: 0; padding-right: 0; } }
+  .secao-topo {
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    margin: 40px 0 18px; padding-top: 22px; border-top: 1px solid var(--line);
+  }
+  .secao-topo > .technical { border-left: 1px solid rgba(227,38,54,.35); padding-left: 12px; text-align: right; }
 
   /* ---------- pódio ---------- */
-  .podio {
-    display: grid;
-    grid-template-columns: 1fr 1.15fr 1fr;
-    align-items: end;
-    gap: 10px;
-    margin-bottom: 24px;
-  }
+  .podio { display: grid; grid-template-columns: 1fr 1.12fr 1fr; align-items: end; gap: 12px; }
   .degrau {
-    background: var(--card);
-    border: 1px solid var(--line);
-    border-radius: 18px;
-    padding: 14px 8px 16px;
-    text-align: center;
-    min-width: 0;
+    position: relative; min-width: 0; text-align: center;
+    background: var(--card); border: 1px solid var(--borda); border-radius: 4px;
+    padding: 16px 12px 20px;
+    transition: transform .25s, border-color .25s;
   }
-  .degrau.p1 { order: 2; padding-top: 22px; border-color: var(--gold); box-shadow: 0 0 32px rgba(255,176,58,.25); }
-  .degrau.p2 { order: 1; border-color: var(--prata); }
-  .degrau.p3 { order: 3; border-color: var(--bronze); }
-  .degrau .medalha { font-size: 26px; line-height: 1; }
+  .degrau:hover { transform: translateY(-4px); border-color: var(--red); }
+  .degrau.p1 {
+    order: 2; padding-top: 22px; padding-bottom: 26px;
+    border-color: var(--red); border-top: 2px solid var(--red-bright);
+    box-shadow: 0 0 36px rgba(227,38,54,.18);
+  }
+  .degrau.p2 { order: 1; border-top-color: #962835; }
+  .degrau.p3 { order: 3; border-top-color: #6d1423; }
+  .degrau-topo { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+  .degrau-topo .technical { font-size: 9px; }
+  .selo { font-family: var(--mono); font-size: 8px; letter-spacing: .1em; color: #a85761; }
+  .degrau.p1 .selo { color: var(--red-bright); }
   .degrau .foto {
-    width: 64px; height: 64px; margin: 10px auto 8px;
-    border-radius: 50%; border: 3px solid var(--line); object-fit: cover; display: block;
-    background: var(--card-2);
+    display: block; width: 64px; height: 64px; margin: 18px auto 12px;
+    border-radius: 50%; object-fit: cover; background: var(--surface);
+    border: 2px solid var(--borda);
   }
-  .degrau.p1 .foto { width: 84px; height: 84px; border-color: var(--gold); }
-  .degrau.p2 .foto { border-color: var(--prata); }
-  .degrau.p3 .foto { border-color: var(--bronze); }
-  .degrau .nome { font-weight: 700; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .degrau .arroba { font-size: 11px; color: var(--ink-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .degrau .pts { margin-top: 4px; font-weight: 900; font-size: 20px; color: var(--gold); }
-  .degrau .pts small { font-size: 11px; font-weight: 600; color: var(--ink-dim); }
+  .degrau.p1 .foto {
+    width: 88px; height: 88px; border-color: var(--red-bright);
+    box-shadow: 0 0 0 4px rgba(227,38,54,.15), 0 0 24px rgba(255,51,71,.35);
+  }
+  .degrau .nome {
+    font-family: var(--titulo); font-weight: 700; font-size: 16px; letter-spacing: -.02em;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .degrau .arroba { font-size: 11px; color: var(--gray); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
+  .degrau .pts {
+    margin-top: 12px; font-family: var(--titulo); font-weight: 700; font-size: 26px; letter-spacing: -.03em;
+    color: var(--white);
+  }
+  .degrau.p1 .pts { color: var(--red-bright); font-size: 32px; }
+  .pts small { font-family: var(--mono); font-size: 9px; letter-spacing: .1em; color: var(--dim); margin-left: 4px; font-weight: 400; }
+  .canto { position: absolute; right: 10px; bottom: 6px; font-family: var(--mono); font-size: 13px; color: #714049; }
 
-  /* ---------- tabela ---------- */
-  table { width: 100%; border-collapse: separate; border-spacing: 0 6px; }
-  thead th {
-    font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
-    color: var(--ink-dim); font-weight: 600; text-align: left; padding: 0 10px;
+  /* ---------- lista do 4º em diante ---------- */
+  .lista { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  .linha {
+    display: grid; grid-template-columns: 40px 42px minmax(0, 1fr) auto; align-items: center; gap: 12px;
+    background: var(--card); border: 1px solid var(--borda); border-radius: 4px; padding: 10px 14px;
+    transition: border-color .2s;
   }
-  thead th.num { text-align: right; }
-  tbody td { background: var(--card); padding: 10px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
-  tbody td:first-child { border-left: 1px solid var(--line); border-radius: 14px 0 0 14px; }
-  tbody td:last-child { border-right: 1px solid var(--line); border-radius: 0 14px 14px 0; }
-  .pos { width: 44px; font-weight: 800; color: var(--ink-dim); text-align: center; }
-  .quem { display: flex; align-items: center; gap: 10px; min-width: 0; }
-  .quem img { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; flex: none; background: var(--card-2); }
-  .quem .nome { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .quem .arroba { font-size: 12px; color: var(--ink-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .quem > div { min-width: 0; }
-  td.num { text-align: right; font-weight: 800; color: var(--gold); white-space: nowrap; }
-  td.nomecol { max-width: 0; width: 100%; }
+  .linha:hover { border-color: #63242e; }
+  .linha .pos { font-family: var(--titulo); font-size: 14px; color: var(--red-bright); text-align: center; }
+  .linha img { width: 42px; height: 42px; border-radius: 50%; object-fit: cover; background: var(--surface); border: 1px solid var(--borda); }
+  .linha .quem { min-width: 0; }
+  .linha .nome { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .linha .arroba { font-size: 12px; color: var(--gray); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .linha .pts { font-family: var(--titulo); font-weight: 700; font-size: 18px; white-space: nowrap; }
 
   .vivo {
-    display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 999px;
-    background: var(--ao-vivo); color: #fff; font-size: 10px; font-weight: 800; vertical-align: middle;
+    display: inline-flex; align-items: center; gap: 5px; margin-left: 8px; vertical-align: middle;
+    font-family: var(--mono); font-size: 9px; letter-spacing: .1em; color: var(--red-bright);
+    border: 1px solid rgba(255,51,71,.4); border-radius: 2px; padding: 1px 5px;
   }
+  .degrau .vivo { margin: 8px 0 0; }
+  .vivo .live-dot { width: 5px; height: 5px; animation: pisca 1.6s ease-in-out infinite; }
+  @keyframes pisca { 50% { opacity: .3; } }
+  @media (prefers-reduced-motion: reduce) { .vivo .live-dot { animation: none; } }
 
-  .rodape { margin-top: 20px; text-align: center; color: var(--ink-dim); font-size: 13px; }
-  .aviso { color: var(--gold); }
-  .vazio { text-align: center; color: var(--ink-dim); padding: 40px 0; }
+  .vazio {
+    text-align: center; color: var(--gray); padding: 48px 16px;
+    border: 1px dashed var(--borda); border-radius: 4px;
+  }
+  .vazio .technical { display: block; margin-bottom: 8px; color: var(--red-bright); }
 
-  @media (max-width: 420px) {
+  /* ---------- rodapé ---------- */
+  .rodape {
+    position: relative; margin-top: 40px; padding: 22px 36px 8px 0; border-top: 1px solid var(--line);
+    display: flex; flex-direction: column; gap: 6px; color: var(--gray); font-size: 12px;
+  }
+  .rodape .aviso { color: var(--red-bright); }
+  /* A entrada do administrador: de propósito no canto e apagada. O público não
+     precisa dela, mas quem cuida da campanha acha sem decorar o endereço. */
+  .adm {
+    position: absolute; right: 0; bottom: 4px;
+    display: flex; align-items: center; justify-content: center;
+    width: 28px; height: 28px; border-radius: 4px;
+    color: var(--dim); opacity: .35; border: 1px solid transparent;
+    transition: opacity .2s, color .2s, border-color .2s;
+  }
+  .adm:hover, .adm:focus-visible { opacity: 1; color: var(--red-bright); border-color: rgba(227,38,54,.4); outline: none; }
+
+  /* ---------- celular ---------- */
+  @media (max-width: 640px) {
+    .topo .technical { display: none; }
+    .hero { padding: 36px 6% 36px; }
+    .alvo { width: 420px; right: -190px; opacity: .45; }
+    .regra { font-size: 11px; padding: 8px 10px; }
+    .secao-topo { margin-top: 32px; }
     .podio { gap: 6px; }
-    .degrau { padding: 10px 4px 12px; border-radius: 14px; }
-    .degrau .foto { width: 52px; height: 52px; }
+    .degrau { padding: 12px 6px 16px; }
+    .degrau.p1 { padding-top: 16px; padding-bottom: 20px; }
+    .degrau-topo { flex-direction: column; gap: 2px; }
+    .degrau .foto { width: 52px; height: 52px; margin: 12px auto 8px; }
     .degrau.p1 .foto { width: 68px; height: 68px; }
-    .degrau .nome { font-size: 12px; }
-    .degrau .pts { font-size: 17px; }
-    .quem img { width: 34px; height: 34px; }
+    .degrau .nome { font-size: 13px; }
+    .degrau .pts { font-size: 20px; }
+    .degrau.p1 .pts { font-size: 24px; }
+    .pts small { display: block; margin: 2px 0 0; }
+    .canto { display: none; }
+    .linha { grid-template-columns: 28px 36px minmax(0, 1fr) auto; gap: 10px; padding: 9px 10px; }
+    .linha img { width: 36px; height: 36px; }
+    .linha .pts small { display: inline; margin-left: 3px; }
   }
 </style>
 </head>
 <body>
-<main>
-  <header>
-    <h1><span class="fogo">TEM LEÃO NA MIRA!</span> 🎯</h1>
+<header class="topo">
+  <a class="brand" href="/mira.html" aria-label="MIRA Agency — ranking">
+    <img src="/assets/mira-logo.png" alt="MIRA" width="96" height="48">
+    <span>AGENCY</span>
+  </a>
+  <span class="technical">Ranking oficial / Campanha</span>
+</header>
+
+<section class="hero">
+  <svg class="alvo" viewBox="0 0 800 800" fill="none" aria-hidden="true">
+    <defs>
+      <radialGradient id="luz"><stop stop-color="#E32636" stop-opacity=".14"/><stop offset="1" stop-color="#E32636" stop-opacity="0"/></radialGradient>
+    </defs>
+    <circle cx="400" cy="400" r="395" fill="url(#luz)"/>
+    <g class="gira">
+      <circle cx="400" cy="400" r="330" stroke="#E32636" stroke-opacity=".35" stroke-width="8" stroke-dasharray="1 23"/>
+      <circle cx="400" cy="400" r="290" stroke="#FF3347" stroke-opacity=".55" stroke-width="12" stroke-dasharray="520 160 300 420"/>
+    </g>
+    <circle cx="400" cy="400" r="344" stroke="#E32636" stroke-opacity=".2"/>
+    <circle cx="400" cy="400" r="225" stroke="#E32636" stroke-opacity=".2"/>
+    <circle cx="400" cy="400" r="150" stroke="#E32636" stroke-opacity=".25" stroke-dasharray="2 8"/>
+    <circle cx="400" cy="400" r="66" stroke="#FF3347" stroke-opacity=".7"/>
+    <circle cx="400" cy="400" r="5" fill="#FF3347"/>
+    <path d="M400 20v150M400 630v150M20 400h150M630 400h150" stroke="#FF3347" stroke-opacity=".45" stroke-width="2"/>
+  </svg>
+
+  <div class="hero-conteudo">
+    <div class="eyebrow"><span class="live-dot"></span> Campanha oficial <span class="tag">TIKTOK LIVE</span></div>
+    <h1>Tem leão<br><span>na mira! 🎯</span></h1>
     <div class="periodo" id="periodo"></div>
-  </header>
+    <div class="regras" id="regras" aria-label="Como pontuar"></div>
+  </div>
+</section>
+
+<main>
+  <div class="secao-topo">
+    <span class="eyebrow">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2"/><path d="M12 1v5M12 18v5M1 12h5M18 12h5"/></svg>
+      Top 3
+    </span>
+    <span class="technical" id="atualizadoTopo"></span>
+  </div>
 
   <section class="podio" id="podio" aria-label="Top 3"></section>
 
-  <table id="tabela" hidden>
-    <thead><tr><th>#</th><th>Sniper</th><th class="num">Pontos</th></tr></thead>
-    <tbody id="linhas"></tbody>
-  </table>
+  <div class="vazio" id="vazio" hidden>
+    <span class="technical">Missão iniciada</span>
+    O ranking aparece aqui assim que as lives começarem.
+  </div>
 
-  <div class="vazio" id="vazio" hidden>O ranking aparece aqui assim que as lives começarem.</div>
+  <div id="blocoLista" hidden>
+    <div class="secao-topo">
+      <span class="eyebrow">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+        Classificação
+      </span>
+      <span class="technical">Desempate: diamantes, depois horas</span>
+    </div>
+    <ol class="lista" id="lista"></ol>
+  </div>
 
-  <div class="rodape">
+  <footer class="rodape">
     <div id="atualizado">Carregando…</div>
     <div class="aviso" id="aviso" hidden>Sem conexão agora — mostrando os últimos dados.</div>
-  </div>
+    <a class="adm" href="/login.html" title="Área do administrador" aria-label="Área do administrador">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+    </a>
+  </footer>
 </main>
 
 <script>
@@ -152,13 +312,15 @@
   // URL assinada e vence.
   const AVATAR_PADRAO = 'data:image/svg+xml;utf8,' + encodeURIComponent(
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">' +
-    '<rect width="64" height="64" fill="#1c1510"/>' +
-    '<circle cx="32" cy="25" r="11" fill="#5a4c40"/>' +
-    '<path d="M12 56c2-11 10-17 20-17s18 6 20 17" fill="#5a4c40"/></svg>');
+    '<rect width="64" height="64" fill="#111116"/>' +
+    '<circle cx="32" cy="25" r="11" fill="#3a3a44"/>' +
+    '<path d="M12 56c2-11 10-17 20-17s18 6 20 17" fill="#3a3a44"/></svg>');
 
   const fmtData = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
   const fmtHora = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
   const fmtNum = new Intl.NumberFormat('pt-BR');
+  const dois = n => String(n).padStart(2, '0');
+  const $ = id => document.getElementById(id);
 
   // tudo que vem do TikTok entra por textContent/src — nunca por innerHTML
   function el(tag, classe, texto) {
@@ -178,55 +340,80 @@
     return img;
   }
 
+  function vivo() {
+    const v = el('span', 'vivo');
+    v.append(el('span', 'live-dot'), 'AO VIVO');
+    return v;
+  }
+
+  function pontos(total, classe) {
+    const p = el('div', classe, fmtNum.format(total));
+    p.append(el('small', '', 'PTS'));
+    return p;
+  }
+
   function desenharPodio(top) {
-    const podio = document.getElementById('podio');
+    const podio = $('podio');
     podio.replaceChildren();
-    const medalhas = ['🥇', '🥈', '🥉'];
+    const selos = ['LÍDER', 'VICE', '3º LUGAR'];
     top.forEach((s, i) => {
       const d = el('div', 'degrau p' + (i + 1));
-      d.append(el('div', 'medalha', medalhas[i]), foto(s.avatar, 'foto'));
+      const topo = el('div', 'degrau-topo');
+      topo.append(el('span', 'technical', 'POS. ' + dois(i + 1)), el('span', 'selo', selos[i]));
       const nome = el('div', 'nome', s.nome);
-      if (s.aoVivo) nome.append(el('span', 'vivo', 'AO VIVO'));
-      const pts = el('div', 'pts', fmtNum.format(s.total) + ' ');
-      pts.append(el('small', '', 'pts'));
-      d.append(nome, el('div', 'arroba', '@' + s.arroba), pts);
+      d.append(topo, foto(s.avatar, 'foto'), nome, el('div', 'arroba', '@' + s.arroba));
+      if (s.aoVivo) d.append(vivo());
+      d.append(pontos(s.total, 'pts'), el('span', 'canto', '+'));
       podio.append(d);
     });
     podio.hidden = top.length === 0;
   }
 
-  function desenharTabela(resto) {
-    const corpo = document.getElementById('linhas');
-    corpo.replaceChildren();
+  function desenharLista(resto) {
+    const lista = $('lista');
+    lista.replaceChildren();
     resto.forEach(s => {
-      const tr = el('tr');
+      const li = el('li', 'linha');
       const quem = el('div', 'quem');
-      const textos = el('div');
       const nome = el('div', 'nome', s.nome);
-      if (s.aoVivo) nome.append(el('span', 'vivo', 'AO VIVO'));
-      textos.append(nome, el('div', 'arroba', '@' + s.arroba));
-      quem.append(foto(s.avatar), textos);
-      const tdQuem = el('td', 'nomecol');
-      tdQuem.append(quem);
-      tr.append(el('td', 'pos', s.posicao + 'º'), tdQuem, el('td', 'num', fmtNum.format(s.total)));
-      corpo.append(tr);
+      if (s.aoVivo) nome.append(vivo());
+      quem.append(nome, el('div', 'arroba', '@' + s.arroba));
+      li.append(el('span', 'pos', dois(s.posicao)), foto(s.avatar), quem, pontos(s.total, 'pts'));
+      lista.append(li);
     });
-    document.getElementById('tabela').hidden = resto.length === 0;
+    $('blocoLista').hidden = resto.length === 0;
+  }
+
+  function desenharRegras(r) {
+    const caixa = $('regras');
+    caixa.replaceChildren();
+    if (!r) return;
+    [
+      [`1h de live`, r.PONTOS_POR_HORA],
+      [`${fmtNum.format(r.DIAMANTES_POR_BLOCO)} diamantes`, r.PONTOS_POR_BLOCO],
+      [`Indicação na MIRA`, r.PONTOS_POR_INDICACAO]
+    ].forEach(([oque, vale]) => {
+      const chip = el('div', 'regra');
+      chip.append(el('span', '', oque), el('b', '', '+' + vale), el('span', 'technical', 'PTS'));
+      caixa.append(chip);
+    });
   }
 
   function desenhar(dados) {
     const c = dados.campanha || {};
     if (c.inicio && c.fim) {
-      document.getElementById('periodo').textContent =
-        `Campanha de ${fmtData.format(c.inicio)} a ${fmtData.format(c.fim)}`;
+      const p = $('periodo');
+      p.replaceChildren(el('span', 'technical', 'Missão'),
+        el('span', '', `${fmtData.format(c.inicio)} → ${fmtData.format(c.fim)}`));
     }
+    desenharRegras(c.regras);
     const ranking = dados.ranking || [];
     desenharPodio(ranking.slice(0, 3));
-    desenharTabela(ranking.slice(3));
-    document.getElementById('vazio').hidden = ranking.length > 0;
-    document.getElementById('atualizado').textContent = dados.atualizadoEm
-      ? 'Atualizado em ' + fmtHora.format(dados.atualizadoEm)
-      : 'Aguardando a primeira atualização';
+    desenharLista(ranking.slice(3));
+    $('vazio').hidden = ranking.length > 0;
+    const quando = dados.atualizadoEm ? fmtHora.format(dados.atualizadoEm) : null;
+    $('atualizado').textContent = quando ? 'Atualizado em ' + quando : 'Aguardando a primeira atualização';
+    $('atualizadoTopo').textContent = quando ? 'Atualizado ' + quando : '';
   }
 
   let temDados = false;
@@ -236,11 +423,11 @@
       if (!r.ok) throw new Error('HTTP ' + r.status);
       desenhar(await r.json());
       temDados = true;
-      document.getElementById('aviso').hidden = true;
+      $('aviso').hidden = true;
     } catch (e) {
       // falhou: o que já está na tela fica — melhor dado velho que tela vazia
-      document.getElementById('aviso').hidden = !temDados;
-      if (!temDados) document.getElementById('atualizado').textContent = 'Não consegui carregar o ranking. Tentando de novo…';
+      $('aviso').hidden = !temDados;
+      if (!temDados) $('atualizado').textContent = 'Não consegui carregar o ranking. Tentando de novo…';
     }
   }
 
