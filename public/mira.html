@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TEM LEÃO NA MIRA! 🎯</title>
+<meta name="description" content="Ranking oficial da campanha TEM LEÃO NA MIRA!">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  /* ===========================================================================
+     Página pública: não usa /assets/theme.css porque o gate de login só libera
+     esta página e a API do ranking. A paleta é a mesma do ranking da live.
+     Nada aqui escreve: é só leitura do /api/mira/ranking.
+     =========================================================================== */
+  :root {
+    --bg: #0a0807;
+    --card: #150f0b;
+    --card-2: #1c1510;
+    --line: #2b2119;
+    --ink: #f3e9dc;
+    --ink-dim: #9c8b7d;
+    --gold: #ffb03a;
+    --ember: #ff7a1a;
+    --prata: #d7dde6;
+    --bronze: #e0915a;
+    --ao-vivo: #ff2d55;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: radial-gradient(120% 60% at 50% 0%, #2a1408 0%, var(--bg) 60%) fixed, var(--bg);
+    color: var(--ink);
+    font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+  main { max-width: 720px; margin: 0 auto; padding: 24px 16px 48px; }
+
+  header { text-align: center; margin-bottom: 28px; }
+  h1 {
+    margin: 0;
+    font-size: clamp(28px, 8vw, 44px);
+    font-weight: 900;
+    letter-spacing: -0.02em;
+    line-height: 1.05;
+  }
+  /* o degradê fica só no texto: no emoji ele pintava o alvo de laranja */
+  h1 .fogo {
+    background: linear-gradient(180deg, #ffe9b0 0%, var(--gold) 40%, var(--ember) 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .periodo { margin-top: 8px; color: var(--ink-dim); font-size: 14px; }
+
+  /* ---------- pódio ---------- */
+  .podio {
+    display: grid;
+    grid-template-columns: 1fr 1.15fr 1fr;
+    align-items: end;
+    gap: 10px;
+    margin-bottom: 24px;
+  }
+  .degrau {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    padding: 14px 8px 16px;
+    text-align: center;
+    min-width: 0;
+  }
+  .degrau.p1 { order: 2; padding-top: 22px; border-color: var(--gold); box-shadow: 0 0 32px rgba(255,176,58,.25); }
+  .degrau.p2 { order: 1; border-color: var(--prata); }
+  .degrau.p3 { order: 3; border-color: var(--bronze); }
+  .degrau .medalha { font-size: 26px; line-height: 1; }
+  .degrau .foto {
+    width: 64px; height: 64px; margin: 10px auto 8px;
+    border-radius: 50%; border: 3px solid var(--line); object-fit: cover; display: block;
+    background: var(--card-2);
+  }
+  .degrau.p1 .foto { width: 84px; height: 84px; border-color: var(--gold); }
+  .degrau.p2 .foto { border-color: var(--prata); }
+  .degrau.p3 .foto { border-color: var(--bronze); }
+  .degrau .nome { font-weight: 700; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .degrau .arroba { font-size: 11px; color: var(--ink-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .degrau .pts { margin-top: 4px; font-weight: 900; font-size: 20px; color: var(--gold); }
+  .degrau .pts small { font-size: 11px; font-weight: 600; color: var(--ink-dim); }
+
+  /* ---------- tabela ---------- */
+  table { width: 100%; border-collapse: separate; border-spacing: 0 6px; }
+  thead th {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--ink-dim); font-weight: 600; text-align: left; padding: 0 10px;
+  }
+  thead th.num { text-align: right; }
+  tbody td { background: var(--card); padding: 10px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  tbody td:first-child { border-left: 1px solid var(--line); border-radius: 14px 0 0 14px; }
+  tbody td:last-child { border-right: 1px solid var(--line); border-radius: 0 14px 14px 0; }
+  .pos { width: 44px; font-weight: 800; color: var(--ink-dim); text-align: center; }
+  .quem { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .quem img { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; flex: none; background: var(--card-2); }
+  .quem .nome { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .quem .arroba { font-size: 12px; color: var(--ink-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .quem > div { min-width: 0; }
+  td.num { text-align: right; font-weight: 800; color: var(--gold); white-space: nowrap; }
+  td.nomecol { max-width: 0; width: 100%; }
+
+  .vivo {
+    display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 999px;
+    background: var(--ao-vivo); color: #fff; font-size: 10px; font-weight: 800; vertical-align: middle;
+  }
+
+  .rodape { margin-top: 20px; text-align: center; color: var(--ink-dim); font-size: 13px; }
+  .aviso { color: var(--gold); }
+  .vazio { text-align: center; color: var(--ink-dim); padding: 40px 0; }
+
+  @media (max-width: 420px) {
+    .podio { gap: 6px; }
+    .degrau { padding: 10px 4px 12px; border-radius: 14px; }
+    .degrau .foto { width: 52px; height: 52px; }
+    .degrau.p1 .foto { width: 68px; height: 68px; }
+    .degrau .nome { font-size: 12px; }
+    .degrau .pts { font-size: 17px; }
+    .quem img { width: 34px; height: 34px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1><span class="fogo">TEM LEÃO NA MIRA!</span> 🎯</h1>
+    <div class="periodo" id="periodo"></div>
+  </header>
+
+  <section class="podio" id="podio" aria-label="Top 3"></section>
+
+  <table id="tabela" hidden>
+    <thead><tr><th>#</th><th>Sniper</th><th class="num">Pontos</th></tr></thead>
+    <tbody id="linhas"></tbody>
+  </table>
+
+  <div class="vazio" id="vazio" hidden>O ranking aparece aqui assim que as lives começarem.</div>
+
+  <div class="rodape">
+    <div id="atualizado">Carregando…</div>
+    <div class="aviso" id="aviso" hidden>Sem conexão agora — mostrando os últimos dados.</div>
+  </div>
+</main>
+
+<script>
+  // Avatar padrão embutido: não depende de rede nem da foto do TikTok, que é
+  // URL assinada e vence.
+  const AVATAR_PADRAO = 'data:image/svg+xml;utf8,' + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">' +
+    '<rect width="64" height="64" fill="#1c1510"/>' +
+    '<circle cx="32" cy="25" r="11" fill="#5a4c40"/>' +
+    '<path d="M12 56c2-11 10-17 20-17s18 6 20 17" fill="#5a4c40"/></svg>');
+
+  const fmtData = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const fmtHora = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  const fmtNum = new Intl.NumberFormat('pt-BR');
+
+  // tudo que vem do TikTok entra por textContent/src — nunca por innerHTML
+  function el(tag, classe, texto) {
+    const e = document.createElement(tag);
+    if (classe) e.className = classe;
+    if (texto !== undefined) e.textContent = texto;
+    return e;
+  }
+
+  function foto(url, classe) {
+    const img = el('img', classe);
+    img.alt = '';
+    img.loading = 'lazy';
+    img.referrerPolicy = 'no-referrer';
+    img.onerror = () => { img.onerror = null; img.src = AVATAR_PADRAO; };
+    img.src = /^https:\/\//.test(url || '') ? url : AVATAR_PADRAO;
+    return img;
+  }
+
+  function desenharPodio(top) {
+    const podio = document.getElementById('podio');
+    podio.replaceChildren();
+    const medalhas = ['🥇', '🥈', '🥉'];
+    top.forEach((s, i) => {
+      const d = el('div', 'degrau p' + (i + 1));
+      d.append(el('div', 'medalha', medalhas[i]), foto(s.avatar, 'foto'));
+      const nome = el('div', 'nome', s.nome);
+      if (s.aoVivo) nome.append(el('span', 'vivo', 'AO VIVO'));
+      const pts = el('div', 'pts', fmtNum.format(s.total) + ' ');
+      pts.append(el('small', '', 'pts'));
+      d.append(nome, el('div', 'arroba', '@' + s.arroba), pts);
+      podio.append(d);
+    });
+    podio.hidden = top.length === 0;
+  }
+
+  function desenharTabela(resto) {
+    const corpo = document.getElementById('linhas');
+    corpo.replaceChildren();
+    resto.forEach(s => {
+      const tr = el('tr');
+      const quem = el('div', 'quem');
+      const textos = el('div');
+      const nome = el('div', 'nome', s.nome);
+      if (s.aoVivo) nome.append(el('span', 'vivo', 'AO VIVO'));
+      textos.append(nome, el('div', 'arroba', '@' + s.arroba));
+      quem.append(foto(s.avatar), textos);
+      const tdQuem = el('td', 'nomecol');
+      tdQuem.append(quem);
+      tr.append(el('td', 'pos', s.posicao + 'º'), tdQuem, el('td', 'num', fmtNum.format(s.total)));
+      corpo.append(tr);
+    });
+    document.getElementById('tabela').hidden = resto.length === 0;
+  }
+
+  function desenhar(dados) {
+    const c = dados.campanha || {};
+    if (c.inicio && c.fim) {
+      document.getElementById('periodo').textContent =
+        `Campanha de ${fmtData.format(c.inicio)} a ${fmtData.format(c.fim)}`;
+    }
+    const ranking = dados.ranking || [];
+    desenharPodio(ranking.slice(0, 3));
+    desenharTabela(ranking.slice(3));
+    document.getElementById('vazio').hidden = ranking.length > 0;
+    document.getElementById('atualizado').textContent = dados.atualizadoEm
+      ? 'Atualizado em ' + fmtHora.format(dados.atualizadoEm)
+      : 'Aguardando a primeira atualização';
+  }
+
+  let temDados = false;
+  async function carregar() {
+    try {
+      const r = await fetch('/api/mira/ranking', { headers: { Accept: 'application/json' } });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      desenhar(await r.json());
+      temDados = true;
+      document.getElementById('aviso').hidden = true;
+    } catch (e) {
+      // falhou: o que já está na tela fica — melhor dado velho que tela vazia
+      document.getElementById('aviso').hidden = !temDados;
+      if (!temDados) document.getElementById('atualizado').textContent = 'Não consegui carregar o ranking. Tentando de novo…';
+    }
+  }
+
+  carregar();
+  setInterval(carregar, 60 * 1000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) carregar(); });
+</script>
+</body>
+</html>

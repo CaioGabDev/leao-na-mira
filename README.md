@@ -24,6 +24,7 @@ a live de ninguém.
 - [API](#api)
 - [Eventos de socket](#eventos-de-socket)
 - [Deploy (Railway)](#deploy-railway)
+- [Campanha "TEM LEÃO NA MIRA! 🎯"](#campanha-tem-leão-na-mira-)
 - [Mapa dos arquivos](#mapa-dos-arquivos)
 - [Armadilhas conhecidas](#armadilhas-conhecidas)
 
@@ -518,6 +519,9 @@ cadeia de reconexão por live: quem remarca cancela o que estava marcado, e o
 | `ADMIN_USER` / `ADMIN_PASSWORD` | Cria o primeiro administrador na subida, se ele ainda não existir. |
 | `DEV_LOCAL=1` | **Só na sua máquina.** Aceita rodar sem `SESSION_SECRET` e manda o cookie de sessão por HTTP. Em qualquer deploy, não defina: o padrão já é `trust proxy` ligado e cookie `secure`. |
 | `RAILWAY_ENVIRONMENT` | Quando existe, todos os arquivos de dados passam a morar em `/data`. |
+| `MIRA_INICIO` / `MIRA_FIM` | Período da campanha, em ISO com fuso (`2026-11-01T00:00:00-03:00`). Sem elas, vale o que está no `campanha.config.js`. |
+| `MIRA_SNIPERS` | `@` dos snipers da campanha, separados por vírgula. Cada um vira uma live monitorada na subida. |
+| `MIRA_CACHE_MS` | De quanto em quanto tempo o ranking da campanha é recalculado. Padrão: `60000`. |
 
 ---
 
@@ -586,6 +590,39 @@ responde **413** com o tamanho dito, não um 500 mudo.
 
 ---
 
+## Tirar uma pessoa do ranking
+
+Cada linha do ranking tem um **×**. Ele não remove: abre uma confirmação que diz
+o nome de quem vai sair e o que exatamente acontece. A linha inteira já é
+clicável (abre o perfil), então um × que apagasse direto ficaria a um toque
+errado de distância de uma ação sem volta.
+
+Até existir, a única limpeza era o `/api/reset` — apaga tudo de todo mundo. Esta
+é a tesoura fina, e serve pras duas coisas que pediram a mesma porta: tirar um
+bot ou um perfil indesejado da lista, e **apagar os dados de quem pede pra
+sair**, que era o buraco apontado na auditoria.
+
+O que sai: a ficha, as ações no feed e o estoque de power-ups. O que **fica**,
+de propósito:
+
+| | |
+|---|---|
+| likes, comentários, diamantes totais | **não mudam** — o que a pessoa já deu, deu, e um streamer que remove um perfil não espera ver o faturamento do dia encolher junto |
+| visitantes únicos, seguiram, compartilharam | **caem um** — esses contam pessoas, e agora tem uma pessoa a menos |
+
+É a mesma régua que a limpeza das fichas-fantasma do `db.js` já usava.
+
+**Não é bloqueio.** Se a pessoa interagir de novo na live, ela volta — e a
+confirmação diz isso na cara. Bloquear é outra decisão e outra tela; tomá-la aqui
+calado seria pior.
+
+O escopo sai da **sessão**, nunca do corpo do pedido: `teste/ranking-remover.js`
+prova que o `uniqueId` de uma live não alcança a outra (as duas lives do teste
+usam ids diferentes de propósito — com ids iguais, "não alcançou" seria
+indistinguível de "removeu o próprio").
+
+---
+
 ## Eventos de socket
 
 O socket usa a mesma sessão do Express, e conexão sem login é recusada no
@@ -625,6 +662,52 @@ nativa pra buildar no deploy.
 
 ---
 
+## Campanha "TEM LEÃO NA MIRA! 🎯"
+
+Ranking público dos snipers, em `/mira.html`. Não pede login nem cadastro, e
+só lê dados.
+
+**Pontuação** (só dentro do período da campanha), em `pontuacao.js`, com os
+valores em `campanha.config.js`:
+
+| Regra | Pontos |
+|---|---|
+| Cada 1h **completa** de live, somando todas as lives do período | 10 |
+| Cada 500 diamantes: `floor(diamantes / 500) * 30` | 30 |
+| Cada indicado que entrou oficialmente na MIRA e fez a 1ª live | 20 |
+
+Empate: mais diamantes, depois mais horas.
+
+**De onde vem cada número:**
+
+- **Horas e diamantes**: do histórico de lives de cada sniper (`db.getSessions()`,
+  mais a live que estiver no ar). Isso exige que o `@` esteja em `MIRA_SNIPERS`,
+  porque só assim a live dele fica conectada. Live que não foi acompanhada (o
+  servidor estava fora do ar, o sniper entrou depois) **não existe** pra conta.
+- **Bordas do período**: a duração é cortada no início e no fim. O diamante vai
+  pela live inteira, porque a sessão guarda o total e não a hora de cada presente.
+- **Indicações**: entrada manual do administrador em `/mira-admin.html`, gravada
+  na tabela `indicacoes` do `dados.db`. Um mesmo indicado só pode ser
+  creditado uma vez.
+- **Foto e nome**: do `roomInfo` que o `connect()` da lib já busca. É JSON cru do
+  TikTok, e o caminho `data.owner.avatar_thumb.url_list` ainda **não foi
+  conferido numa live real**. Sem foto, ou com foto vencida (a URL é assinada), a
+  tela mostra o avatar padrão.
+
+**Cache**: o ranking é recalculado no máximo a cada `MIRA_CACHE_MS`, e na hora
+quando uma indicação muda. Se o cálculo de um sniper falha, ele fica com a
+última linha boa. Se falha tudo, vale o último ranking.
+
+**Acesso**: `GET /api/mira/ranking` é público. `GET/POST /api/mira/indicacoes`,
+`PUT` e `DELETE /api/mira/indicacoes/:id` passam pelo login **e** pelo
+`requireAdmin`, igual à página `mira-admin.html`.
+
+```bash
+node --test teste/pontuacao.js   # a conta, nas bordas (499/500, 59/60 min)
+```
+
+---
+
 ## Mapa dos arquivos
 
 ```
@@ -641,6 +724,10 @@ session-store.js   sessões em arquivo
 fundos.js          a foto de fundo do mural, uma por live (não se herda)
 protocru.js        lê o protobuf cru pra achar campo que a lib não conhece
 create-user.js     cadastro pela linha de comando
+campanha.config.js a campanha MIRA: valores da pontuação, período, snipers
+pontuacao.js       a conta da campanha (pura, testada)
+campanha.js        o ranking da campanha, com cache e último dado bom
+indicacoes.js      quem indicou quem (tabela `indicacoes` no dados.db)
 
 public/
   index.html       o ranking (a tela principal)
@@ -651,6 +738,8 @@ public/
   config.html      a aparência
   login.html       entrada
   ativar.html      troca de chave por conta
+  mira.html        ranking público da campanha (sem login)
+  mira-admin.html  indicações da campanha (só administrador)
   assets/theme.css os tokens de tema e as primitivas `app-`
   assets/fundo.js  reduzir/enviar a foto de fundo (mural e aparência usam o mesmo)
 
@@ -659,6 +748,7 @@ teste/
   fundo-http.js    as rotas: quem pode mexer na foto de quem (sobe o servidor)
   fundo-cores.js   a cor que a base do poster puxa da foto (conta pura)
   navegar.js       abre a página num Chrome de verdade, mexe nela e fotografa
+  pontuacao.js     a conta da campanha MIRA (node --test)
 ```
 
 ---

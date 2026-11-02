@@ -646,7 +646,7 @@
      ===================================================================== */
   .list { display: flex; flex-direction: column; gap: 6px; }
   .row {
-    display: grid; grid-template-columns: 34px 34px minmax(0, 1fr) auto;
+    display: grid; grid-template-columns: 34px 34px minmax(0, 1fr) auto 24px;
     align-items: center; gap: 12px;
     background: var(--card-2); border: 1px solid var(--line);
     border-left: 3px solid transparent;
@@ -663,6 +663,46 @@
   .top2 .rank { color: #ffcf9e; }
   .top3 .rank { color: #ff9d6a; }
   .row-avatar { width: 34px; height: 34px; border-radius: 50%; object-fit: cover; background: #2a1810; }
+
+  /* O X DE TIRAR DO RANKING.
+     Fica apagado até encostarem nele: é uma ação destrutiva no meio de uma
+     lista que a pessoa percorre o tempo todo, então não pode disputar atenção
+     com o ranking em si. No celular não existe "passar o mouse", então lá ele
+     fica sempre visível (fraquinho) -- esconder atrás de um hover seria
+     esconder pra sempre de quem usa o site do telefone. */
+  .row-x {
+    width: 24px; height: 24px; padding: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: none; border: 1px solid transparent; border-radius: 7px;
+    color: var(--ink-faint); font-size: 16px; line-height: 1;
+    cursor: pointer; opacity: .28;
+    transition: opacity .15s ease, color .15s ease, border-color .15s ease, background .15s ease;
+  }
+  .row:hover .row-x { opacity: .75; }
+  .row-x:hover {
+    opacity: 1; color: #ff8a6a;
+    border-color: rgba(255,61,26,.45); background: rgba(255,61,26,.12);
+  }
+  @media (hover: none) { .row-x { opacity: .5; } }
+
+  /* a confirmação */
+  .confirma-titulo { font-size: 17px; font-weight: 700; margin-bottom: 10px; }
+  .confirma-nome { color: var(--gold); }
+  .confirma-texto { font-size: 13.5px; color: var(--ink-dim); line-height: 1.55; }
+  .confirma-texto ul { margin: 8px 0 0; padding-left: 18px; }
+  .confirma-texto li { margin-bottom: 4px; }
+  .confirma-acoes { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; flex-wrap: wrap; }
+  .confirma-acoes button {
+    font: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
+    padding: 9px 16px; border-radius: var(--r-md); border: 1px solid var(--line);
+    background: var(--card-3); color: var(--ink-dim);
+  }
+  .confirma-acoes button:hover { color: var(--ink); border-color: var(--ink-faint); }
+  .confirma-acoes .perigo {
+    background: rgba(255,61,26,.16); border-color: rgba(255,61,26,.5); color: #ff9d82;
+  }
+  .confirma-acoes .perigo:hover { background: rgba(255,61,26,.26); border-color: #ff3d1a; color: #fff; }
+  .confirma-acoes button[disabled] { opacity: .5; pointer-events: none; }
   .name {
     display: flex; align-items: center; gap: 8px; min-width: 0;
     font-weight: 700; font-size: 14.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -1099,6 +1139,26 @@
 
 </main>
 
+<!-- Confirmação de remoção. Separada do modal de perfil de propósito: um
+     some com a pessoa da lista, o outro só mostra os números dela, e misturar
+     os dois num modal só seria juntar "olhar" com "apagar". -->
+<div class="modal-overlay" id="removerOverlay">
+  <div class="modal-box" style="max-width:380px">
+    <div class="confirma-titulo">Tirar <span class="confirma-nome" id="removerNome">—</span> do ranking?</div>
+    <div class="confirma-texto">
+      Essa pessoa sai da lista, do feed e da aba de power-ups desta live.
+      <ul>
+        <li>Os totais da live (likes, comentários, diamantes) <b>não</b> mudam — o que ela já deu, deu.</li>
+        <li>Se ela interagir de novo na live, <b>volta a aparecer</b>. Isto apaga, não bloqueia.</li>
+      </ul>
+    </div>
+    <div class="confirma-acoes">
+      <button id="removerCancelar">Cancelar</button>
+      <button class="perigo" id="removerConfirmar">Tirar do ranking</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modalOverlay">
   <div class="modal-box">
     <button class="modal-close" id="modalClose">×</button>
@@ -1392,12 +1452,26 @@
        <div class="stat">🎁 <span class="val dinheiro">${u.gifts_value}</span></div>`
   }
 </div>
+<button class="row-x" data-remover="${esc(u.uniqueId)}"
+        title="Tirar ${esc(u.nickname || u.uniqueId)} do ranking"
+        aria-label="Tirar do ranking">×</button>
         </div>
       `;
     }).join('');
 
     container.querySelectorAll('.row').forEach(el => {
       el.addEventListener('click', () => openProfile(el.dataset.uid));
+    });
+
+    // O X precisa parar o clique: a linha inteira abre o perfil, e sem isto
+    // pedir pra remover abriria o perfil junto, por baixo da confirmação.
+    container.querySelectorAll('.row-x').forEach(el => {
+      el.addEventListener('click', e => {
+        e.stopPropagation();
+        const uid = el.dataset.remover;
+        const pessoa = latestData.find(u => String(u.uniqueId) === String(uid));
+        pedirConfirmacaoDeRemocao(uid, (pessoa && pessoa.nickname) || uid);
+      });
     });
 
     if (Object.keys(previousRankMap).length) {
@@ -1608,6 +1682,67 @@
   // O histórico saiu daqui: virou o Painel da Live, que tem gráfico,
   // melhores dias, recordes e a tabela completa. A aba "📜 Histórico" lá em
   // cima é um link pra lá.
+
+  // ---------- TIRAR DO RANKING ----------
+  // Até aqui a única limpeza era o /api/reset, que apaga tudo de todo mundo.
+  // Isto é a tesoura fina: um bot, um perfil indesejado, ou quem pede pra sair.
+  //
+  // O X não remove — ele pergunta. A linha inteira já é clicável (abre o
+  // perfil), então um X que apagasse direto ficaria a um toque errado de
+  // distância de uma ação que não tem volta.
+  const removerOverlay  = document.getElementById('removerOverlay');
+  const removerNomeEl   = document.getElementById('removerNome');
+  const removerConfirma = document.getElementById('removerConfirmar');
+  let aRemover = null;
+
+  function pedirConfirmacaoDeRemocao(uniqueId, nome) {
+    aRemover = uniqueId;
+    removerNomeEl.textContent = nome;
+    removerConfirma.disabled = false;
+    removerConfirma.textContent = 'Tirar do ranking';
+    removerOverlay.classList.add('show');
+  }
+
+  function fecharConfirmacao() {
+    removerOverlay.classList.remove('show');
+    aRemover = null;
+  }
+
+  document.getElementById('removerCancelar').addEventListener('click', fecharConfirmacao);
+  // clicar fora fecha; clicar na caixa, não — senão escolher um texto da
+  // explicação fecharia a confirmação no meio
+  removerOverlay.addEventListener('click', e => {
+    if (e.target === removerOverlay) fecharConfirmacao();
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && removerOverlay.classList.contains('show')) fecharConfirmacao();
+  });
+
+  removerConfirma.addEventListener('click', async () => {
+    if (!aRemover) return;
+    const uid = aRemover;
+    removerConfirma.disabled = true;
+    removerConfirma.textContent = 'Tirando...';
+    try {
+      const res = await fetch('/api/ranking/remover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uniqueId: uid })
+      });
+      const dados = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(dados.error || 'Não deu pra remover.');
+
+      // tira da lista daqui na hora: o servidor também avisa a sala por
+      // socket, mas esperar o retorno faria a pessoa clicar e não ver nada
+      latestData = latestData.filter(u => String(u.uniqueId) !== String(uid));
+      render();
+      fecharConfirmacao();
+    } catch (e) {
+      removerConfirma.disabled = false;
+      removerConfirma.textContent = 'Tirar do ranking';
+      alert(e.message || 'Não deu pra remover.');
+    }
+  });
 
   // ---------- MODAL DE PERFIL ----------
   async function openProfile(uniqueId) {

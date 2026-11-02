@@ -505,6 +505,47 @@ function criarBanco(dono, opcoes) {
     return removeu;
   }
 
+  // TIRA UMA PESSOA DO RANKING DESTA LIVE.
+  //
+  // Duas necessidades diferentes bateram na mesma porta: limpar um bot ou um
+  // perfil indesejado da lista, e apagar os dados de quem pede pra sair — que
+  // era o buraco jurídico, porque até aqui só dava pra apagar TUDO.
+  //
+  // O que sai: a ficha, as ações dela no feed e o estoque de power-ups.
+  //
+  // O que FICA, de propósito: os totais da live (likes, comentários,
+  // diamantes). Eles são o que a live recebeu, e isso aconteceu — apagar uma
+  // pessoa não desfaz o presente que ela mandou, e um streamer que remove um
+  // perfil não espera ver o faturamento do dia encolher junto. Já os contadores
+  // de GENTE (visitantes únicos, seguiram, compartilharam) caem um, porque esses
+  // contam pessoas e agora tem uma pessoa a menos. É a mesma régua que a
+  // limpeza das fichas-fantasma lá em cima já usava.
+  //
+  // Não é bloqueio: se a pessoa interagir de novo, ela volta. Bloquear é outra
+  // decisão (e outra tela), e tomar ela aqui calado seria pior.
+  function removerUsuario(uniqueId) {
+    const chave = String(uniqueId ?? '');
+    if (!chave || !state.users[chave]) return false;
+
+    const ficha = state.users[chave];
+    delete state.users[chave];
+
+    if (ficha.followed) state.global.totalFollows = Math.max(0, state.global.totalFollows - 1);
+    if (ficha.shared) state.global.totalShares = Math.max(0, state.global.totalShares - 1);
+    state.global.uniqueViewers = Math.max(0, state.global.uniqueViewers - 1);
+
+    state.actions = state.actions.filter(a => String(a.uniqueId) !== chave);
+
+    // O estoque de power-ups vai junto: deixá-lo faria a pessoa continuar
+    // aparecendo na aba de power-ups depois de "removida", que é a cara de um
+    // bug mesmo não sendo.
+    delete state.cartas[chave];
+
+    dirty = true;
+    saveToDisk();
+    return true;
+  }
+
   function getTropa() {
     return state.tropa;
   }
@@ -1757,6 +1798,20 @@ function criarBanco(dono, opcoes) {
     return [...state.sessions].sort((a, b) => b.startedAt - a.startedAt);
   }
 
+  // Foto e nome do PRÓPRIO streamer (o ranking guarda os de quem assiste).
+  // Mora no global porque ele já vai inteiro pro banco como JSON: campo novo
+  // sem migrar nada. A URL do TikTok é assinada e vence — quem mostra tem que
+  // ter um avatar padrão pra quando ela falhar.
+  function setPerfilDoStreamer({ avatar, nome } = {}) {
+    if (!avatar && !nome) return;
+    state.global.perfilStreamer = { avatar: avatar || null, nome: nome || null, em: Date.now() };
+    dirty = true;
+  }
+
+  function getPerfilDoStreamer() {
+    return state.global.perfilStreamer || null;
+  }
+
   return {
     addLikes, addGift, addPowerUp, getRanking, getUserProfile, resetAll,
     registrarCartaGanha, registrarCartaUsada, getEstoqueCartas, VALIDADE_CARTA_MS,
@@ -1764,10 +1819,11 @@ function criarBanco(dono, opcoes) {
     getGlobalStats, updateViewerCount, addComment, addFollow, addShare,
     markLiveOnline, markLiveOffline, checkLevelUp, getTropa, limparTropa, getSessions,
     heartbeat,
-    registrarSuperfa, removerDaTropa, registrarSubidaDeNivel, setLogListener,
+    registrarSuperfa, removerDaTropa, removerUsuario, registrarSubidaDeNivel, setLogListener,
     iniciarBatalha, atualizarPlacarBatalha, finalizarBatalha, fecharBatalhaAbandonada,
     cancelarBatalhaEmAndamento, getBattleStats, getDashboard, getSerie, getRegistros, amostrar,
-    saveToDisk, fechar, dono, espelharNoJson
+    saveToDisk, fechar, dono, espelharNoJson,
+    numerosDaLiveAtual, setPerfilDoStreamer, getPerfilDoStreamer
   };
 }
 

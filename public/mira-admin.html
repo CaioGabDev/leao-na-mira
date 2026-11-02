@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Indicações · TEM LEÃO NA MIRA!</title>
+<link rel="stylesheet" href="/assets/theme.css">
+<style>
+  /* Só o administrador chega aqui: o servidor barra no requireAdmin antes de
+     entregar a página, e cada rota da API confere de novo. */
+  body { background: var(--bg); color: var(--ink); font-family: Inter, system-ui, sans-serif; margin: 0; }
+  main { max-width: 820px; margin: 0 auto; padding: 24px 16px 48px; }
+  .topo { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+  h1 { margin: 0; font-size: 22px; }
+  .topo a { color: var(--gold); }
+  .caixa { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 20px; }
+  form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  label { display: grid; gap: 6px; font-size: 13px; color: var(--ink-dim); }
+  label.marca { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; color: var(--ink); }
+  input[type=text], select {
+    background: var(--card-2); color: var(--ink); border: 1px solid var(--line);
+    border-radius: 10px; padding: 10px; font: inherit; width: 100%;
+  }
+  .acoes { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; }
+  button {
+    font: inherit; font-weight: 600; border-radius: 10px; padding: 9px 14px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--card-3); color: var(--ink);
+  }
+  button.principal { background: var(--gold); border-color: var(--gold); color: #1a0f05; }
+  button.perigo { color: var(--red); }
+  .msg { min-height: 20px; font-size: 14px; margin-top: 10px; }
+  .msg.erro { color: var(--red); }
+  .msg.ok { color: var(--green); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); }
+  th { color: var(--ink-dim); font-weight: 600; font-size: 12px; text-transform: uppercase; }
+  td.btns { white-space: nowrap; text-align: right; }
+  .sim { color: var(--green); font-weight: 700; }
+  .nao { color: var(--ink-dim); }
+  .vazio { color: var(--ink-dim); text-align: center; padding: 20px; }
+  @media (max-width: 560px) {
+    form { grid-template-columns: 1fr; }
+    thead { display: none; }
+    tr { display: grid; grid-template-columns: 1fr auto; padding: 8px 0; border-bottom: 1px solid var(--line); }
+    td { border: 0; padding: 4px 0; }
+    td.btns { grid-column: 1 / -1; text-align: left; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <div class="topo">
+    <h1>Indicações — TEM LEÃO NA MIRA! 🎯</h1>
+    <div>
+      <a href="/mira.html" target="_blank" rel="noopener">Ver ranking</a>
+      &nbsp;
+      <button type="button" id="sair">Sair</button>
+    </div>
+  </div>
+
+  <div class="caixa">
+    <form id="form">
+      <label>Quem indicou (sniper)
+        <select name="indicador" id="indicador" required></select>
+      </label>
+      <label>@ do indicado
+        <input type="text" name="indicado" id="indicado" required maxlength="25" autocomplete="off" placeholder="@amigo">
+      </label>
+      <label class="marca">
+        <input type="checkbox" name="oficial" id="oficial">
+        Entrou oficialmente na MIRA e fez a primeira live (vale ponto)
+      </label>
+      <div class="acoes">
+        <button type="submit" class="principal" id="salvar">Adicionar</button>
+        <button type="button" id="cancelar" hidden>Cancelar edição</button>
+      </div>
+    </form>
+    <div class="msg" id="msg"></div>
+  </div>
+
+  <div class="caixa">
+    <table>
+      <thead><tr><th>Indicou</th><th>Indicado</th><th>Vale ponto?</th><th></th></tr></thead>
+      <tbody id="lista"></tbody>
+    </table>
+  </div>
+</main>
+
+<script>
+  const $ = id => document.getElementById(id);
+  let editando = null;   // id da indicação em edição, ou null
+  let itens = [];
+
+  function el(tag, classe, texto) {
+    const e = document.createElement(tag);
+    if (classe) e.className = classe;
+    if (texto !== undefined) e.textContent = texto;
+    return e;
+  }
+
+  function aviso(texto, tipo) {
+    $('msg').textContent = texto || '';
+    $('msg').className = 'msg ' + (tipo || '');
+  }
+
+  // sessão vencida ou sem admin: volta pro login e retorna pra cá depois
+  function paraOLogin() {
+    location.href = '/login.html?next=' + encodeURIComponent('/mira-admin.html');
+  }
+
+  async function api(metodo, url, corpo) {
+    const r = await fetch(url, {
+      method: metodo,
+      headers: corpo ? { 'Content-Type': 'application/json' } : {},
+      body: corpo ? JSON.stringify(corpo) : undefined
+    });
+    if (r.status === 401 || r.status === 403) { paraOLogin(); throw new Error('sem acesso'); }
+    const dados = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(dados.error || 'Algo deu errado.');
+    return dados;
+  }
+
+  function desenhar() {
+    const lista = $('lista');
+    lista.replaceChildren();
+    if (!itens.length) {
+      const tr = el('tr'); const td = el('td', 'vazio', 'Nenhuma indicação cadastrada.');
+      td.colSpan = 4; tr.append(td); lista.append(tr);
+      return;
+    }
+    itens.forEach(i => {
+      const tr = el('tr');
+      const btns = el('td', 'btns');
+      const editar = el('button', '', 'Editar');
+      editar.type = 'button';
+      editar.onclick = () => comecarEdicao(i);
+      const remover = el('button', 'perigo', 'Remover');
+      remover.type = 'button';
+      remover.onclick = () => removerItem(i);
+      btns.append(editar, ' ', remover);
+      tr.append(
+        el('td', '', '@' + i.indicador),
+        el('td', '', '@' + i.indicado),
+        el('td', i.oficial ? 'sim' : 'nao', i.oficial ? 'Sim' : 'Ainda não'),
+        btns
+      );
+      lista.append(tr);
+    });
+  }
+
+  async function carregar() {
+    const dados = await api('GET', '/api/mira/indicacoes');
+    const sel = $('indicador');
+    const escolhido = sel.value;
+    sel.replaceChildren();
+    dados.snipers.forEach(s => {
+      const o = el('option', '', '@' + s); o.value = s; sel.append(o);
+    });
+    if (!dados.snipers.length) {
+      aviso('Nenhum sniper configurado. Defina MIRA_SNIPERS ou a lista no campanha.config.js.', 'erro');
+    }
+    if (escolhido) sel.value = escolhido;
+    itens = dados.indicacoes;
+    desenhar();
+  }
+
+  function comecarEdicao(i) {
+    editando = i.id;
+    $('indicador').value = i.indicador;
+    $('indicado').value = i.indicado;
+    $('oficial').checked = !!i.oficial;
+    $('salvar').textContent = 'Salvar alteração';
+    $('cancelar').hidden = false;
+    aviso('');
+    $('indicado').focus();
+  }
+
+  function limparForm() {
+    editando = null;
+    $('form').reset();
+    $('salvar').textContent = 'Adicionar';
+    $('cancelar').hidden = true;
+  }
+
+  async function removerItem(i) {
+    if (!confirm(`Remover a indicação de @${i.indicado} por @${i.indicador}?`)) return;
+    try {
+      await api('DELETE', '/api/mira/indicacoes/' + encodeURIComponent(i.id));
+      if (editando === i.id) limparForm();
+      aviso('Indicação removida.', 'ok');
+      await carregar();
+    } catch (e) { aviso(e.message, 'erro'); }
+  }
+
+  $('form').addEventListener('submit', async ev => {
+    ev.preventDefault();
+    const corpo = {
+      indicador: $('indicador').value,
+      indicado: $('indicado').value,
+      oficial: $('oficial').checked
+    };
+    try {
+      if (editando) await api('PUT', '/api/mira/indicacoes/' + encodeURIComponent(editando), corpo);
+      else await api('POST', '/api/mira/indicacoes', corpo);
+      aviso(editando ? 'Indicação atualizada.' : 'Indicação adicionada.', 'ok');
+      limparForm();
+      await carregar();
+    } catch (e) { aviso(e.message, 'erro'); }
+  });
+
+  $('cancelar').onclick = () => { limparForm(); aviso(''); };
+
+  $('sair').onclick = async () => {
+    try { await fetch('/api/logout', { method: 'POST' }); } catch (e) { /* sai do mesmo jeito */ }
+    paraOLogin();
+  };
+
+  carregar().catch(e => aviso(e.message, 'erro'));
+</script>
+</body>
+</html>

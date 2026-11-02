@@ -16,6 +16,9 @@ const termos = require('./termos');
 const config = require('./config');
 const fundos = require('./fundos');
 const { FileSessionStore } = require('./session-store');
+const campanhaConfig = require('./campanha.config');
+const criarCampanha = require('./campanha');
+const indicacoes = require('./indicacoes');
 
 // @ da live: o que o dono configurou vence; sem config, a env var de sempre.
 // Lido UMA vez, na subida do servidor, de propósito: trocar de live com a
@@ -29,6 +32,7 @@ const io = new Server(server);
 // Quem é o dono de cada requisição, e em que sala cada navegador escuta.
 // Enquanto houver um cliente só, todo mundo cai no TIKTOK_USERNAME e nada muda.
 const clientes = criarRegistro({ io, donoPadrao: TIKTOK_USERNAME });
+const campanha = criarCampanha({ clientes });
 
 // ---------- Login / sessão ----------
 // Quem pode logar é cadastrado com `node create-user.js <usuario> <senha>`
@@ -246,7 +250,10 @@ const SEM_LOGIN = new Set([
   // que vai aceitar
   '/termos.html', '/api/termos',
   // a prova de posse acontece ANTES de a conta existir
-  '/api/posse/desafio', '/api/posse/conferir'
+  '/api/posse/desafio', '/api/posse/conferir',
+  // ranking da campanha: público e SÓ leitura. A rota de escrita das
+  // indicações fica de fora daqui de propósito — passa pelo login e pelo admin.
+  '/mira.html', '/api/mira/ranking'
 ]);
 
 app.use((req, res, next) => {
@@ -1068,6 +1075,9 @@ app.use((req, res, next) => {
   res.send(html);
 });
 
+// a tela de indicações é só do administrador; o login já passou lá em cima
+app.get('/mira-admin.html', requireAdmin);
+
 app.use(express.static('public'));
 
 app.post('/api/reset', (req, res) => {
@@ -1100,6 +1110,34 @@ app.post('/api/tropa/remover', (req, res) => {
   const { db, sala } = clientes.doPedido(req);
   const removeu = db.removerDaTropa(nome, tipo);
   if (removeu) io.to(sala).emit('tropa_removida', { nome, tipo });
+  res.json({ ok: true, removeu });
+});
+
+// TIRA UMA PESSOA DO RANKING.
+//
+// Serve pras duas coisas que pediram a mesma porta: limpar bot ou perfil
+// indesejado da lista, e apagar os dados de quem pede pra sair — até aqui só
+// existia o /api/reset, que apaga tudo de todo mundo.
+//
+// O escopo sai do `clientes.doPedido`: cada um só mexe na própria live. Sem
+// isso, o `uniqueId` do corpo seria um jeito de apagar gente da live alheia.
+app.post('/api/ranking/remover', (req, res) => {
+  const { uniqueId } = req.body || {};
+  if (!identificadorValido(uniqueId)) {
+    return res.status(400).json({ error: 'Qual pessoa?' });
+  }
+  const { db, live, dono } = clientes.doPedido(req);
+  const removeu = db.removerUsuario(uniqueId);
+  if (!removeu) {
+    return res.status(404).json({ error: 'Essa pessoa não está no ranking.' });
+  }
+  // O ranking de todo mundo que está com a tela aberta precisa acompanhar:
+  // sem isto, a pessoa some pra quem clicou e continua na tela dos outros.
+  // Os números do topo também mudaram (um visitante único a menos), então vão
+  // junto — senão a lista encolhe e o contador fica dizendo o número velho.
+  live.broadcastRanking();
+  live.broadcastGlobalStats();
+  console.log(`[RANKING] ${uniqueId} removido da live @${dono}`);
   res.json({ ok: true, removeu });
 });
 
@@ -1148,6 +1186,39 @@ app.get('/api/user/:uniqueId', (req, res) => {
   const profile = clientes.doPedido(req).db.getUserProfile(req.params.uniqueId);
   if (!profile.user) return res.status(404).json({ error: 'Usuário não encontrado' });
   res.json(profile);
+});
+
+// ---------- CAMPANHA "TEM LEÃO NA MIRA" ----------
+// O ranking é público (está no SEM_LOGIN) e sai do cache do campanha.js —
+// visita nenhuma chega perto do TikTok. As indicações passam pelo login E
+// pelo requireAdmin: esconder o botão na tela não protege nada.
+app.get('/api/mira/ranking', (req, res) => {
+  res.set('Cache-Control', 'public, max-age=30');
+  res.json(campanha.getRanking());
+});
+
+app.get('/api/mira/indicacoes', requireAdmin, (req, res) => {
+  res.json({ snipers: campanha.snipers(), indicacoes: indicacoes.listar() });
+});
+
+function respostaDaIndicacao(res, r) {
+  if (r.erro) return res.status(r.status || 400).json({ error: r.erro });
+  campanha.invalidar();
+  res.json({ ok: true, indicacao: r.indicacao });
+}
+
+app.post('/api/mira/indicacoes', requireAdmin, (req, res) => {
+  respostaDaIndicacao(res, indicacoes.criar(req.body, req.session.user));
+});
+
+app.put('/api/mira/indicacoes/:id', requireAdmin, (req, res) => {
+  respostaDaIndicacao(res, indicacoes.atualizar(req.params.id, req.body, req.session.user));
+});
+
+app.delete('/api/mira/indicacoes/:id', requireAdmin, (req, res) => {
+  if (!indicacoes.remover(req.params.id)) return res.status(404).json({ error: 'Indicação não encontrada.' });
+  campanha.invalidar();
+  res.json({ ok: true });
 });
 
 io.on('connection', socket => {
@@ -1211,6 +1282,8 @@ server.listen(PORT, () => {
   } catch (e) {
     console.error('Não consegui ler os clientes cadastrados:', e.message);
   }
+  // os snipers da campanha também: sem a live deles conectada não há o que pontuar
+  campanhaConfig.snipers.forEach(sniper => donos.add(sniper));
 
   donos.forEach(dono => {
     try {

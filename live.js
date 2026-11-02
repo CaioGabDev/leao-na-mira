@@ -594,6 +594,25 @@ function criarLive({ dono, db, emitir, criarConexao }) {
       || null;
   }
 
+  // A foto do próprio streamer vem no roomInfo que o connect() já busca
+  // (fetchRoomInfoOnConnect, ligado por padrão na lib) — nenhuma chamada a
+  // mais pro TikTok. Só que é o JSON cru do TikTok, sem tipo na lib: por isso
+  // a leitura defensiva. Faltou o campo, fica sem foto e a tela usa a padrão.
+  function guardarPerfilDoStreamer(roomInfo) {
+    try {
+      const owner = roomInfo?.data?.owner || roomInfo?.owner;
+      if (!owner) return;
+      db.setPerfilDoStreamer({
+        avatar: owner.avatar_thumb?.url_list?.[0] || owner.avatar_medium?.url_list?.[0]
+          || owner.avatarThumb?.urlList?.[0] || null,
+        nome: owner.nickname || null
+      });
+    } catch (e) {
+      // perfil é enfeite: não pode atrapalhar a conexão
+      console.error(`[MIRA] não li o perfil de @${dono}:`, e.message);
+    }
+  }
+
   const translationCache = {};
 
   async function translateGiftName(name) {
@@ -728,6 +747,7 @@ function criarLive({ dono, db, emitir, criarConexao }) {
       // sido dada como encerrada.
       ultimaTentativa = { em: Date.now(), ok: true, motivo: 'conectado', recado: '' };
       tentativasSeguidas = 0;
+      guardarPerfilDoStreamer(state.roomInfo);
       if (!liveOnline) {
         liveOnline = true;
         db.markLiveOnline();
