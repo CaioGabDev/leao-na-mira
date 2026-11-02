@@ -6,29 +6,15 @@
 // var esquecida no Railway desfaria calada o que foi decidido na tela. "Voltar
 // ao padrão" apaga o salvo e a env var volta a valer.
 //
-// Mora no mesmo dados.db, numa tabela de ajustes, do mesmo jeito do
-// indicacoes.js (o objeto inteiro em JSON numa coluna).
+// Mora no dados.db, na tabela de ajustes (ajustes.js).
 // ============================================================================
-const banco = require('./banco');
+const ajustes = require('./ajustes');
 const campanha = require('./campanha.config');
 
 const DIA = 24 * 60 * 60 * 1000;
 const MAIS_ANTIGO = Date.parse('2020-01-01T00:00:00Z');
 const MAIS_NOVO = Date.parse('2100-01-01T00:00:00Z');
 const DURACAO_MAXIMA = 366 * DIA;
-
-let preparado = null;
-function bd() {
-  const b = banco.abrir();
-  if (preparado !== b) {
-    b.exec(`CREATE TABLE IF NOT EXISTS campanha_ajustes (
-      chave TEXT NOT NULL PRIMARY KEY,
-      dados TEXT NOT NULL
-    ) WITHOUT ROWID`);
-    preparado = b;
-  }
-  return b;
-}
 
 // Conta pura: devolve o texto do erro, ou null se o período serve.
 function validar(inicio, fim) {
@@ -40,9 +26,8 @@ function validar(inicio, fim) {
 }
 
 function salvo() {
-  const l = bd().prepare('SELECT dados FROM campanha_ajustes WHERE chave = ?').get('periodo');
-  if (!l) return null;
-  const p = JSON.parse(l.dados);
+  const p = ajustes.ler('periodo');
+  if (!p) return null;
   // linha torta (editada à mão, versão antiga) não pode virar período errado
   return validar(p.inicio, p.fim) ? null : p;
 }
@@ -65,13 +50,12 @@ function salvar(corpo, autor) {
   const erro = validar(inicio, fim);
   if (erro) return { erro };
   const item = { inicio, fim, autor: String(autor || ''), em: Date.now() };
-  bd().prepare('INSERT OR REPLACE INTO campanha_ajustes (chave, dados) VALUES (?, ?)')
-    .run('periodo', JSON.stringify(item));
+  ajustes.gravar('periodo', item);
   return { periodo: get() };
 }
 
 function voltarAoPadrao() {
-  bd().prepare('DELETE FROM campanha_ajustes WHERE chave = ?').run('periodo');
+  ajustes.apagar('periodo');
   return { periodo: get() };
 }
 

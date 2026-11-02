@@ -56,6 +56,23 @@
     border-radius: 10px; padding: 10px; font: inherit; width: 100%; color-scheme: dark;
   }
   .origem { grid-column: 1 / -1; margin: 0; font-size: 12.5px; color: var(--ink-dim); }
+  input[type=password] {
+    background: var(--card-2); color: var(--ink); border: 1px solid var(--line);
+    border-radius: 10px; padding: 10px; font: inherit; width: 100%;
+  }
+  label.inteira { grid-column: 1 / -1; }
+  form.linha { display: flex; gap: 8px; flex-wrap: wrap; }
+  form.linha input { flex: 1 1 180px; width: auto; }
+  .status .botoes { grid-column: 2 / -1; display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+  .status .botoes button, .pessoas button { padding: 5px 10px; font-size: 13px; }
+  .pessoas { list-style: none; margin: 0 0 14px; padding: 0; display: grid; gap: 6px; }
+  .pessoas li {
+    display: flex; justify-content: space-between; align-items: center; gap: 10px;
+    padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card-2);
+  }
+  .pessoas li.vazio { display: block; border: 0; background: none; }
+  .pessoas .voce { font-size: 12.5px; color: var(--ink-dim); }
+  .fora { font-size: 12px; color: var(--ink-dim); }
   @media (max-width: 560px) {
     form { grid-template-columns: 1fr; }
     thead { display: none; }
@@ -77,7 +94,12 @@
   </div>
 
   <div class="caixa">
-    <h2>Lives dos snipers</h2>
+    <h2>Snipers</h2>
+    <form id="formSniper" class="linha">
+      <input type="text" id="novoSniper" required maxlength="25" autocomplete="off" placeholder="@do_sniper" aria-label="@ do sniper">
+      <button type="submit" class="principal">Adicionar sniper</button>
+    </form>
+    <div class="msg" id="msgSniper"></div>
     <ul class="status" id="status"><li class="vazio">Carregando…</li></ul>
   </div>
 
@@ -126,12 +148,49 @@
       <tbody id="lista"></tbody>
     </table>
   </div>
+
+  <div class="caixa">
+    <h2>Administradores</h2>
+    <ul class="pessoas" id="admins"><li class="vazio">Carregando…</li></ul>
+    <form id="formAdmin">
+      <label>Usuário
+        <input type="text" id="novoAdmin" required maxlength="40" autocomplete="off" autocapitalize="none" spellcheck="false">
+      </label>
+      <label>Senha inicial
+        <input type="password" id="senhaNovoAdmin" required minlength="6" autocomplete="new-password">
+      </label>
+      <div class="acoes">
+        <button type="submit" class="principal">Adicionar administrador</button>
+      </div>
+    </form>
+    <div class="msg" id="msgAdmin"></div>
+  </div>
+
+  <div class="caixa">
+    <h2>Minha senha</h2>
+    <form id="formSenha">
+      <label class="inteira">Senha atual
+        <input type="password" id="senhaAtual" required autocomplete="current-password">
+      </label>
+      <label>Nova senha
+        <input type="password" id="senhaNova" required minlength="6" autocomplete="new-password">
+      </label>
+      <label>Repita a nova senha
+        <input type="password" id="senhaNova2" required minlength="6" autocomplete="new-password">
+      </label>
+      <div class="acoes">
+        <button type="submit" class="principal">Trocar senha</button>
+      </div>
+    </form>
+    <div class="msg" id="msgSenha"></div>
+  </div>
 </main>
 
 <script>
   const $ = id => document.getElementById(id);
   let editando = null;   // id da indicação em edição, ou null
   let itens = [];
+  let snipersAtuais = [];
 
   function el(tag, classe, texto) {
     const e = document.createElement(tag);
@@ -180,8 +239,11 @@
       remover.type = 'button';
       remover.onclick = () => removerItem(i);
       btns.append(editar, ' ', remover);
+      // indicação de quem saiu da lista fica guardada, mas não conta ponto
+      const quem = el('td', '', '@' + i.indicador);
+      if (!snipersAtuais.includes(i.indicador)) quem.append(' ', el('span', 'fora', '(fora da campanha)'));
       tr.append(
-        el('td', '', '@' + i.indicador),
+        quem,
         el('td', '', '@' + i.indicado),
         el('td', i.oficial ? 'sim' : 'nao', i.oficial ? 'Sim' : 'Ainda não'),
         btns
@@ -199,9 +261,10 @@
       const o = el('option', '', '@' + s); o.value = s; sel.append(o);
     });
     if (!dados.snipers.length) {
-      aviso('Nenhum sniper configurado. Defina MIRA_SNIPERS ou a lista no campanha.config.js.', 'erro');
+      aviso('Nenhum sniper na campanha ainda. Adicione em "Snipers", lá em cima.', 'erro');
     }
     if (escolhido) sel.value = escolhido;
+    snipersAtuais = dados.snipers;
     itens = dados.indicacoes;
     desenhar();
   }
@@ -268,11 +331,20 @@
     const ul = $('status');
     ul.replaceChildren();
     if (!dados.snipers.length) {
-      ul.append(el('li', 'vazio', 'Nenhum sniper configurado.'));
+      ul.append(el('li', 'vazio', 'Nenhum sniper na campanha. Adicione o primeiro aqui em cima.'));
       return;
     }
     dados.snipers.forEach(s => {
       const li = el('li', s.conectado ? 'on' : '');
+      const botoes = el('span', 'botoes');
+      const reconectar = el('button', '', 'Reconectar');
+      reconectar.type = 'button';
+      reconectar.title = 'Derruba a conexão e confere de novo se a live está no ar';
+      reconectar.onclick = () => reconectarSniper(s.arroba);
+      const remover = el('button', 'perigo', 'Remover');
+      remover.type = 'button';
+      remover.onclick = () => removerSniper(s.arroba);
+      botoes.append(reconectar, remover);
       li.append(
         el('span', 'bola'),
         el('span', 'arroba', '@' + s.arroba),
@@ -280,9 +352,111 @@
         el('span', 'quando', quando(s.atualizadoEm, dados.agora))
       );
       if (s.recado) li.append(el('span', 'recado', s.recado));
+      li.append(botoes);
       ul.append(li);
     });
   }
+
+  // ---------- snipers: entrar, sair, reconectar ----------
+  function avisoSniper(texto, tipo) {
+    $('msgSniper').textContent = texto || '';
+    $('msgSniper').className = 'msg ' + (tipo || '');
+  }
+
+  // a lista de snipers também é a do campo "Quem indicou"
+  async function snipersMudaram() {
+    await Promise.all([carregarStatus(), carregar()]);
+  }
+
+  $('formSniper').addEventListener('submit', async ev => {
+    ev.preventDefault();
+    try {
+      const r = await api('POST', '/api/mira/snipers', { arroba: $('novoSniper').value });
+      $('novoSniper').value = '';
+      avisoSniper(`@${r.arroba} entrou na campanha. A live dele já está sendo acompanhada.`, 'ok');
+      await snipersMudaram();
+    } catch (e) { avisoSniper(e.message, 'erro'); }
+  });
+
+  async function removerSniper(arroba) {
+    if (!confirm(`Tirar @${arroba} da campanha?\n\nA live dele deixa de ser acompanhada e ele sai do ranking. ` +
+                 'O histórico e as indicações ficam guardados: se ele voltar pra lista, volta com tudo ' +
+                 '(menos as lives que acontecerem enquanto estiver fora).')) return;
+    try {
+      await api('DELETE', '/api/mira/snipers/' + encodeURIComponent(arroba));
+      avisoSniper(`@${arroba} saiu da campanha.`, 'ok');
+      await snipersMudaram();
+    } catch (e) { avisoSniper(e.message, 'erro'); }
+  }
+
+  async function reconectarSniper(arroba) {
+    try {
+      await api('POST', '/api/mira/snipers/' + encodeURIComponent(arroba) + '/reconectar');
+      avisoSniper(`Reconectando @${arroba}… o status atualiza em alguns segundos.`, 'ok');
+      setTimeout(atualizarStatus, 10000);
+    } catch (e) { avisoSniper(e.message, 'erro'); }
+  }
+
+  // ---------- administradores ----------
+  function avisoAdmin(texto, tipo) {
+    $('msgAdmin').textContent = texto || '';
+    $('msgAdmin').className = 'msg ' + (tipo || '');
+  }
+
+  async function carregarAdmins() {
+    const dados = await api('GET', '/api/mira/admins');
+    const ul = $('admins');
+    ul.replaceChildren();
+    dados.admins.forEach(nome => {
+      const li = el('li');
+      li.append(el('span', '', nome));
+      if (nome === dados.voce) {
+        li.append(el('span', 'voce', 'você'));
+      } else {
+        const remover = el('button', 'perigo', 'Remover');
+        remover.type = 'button';
+        remover.onclick = () => removerAdmin(nome);
+        li.append(remover);
+      }
+      ul.append(li);
+    });
+  }
+
+  $('formAdmin').addEventListener('submit', async ev => {
+    ev.preventDefault();
+    const usuario = $('novoAdmin').value.trim();
+    try {
+      await api('POST', '/api/mira/admins', { usuario, senha: $('senhaNovoAdmin').value });
+      $('formAdmin').reset();
+      avisoAdmin(`"${usuario}" agora é administrador. Passe a senha pra ele por um canal seguro.`, 'ok');
+      await carregarAdmins();
+    } catch (e) { avisoAdmin(e.message, 'erro'); }
+  });
+
+  async function removerAdmin(nome) {
+    if (!confirm(`Tirar o acesso de administrador de "${nome}"? Se estiver logado, ele sai na próxima ação.`)) return;
+    try {
+      await api('DELETE', '/api/mira/admins/' + encodeURIComponent(nome));
+      avisoAdmin(`"${nome}" não é mais administrador.`, 'ok');
+      await carregarAdmins();
+    } catch (e) { avisoAdmin(e.message, 'erro'); }
+  }
+
+  // ---------- minha senha ----------
+  function avisoSenha(texto, tipo) {
+    $('msgSenha').textContent = texto || '';
+    $('msgSenha').className = 'msg ' + (tipo || '');
+  }
+
+  $('formSenha').addEventListener('submit', async ev => {
+    ev.preventDefault();
+    if ($('senhaNova').value !== $('senhaNova2').value) return avisoSenha('As duas senhas novas não batem.', 'erro');
+    try {
+      await api('POST', '/api/mira/minha-senha', { atual: $('senhaAtual').value, nova: $('senhaNova').value });
+      $('formSenha').reset();
+      avisoSenha('Senha trocada.', 'ok');
+    } catch (e) { avisoSenha(e.message, 'erro'); }
+  });
 
   function atualizarStatus() {
     carregarStatus().catch(e => {
@@ -356,6 +530,7 @@
   carregar().catch(e => aviso(e.message, 'erro'));
   atualizarStatus();
   carregarPeriodo().catch(e => avisoPeriodo(e.message, 'erro'));
+  carregarAdmins().catch(e => avisoAdmin(e.message, 'erro'));
 </script>
 </body>
 </html>

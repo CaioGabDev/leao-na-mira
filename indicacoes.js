@@ -11,6 +11,7 @@
 const crypto = require('crypto');
 const banco = require('./banco');
 const campanha = require('./campanha.config');
+const snipers = require('./snipers');
 
 // mesmo formato de @ que o TikTok aceita
 const ARROBA_VALIDO = /^[a-z0-9._]{2,24}$/;
@@ -50,7 +51,7 @@ function gravar(item) {
 function validar({ indicador, indicado }, idAtual) {
   if (!ARROBA_VALIDO.test(indicador)) return 'O @ de quem indicou é inválido.';
   if (!ARROBA_VALIDO.test(indicado)) return 'O @ do indicado é inválido.';
-  if (!campanha.snipers.includes(indicador)) return `@${indicador} não é sniper da campanha.`;
+  if (!snipers.inclui(indicador)) return `@${indicador} não é sniper da campanha.`;
   if (indicador === indicado) return 'Ninguém indica a si mesmo.';
   // o mesmo amigo não vale ponto duas vezes, nem pra dois snipers
   const repetida = listar().find(i => i.indicado === indicado && i.id !== idAtual);

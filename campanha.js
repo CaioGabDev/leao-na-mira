@@ -11,6 +11,7 @@
 const config = require('./campanha.config');
 const indicacoes = require('./indicacoes');
 const periodo = require('./periodo');
+const snipers = require('./snipers');
 const { calcularPontuacao, somarLivesNoPeriodo, ordenarRanking } = require('./pontuacao');
 
 function criarCampanha({ clientes }) {
@@ -48,7 +49,7 @@ function criarCampanha({ clientes }) {
     const p = periodo.get();
     const oficiais = indicacoes.oficiaisPorIndicador();
     const linhas = [];
-    for (const arroba of config.snipers) {
+    for (const arroba of snipers.listar()) {
       try {
         const linha = linhaDoSniper(arroba, oficiais, agora, p);
         ultimaBoa.set(arroba, linha);
@@ -93,7 +94,7 @@ function criarCampanha({ clientes }) {
   // servidor soube algo daquela live: com ela no ar, o último evento do
   // TikTok; fora do ar, a última checagem de se ela tinha começado.
   function status() {
-    return config.snipers.map(arroba => {
+    return snipers.listar().map(arroba => {
       try {
         const c = clientes.abrir(arroba).live.estadoDaConexao();
         const checagem = (c.ultimaTentativa && c.ultimaTentativa.em) || null;
@@ -111,7 +112,7 @@ function criarCampanha({ clientes }) {
     });
   }
 
-  return { getRanking, invalidar, status, snipers: () => [...config.snipers] };
+  return { getRanking, invalidar, status, snipers: () => snipers.listar() };
 }
 
 module.exports = criarCampanha;

@@ -5,8 +5,9 @@
 // pontuação, o período e quem são os snipers. A conta em si está no
 // pontuacao.js e não conhece nenhum número de cabeça.
 //
-// Período e snipers aceitam env var por cima do arquivo, pra trocar no deploy
-// (Railway, em Variables) sem mexer no código:
+// Período e snipers são o PADRÃO: o administrador muda os dois pela tela
+// (periodo.js, snipers.js), e o que ele salva vence. Aceitam env var por cima
+// do arquivo (Railway, em Variables):
 //   MIRA_INICIO / MIRA_FIM   data ISO com fuso, ex.: 2026-11-01T00:00:00-03:00
 //   MIRA_SNIPERS             @ separados por vírgula, ex.: fulano,ciclano
 //   MIRA_CACHE_MS            de quanto em quanto tempo o ranking é recalculado

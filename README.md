@@ -5,8 +5,9 @@ cada sniper no TikTok, guarda as horas de live e os diamantes de cada uma e
 soma com as indicações que o administrador cadastra.
 
 - **Visitante**: abre `/` (ou `/mira.html`) sem login, sem cadastro. Só leitura.
-- **Administrador**: entra em `/login.html` e, em `/mira-admin.html`, define o
-  período da campanha, cadastra as indicações e acompanha o status das lives.
+- **Administrador**: entra em `/login.html` e, em `/mira-admin.html`, adiciona e
+  remove snipers, acompanha o status das lives, define o período, cadastra as
+  indicações, gerencia os outros administradores e troca a própria senha.
 
 Este projeto nasceu de uma cópia do ranking de taps. O que era só de lá foi
 removido; o módulo de coleta do TikTok (`live.js`, `db.js`, `banco.js`,
@@ -34,8 +35,6 @@ npm install
 # o primeiro administrador (só precisa na primeira vez)
 node create-user.js caio umaSenhaBoa --admin
 
-# os snipers da campanha (ou edite a lista no campanha.config.js)
-export MIRA_SNIPERS=fulano,ciclano
 
 # na sua máquina: DEV_LOCAL=1 (Git Bash / Linux / Mac)
 DEV_LOCAL=1 npm start
@@ -46,10 +45,11 @@ execução padrão do Windows barra script `.ps1` com um erro que não tem nada 
 ver com o projeto (`UnauthorizedAccess`). Chame o node direto:
 
 ```powershell
-$env:DEV_LOCAL="1"; $env:MIRA_SNIPERS="fulano,ciclano"; node server.js
+$env:DEV_LOCAL="1"; node server.js
 ```
 
-O site sobe em `http://localhost:3000` (ou na porta de `PORT`).
+O site sobe em `http://localhost:3000` (ou na porta de `PORT`). Entre em
+`/login.html` e adicione os snipers em `/mira-admin.html`.
 
 **`DEV_LOCAL=1` não é opcional na sua máquina.** Sem ela o servidor nem sobe
 (exige `SESSION_SECRET`) e, se subisse, o cookie de sessão sairia `secure` — o
@@ -94,6 +94,12 @@ próxima requisição.
 O servidor **não promove ninguém sozinho**: sem nenhum admin, ele avisa no log
 e ninguém entra até você criar um.
 
+**Os outros administradores** se cria pela tela (caixa "Administradores"):
+usuário e senha inicial. Remover tira só a marca de admin — a conta fica no
+`users.json` e a sessão dela cai na próxima ação. Ninguém remove a si mesmo,
+então sempre sobra pelo menos um. Cada admin troca a própria senha na caixa
+"Minha senha", que pede a senha atual (e erra no mesmo freio do login).
+
 ---
 
 ## A campanha
@@ -112,8 +118,8 @@ Empate: mais diamantes, depois mais horas.
 **De onde vem cada número:**
 
 - **Horas e diamantes**: do histórico de lives de cada sniper (`db.getSessions()`,
-  mais a live que estiver no ar). Isso exige que o `@` esteja em `MIRA_SNIPERS`,
-  porque só assim a live dele fica conectada. Live que não foi acompanhada (o
+  mais a live que estiver no ar). Isso exige que o `@` esteja na lista de
+  snipers, porque só assim a live dele fica conectada. Live que não foi acompanhada (o
   servidor estava fora do ar, o sniper entrou depois) **não existe** pra conta.
 - **Bordas do período**: a duração é cortada no início e no fim. O diamante vai
   pela live inteira, porque a sessão guarda o total e não a hora de cada presente.
@@ -137,11 +143,20 @@ Aumentar o período não traz de volta live que o servidor não acompanhou.
 quando uma indicação ou o período muda. Se o cálculo de um sniper falha, ele fica com a
 última linha boa. Se falha tudo, vale o último ranking.
 
-**Status das lives** (no topo do `/mira-admin.html`, atualiza a cada 30s):
+**Snipers**: o administrador adiciona e remove na caixa "Snipers" do
+`/mira-admin.html`. Entrar liga a live na hora; sair desliga (e fecha no
+histórico a live que estiver no ar). Sair **não apaga nada**: o histórico e as
+indicações ficam no banco, e se o sniper voltar pra lista volta com tudo — menos
+as lives que aconteceram enquanto estava fora. Enquanto ninguém mexeu na tela,
+vale `MIRA_SNIPERS` (ou o `campanha.config.js`); na primeira mudança a lista vai
+pro `dados.db` e passa a valer ela. Máximo de 50.
+
+**Status das lives** (na caixa "Snipers", atualiza a cada 30s):
 conectada ou desconectada, e a última vez que o servidor soube algo daquela
 live — o último evento do TikTok com ela no ar, ou a última checagem de se ela
 começou. Fora do ar, aparece também o motivo ("não está ao vivo agora",
-"não achei essa live", limite do assinador…).
+"não achei essa live", limite do assinador…). O botão **Reconectar** derruba a
+conexão e confere de novo em 5 segundos.
 
 ### Rotas
 
@@ -153,7 +168,11 @@ começou. Fora do ar, aparece também o motivo ("não está ao vivo agora",
 | `POST /api/logout` | administrador |
 | `GET /mira-admin.html` | administrador |
 | `GET /api/mira/status` | administrador |
+| `POST /api/mira/snipers`, `DELETE /api/mira/snipers/:arroba` | administrador |
+| `POST /api/mira/snipers/:arroba/reconectar` | administrador |
 | `GET/PUT/DELETE /api/mira/periodo` | administrador |
+| `GET/POST /api/mira/admins`, `DELETE /api/mira/admins/:usuario` | administrador |
+| `POST /api/mira/minha-senha` | administrador |
 | `GET/POST /api/mira/indicacoes`, `PUT/DELETE /api/mira/indicacoes/:id` | administrador |
 
 ---
@@ -190,7 +209,7 @@ sorteio, pra várias lives não voltarem no mesmo instante.
 | `PORT` | Porta do servidor. Padrão: `3000`. |
 | `SESSION_SECRET` | Segredo do cookie de sessão. **Obrigatória**: sem ela o servidor não sobe (só sobe com `DEV_LOCAL=1`, e aí com um segredo público). |
 | `ADMIN_USER` / `ADMIN_PASSWORD` | Cria o primeiro administrador na subida, se ele ainda não existir. |
-| `MIRA_SNIPERS` | `@` dos snipers, separados por vírgula. Cada um vira uma live monitorada na subida. Sem ela, vale a lista do `campanha.config.js`. |
+| `MIRA_SNIPERS` | Lista **inicial** de snipers, `@` separados por vírgula. Opcional: só vale até o admin mexer na lista pela tela. |
 | `MIRA_INICIO` / `MIRA_FIM` | Período **padrão**, em ISO com fuso (`2026-11-01T00:00:00-03:00`). Sem elas, vale o `campanha.config.js`. O período salvo pelo admin na tela vence as duas. |
 | `MIRA_CACHE_MS` | De quanto em quanto tempo o ranking é recalculado. Padrão: `60000`. |
 | `EULERSTREAM_API_KEY` / `SIGN_API_KEY` | Chave do assinador. Necessária na prática pra mais de uma live. |
@@ -199,8 +218,7 @@ sorteio, pra várias lives não voltarem no mesmo instante.
 | `DEV_LOCAL=1` | **Só na sua máquina.** Aceita rodar sem `SESSION_SECRET` e manda o cookie de sessão por HTTP. Em qualquer deploy, não defina. |
 | `RAILWAY_ENVIRONMENT` | Quando existe, todos os arquivos de dados passam a morar em `/data`. |
 
-Trocar os snipers pede restart: são lidos uma vez, na subida. O período não —
-muda pela tela, na hora.
+Snipers e período mudam pela tela, na hora, sem restart.
 
 ---
 
@@ -208,7 +226,7 @@ muda pela tela, na hora.
 
 | Arquivo | O que guarda |
 |---|---|
-| `dados.db` | SQLite: as lives de cada sniper (uma linha por registro, com a coluna `dono`) e as tabelas `indicacoes` e `campanha_ajustes` (o período salvo pelo admin). |
+| `dados.db` | SQLite: as lives de cada sniper (uma linha por registro, com a coluna `dono`) e as tabelas `indicacoes` e `campanha_ajustes` (período e lista de snipers salvos pelo admin). |
 | `users.json` | Contas: usuário, salt, hash, `admin`. Gravado com permissão 0600. |
 | `sessions.json` | Sessões abertas. |
 
@@ -227,7 +245,6 @@ O que configurar lá:
 - um **volume montado em `/data`**;
 - `SESSION_SECRET` (sem ela o servidor não sobe);
 - `ADMIN_USER` / `ADMIN_PASSWORD` (pro primeiro acesso);
-- `MIRA_SNIPERS` (o período dá pra ajustar depois, pela tela);
 - `EULERSTREAM_API_KEY`;
 - Node 24+ (o `.node-version` já pede).
 
@@ -252,17 +269,20 @@ campanha.config.js valores da pontuação, período, snipers
 pontuacao.js       a conta da campanha (pura, testada)
 campanha.js        o ranking com cache e último dado bom, e o status das lives
 indicacoes.js      quem indicou quem (tabela `indicacoes` no dados.db)
+snipers.js         a lista de snipers: a salva pelo admin, ou a padrão
+ajustes.js         a tabela `campanha_ajustes` (chave -> JSON) que os dois usam
 periodo.js         início e fim da campanha: o salvo pelo admin, ou o padrão
 
 public/
   mira.html        ranking público (sem login)
-  mira-admin.html  status das lives, período e indicações (só administrador)
+  mira-admin.html  snipers e status, período, indicações, admins, senha (só admin)
   login.html       entrada do administrador
   assets/theme.css os tokens de tema
 
 teste/
   pontuacao.js     a conta da campanha (node --test)
   periodo.js       o período salvo pelo admin vence o padrão (banco temporário)
+  snipers.js       adicionar/remover snipers e a passagem da lista padrão pra salva
 ```
 
 ---
@@ -272,6 +292,6 @@ teste/
 - **Node 24.** Tentar rodar em 18 ou 20 falha na subida, com recado. É o
   `node:sqlite`.
 - **Só conta live acompanhada.** Se o servidor estava fora do ar, ou o sniper
-  entrou no `MIRA_SNIPERS` depois, aquela live não existe pra pontuação.
+  entrou na lista depois (ou saiu e voltou), aquela live não existe pra pontuação.
 - **Uma chave de assinatura** antes de colocar vários snipers no ar. Sem ela o
   limite é por IP, e cada reconexão consome.

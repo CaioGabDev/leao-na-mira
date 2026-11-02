@@ -61,6 +61,29 @@ function ehAdmin(username) {
   return !!(eu && eu.admin === true);
 }
 
+function listarAdmins() {
+  return loadUsers().filter(u => u.admin === true).map(u => u.username);
+}
+
+// A régua de usuário e senha pra conta criada pela tela. Devolve o texto do
+// erro, ou null se serve.
+const MIN_SENHA = 6;
+function validarSenha(senha) {
+  if (typeof senha !== 'string' || senha.length < MIN_SENHA) {
+    return `A senha precisa de pelo menos ${MIN_SENHA} caracteres.`;
+  }
+  if (senha.length > 200) return 'Essa senha é longa demais.';
+  return null;
+}
+
+function validarNovaConta(usuario, senha) {
+  const nome = String(usuario || '').trim();
+  if (nome.length < 3) return 'O usuário precisa de pelo menos 3 caracteres.';
+  if (nome.length > 40) return 'O usuário passou de 40 caracteres.';
+  if (!/^[a-zA-Z0-9._-]+$/.test(nome)) return 'No usuário valem letras, números, ponto, hífen e sublinhado.';
+  return validarSenha(senha);
+}
+
 // Roda na subida. Não promove ninguém sozinho: o users.json pode ter vindo
 // do ranking de taps, e eleger uma conta qualquer como admin abriria a área
 // de indicações pra um cliente antigo. Sem admin, só avisa alto.
@@ -126,4 +149,5 @@ function existe(username) {
 }
 
 module.exports = { USERS_FILE, loadUsers, saveUsers, hashPassword, upsertUser, setAdmin, ehAdmin, existe,
+                   listarAdmins, validarNovaConta, validarSenha,
                    avisarSemAdmin, verifyCredentials, seedFromEnv };

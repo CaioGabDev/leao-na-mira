@@ -6,7 +6,7 @@ const criarRegistro = require('./clientes');
 const assinatura = require('./assinatura');
 const auth = require('./auth');
 const { FileSessionStore } = require('./session-store');
-const campanhaConfig = require('./campanha.config');
+const snipers = require('./snipers');
 const criarCampanha = require('./campanha');
 const indicacoes = require('./indicacoes');
 const periodo = require('./periodo');
@@ -287,6 +287,94 @@ app.delete('/api/mira/indicacoes/:id', requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+// ---------- SNIPERS ----------
+// Entrar na lista liga a live na hora; sair desliga. Os dados ficam no banco
+// (ver snipers.js), então tirar por engano e pôr de volta não perde nada.
+app.post('/api/mira/snipers', requireAdmin, (req, res) => {
+  const r = snipers.adicionar(req.body && req.body.arroba, req.session.user);
+  if (r.erro) return res.status(400).json({ error: r.erro });
+  try {
+    clientes.iniciar(r.arroba);
+  } catch (e) {
+    // ficou na lista: o status vai mostrar desconectado, e reiniciar resolve
+    console.error(`Falhei ao subir a live @${r.arroba}:`, e.message);
+  }
+  campanha.invalidar();
+  console.log(`[MIRA] @${r.arroba} entrou na campanha por ${req.session.user}`);
+  res.json({ ok: true, arroba: r.arroba });
+});
+
+app.delete('/api/mira/snipers/:arroba', requireAdmin, (req, res) => {
+  const r = snipers.remover(req.params.arroba, req.session.user);
+  if (r.erro) return res.status(r.status || 400).json({ error: r.erro });
+  // Saiu no meio da live: fecha a sessão no histórico antes de desligar.
+  // Sem isso a live fica "no ar" no banco, e se ele voltar pra lista dias
+  // depois, as horas contariam desde o começo daquela live até agora.
+  const { live, db } = clientes.abrir(r.arroba);
+  if (live.estaOnline()) db.markLiveOffline();
+  clientes.fechar(r.arroba);
+  campanha.invalidar();
+  console.log(`[MIRA] @${r.arroba} saiu da campanha por ${req.session.user}`);
+  res.json({ ok: true });
+});
+
+// Pra quando o status mostra a live parada e o sniper jura que está no ar:
+// derruba a conexão e confere de novo em 5 segundos.
+app.post('/api/mira/snipers/:arroba/reconectar', requireAdmin, (req, res) => {
+  if (!snipers.inclui(req.params.arroba)) return res.status(404).json({ error: 'Esse @ não está na campanha.' });
+  clientes.iniciar(req.params.arroba).live.forceReconnect('pedido do administrador');
+  res.json({ ok: true });
+});
+
+// ---------- ADMINISTRADORES ----------
+// Remover tira só a marca de admin: a conta fica no users.json (igual às
+// antigas do ranking de taps) e deixa de entrar na próxima requisição.
+app.get('/api/mira/admins', requireAdmin, (req, res) => {
+  res.json({ voce: req.session.user, admins: auth.listarAdmins() });
+});
+
+app.post('/api/mira/admins', requireAdmin, (req, res) => {
+  const { usuario, senha } = req.body || {};
+  const erro = auth.validarNovaConta(usuario, senha);
+  if (erro) return res.status(400).json({ error: erro });
+  const nome = String(usuario).trim();
+  if (auth.ehAdmin(nome)) return res.status(400).json({ error: `"${nome}" já é administrador.` });
+  auth.upsertUser(nome, senha, { admin: true });
+  console.log(`[MIRA] "${nome}" virou administrador por ${req.session.user}`);
+  res.json({ ok: true });
+});
+
+app.delete('/api/mira/admins/:usuario', requireAdmin, (req, res) => {
+  const alvo = req.params.usuario;
+  if (alvo === req.session.user) {
+    return res.status(400).json({ error: 'Você não pode remover a si mesmo. Peça pra outro administrador.' });
+  }
+  if (!auth.ehAdmin(alvo)) return res.status(404).json({ error: 'Esse administrador não existe.' });
+  // a conta de quem pede é admin (passou no requireAdmin), então sempre sobra um
+  auth.setAdmin(alvo, false);
+  console.log(`[MIRA] "${alvo}" deixou de ser administrador por ${req.session.user}`);
+  res.json({ ok: true });
+});
+
+// Trocar a própria senha pede a atual: uma sessão esquecida aberta num
+// computador alheio não pode virar a conta de outra pessoa. Errar a atual
+// conta no mesmo freio do login.
+app.post('/api/mira/minha-senha', requireAdmin, (req, res) => {
+  const usuario = req.session.user;
+  const { atual, nova } = req.body || {};
+  if (loginTravado(req, usuario)) {
+    return res.status(429).json({ error: 'Muitas tentativas. Espere alguns minutos.' });
+  }
+  if (!auth.verifyCredentials(usuario, atual)) {
+    errouASenha(req, usuario);
+    return res.status(400).json({ error: 'A senha atual está errada.' });
+  }
+  const erro = auth.validarSenha(nova);
+  if (erro) return res.status(400).json({ error: erro });
+  auth.upsertUser(usuario, nova);
+  res.json({ ok: true });
+});
+
 // Último a entrar de propósito: o Express só usa isto se nenhuma rota respondeu.
 // Sem ele, um erro dentro de uma rota caía no handler padrão do Express, que
 // manda a stack trace inteira pro navegador quando NODE_ENV não é 'production'
@@ -314,10 +402,11 @@ server.listen(PORT, () => {
   console.log(assinatura.resumo());
 
   // Sobe a live de cada sniper: sem ela conectada não há o que pontuar.
-  if (!campanhaConfig.snipers.length) {
-    console.warn('AVISO: nenhum sniper na campanha. Defina MIRA_SNIPERS ou edite o campanha.config.js.');
+  const lista = snipers.listar();
+  if (!lista.length) {
+    console.warn('AVISO: nenhum sniper na campanha. Adicione pelo /mira-admin.html (ou MIRA_SNIPERS).');
   }
-  campanhaConfig.snipers.forEach(sniper => {
+  lista.forEach(sniper => {
     try {
       clientes.iniciar(sniper);
       console.log(`Motor da live @${sniper} de pé.`);
