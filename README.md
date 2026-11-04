@@ -158,6 +158,14 @@ começou. Fora do ar, aparece também o motivo ("não está ao vivo agora",
 "não achei essa live", limite do assinador…). O botão **Reconectar** derruba a
 conexão e confere de novo em 5 segundos.
 
+**Conferência de diamantes e horas** (no mesmo card, só para o admin): os
+diamantes, o tempo de live e o número de lives de cada sniper dentro do período,
+que são os números do ranking, já com a live que estiver no ar. Se houver live
+fora do período, aparece também o total contando ela. Embaixo, a hora da última
+gravação no banco, ou o erro em vermelho se a gravação falhou. Os números vêm da
+memória, que vai para o `dados.db` a cada 5 segundos; a hora só muda quando há
+algo novo pra gravar. A tela pública continua sem mostrar diamante nem horas.
+
 ### Rotas
 
 | Rota | Acesso |
@@ -275,7 +283,7 @@ periodo.js         início e fim da campanha: o salvo pelo admin, ou o padrão
 
 public/
   mira.html        ranking público (sem login)
-  mira-admin.html  snipers e status, período, indicações, admins, senha (só admin)
+  mira-admin.html  snipers, status, diamantes e horas, período, indicações, admins, senha (só admin)
   login.html       entrada do administrador
   assets/theme.css os tokens de tema
 
@@ -283,6 +291,7 @@ teste/
   pontuacao.js     a conta da campanha (node --test)
   periodo.js       o período salvo pelo admin vence o padrão (banco temporário)
   snipers.js       adicionar/remover snipers e a passagem da lista padrão pra salva
+  status.js        os números do admin, o que fica fora do público e a gravação no banco
 ```
 
 ---

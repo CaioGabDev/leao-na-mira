@@ -121,6 +121,11 @@ function criarBanco(dono, opcoes) {
 
   let dirty = false;
 
+  // Como foi a última escrita no banco, pra tela do admin. A tela lê da memória,
+  // que anda na frente do disco: sem isto, uma gravação falhando ficaria
+  // invisível até o próximo restart levar os números embora.
+  let gravacao = { em: null, erro: null };
+
   // Buffer da série temporal: os pontos vão pro banco junto com o resto, no
   // saveToDisk. Fica FORA do `state` de propósito — o state é reescrito
   // inteiro a cada gravação, e amostra é append-only.
@@ -235,7 +240,13 @@ function criarBanco(dono, opcoes) {
     amostrar();
     gravarAmostras();
     if (!dirty) return;
-    banco.gravar(dono, state);
+    try {
+      banco.gravar(dono, state);
+    } catch (e) {
+      gravacao = { ...gravacao, erro: e.message };
+      throw e;
+    }
+    gravacao = { em: Date.now(), erro: null };
     dirty = false;
     espelharNoJson();
   }
@@ -577,7 +588,7 @@ function criarBanco(dono, opcoes) {
       delete pendingLikes[uniqueId];
     });
   }
-  setInterval(flushLikeBuffer, 10000);
+  setInterval(flushLikeBuffer, 10000).unref();
 
   // Presentes: UM registro por usuário + nome do presente (em vez de 1 linha por envio).
   // Ex: se "Rose" for enviada 50 vezes pela mesma pessoa, vira 1 linha só com count:50 e value somado.
@@ -1822,7 +1833,7 @@ function criarBanco(dono, opcoes) {
     registrarSuperfa, removerDaTropa, removerUsuario, registrarSubidaDeNivel, setLogListener,
     iniciarBatalha, atualizarPlacarBatalha, finalizarBatalha, fecharBatalhaAbandonada,
     cancelarBatalhaEmAndamento, getBattleStats, getDashboard, getSerie, getRegistros, amostrar,
-    saveToDisk, fechar, dono, espelharNoJson,
+    saveToDisk, fechar, dono, espelharNoJson, ultimaGravacao: () => gravacao,
     numerosDaLiveAtual, setPerfilDoStreamer, getPerfilDoStreamer
   };
 }

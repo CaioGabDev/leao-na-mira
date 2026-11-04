@@ -58,7 +58,10 @@
   .status .arroba { font-weight: 700; overflow: hidden; text-overflow: ellipsis; }
   .status .estado { font-size: 13px; font-weight: 600; color: var(--ink-dim); }
   .status .on .estado { color: var(--green); }
-  .status .quando, .status .recado { grid-column: 2 / -1; font-size: 12.5px; color: var(--ink-dim); }
+  .status .quando, .status .recado, .status .detalhe { grid-column: 2 / -1; font-size: 12.5px; color: var(--ink-dim); }
+  .status .detalhe.falha { color: var(--red); font-weight: 600; }
+  .status .numeros { grid-column: 2 / -1; display: flex; gap: 4px 18px; flex-wrap: wrap; margin-top: 4px; font-size: 13px; color: var(--ink-dim); }
+  .status .numeros b { font-size: 16px; color: var(--ink); }
   .status li.vazio { display: block; }
   input[type=datetime-local] {
     background: var(--card-2); color: var(--ink); border: 1px solid var(--line);
@@ -328,14 +331,56 @@
   // ---------- status das lives ----------
   // "Atualizado" é a última vez que o servidor soube algo da live: o último
   // evento do TikTok com ela no ar, ou a última checagem com ela fora do ar.
-  function quando(ms, agora) {
-    if (!ms) return 'Sem notícia desde que o servidor subiu';
+  function horario(ms, agora) {
     const d = new Date(ms);
     const hoje = new Date(agora).toDateString() === d.toDateString();
     const hora = d.toLocaleTimeString('pt-BR');
     const texto = hoje ? hora : d.toLocaleDateString('pt-BR') + ' ' + hora;
     const min = Math.floor((agora - ms) / 60000);
-    return 'Atualizado às ' + texto + (min >= 1 ? ` (há ${min} min)` : ' (agora há pouco)');
+    return texto + (min >= 1 ? ` (há ${min} min)` : ' (agora há pouco)');
+  }
+
+  function quando(ms, agora) {
+    return ms ? 'Atualizado às ' + horario(ms, agora) : 'Sem notícia desde que o servidor subiu';
+  }
+
+  // ---------- diamantes e tempo de live de cada sniper ----------
+  const milhar = n => n.toLocaleString('pt-BR');
+  const emLives = n => (n === 1 ? '1 live' : milhar(n) + ' lives');
+
+  function duracao(segundos) {
+    const h = Math.floor(segundos / 3600);
+    const min = Math.floor((segundos % 3600) / 60);
+    return h ? `${milhar(h)}h ${min}min` : `${min}min`;
+  }
+
+  function numero(valor, rotulo) {
+    const span = el('span');
+    span.append(el('b', '', valor), ' ' + rotulo);
+    return span;
+  }
+
+  function linhasDosNumeros({ noPeriodo, tudo, gravacao }, agora) {
+    const numeros = el('span', 'numeros');
+    numeros.title = 'O que conta pro ranking: só o que está dentro do período da campanha';
+    numeros.append(
+      numero(milhar(noPeriodo.diamantes), 'diamantes'),
+      numero(duracao(noPeriodo.segundos), 'de live'),
+      numero(emLives(noPeriodo.lives), 'no período')
+    );
+    const linhas = [numeros];
+    if (tudo.diamantes !== noPeriodo.diamantes || tudo.segundos !== noPeriodo.segundos) {
+      linhas.push(el('span', 'detalhe',
+        `Contando fora do período: ${milhar(tudo.diamantes)} diamantes, ${duracao(tudo.segundos)} de live, ${emLives(tudo.lives)}`));
+    }
+    if (gravacao.erro) {
+      linhas.push(el('span', 'detalhe falha', 'Falha ao gravar no banco: ' + gravacao.erro));
+    } else {
+      linhas.push(el('span', 'detalhe', gravacao.em
+        ? 'Gravado no banco às ' + horario(gravacao.em, agora)
+        : 'Nada novo pra gravar no banco desde que o servidor subiu'));
+    }
+    return linhas;
   }
 
   async function carregarStatus() {
@@ -363,6 +408,7 @@
         el('span', 'estado', s.conectado ? 'Live conectada' : 'Desconectada'),
         el('span', 'quando', quando(s.atualizadoEm, dados.agora))
       );
+      if (s.numeros) li.append(...linhasDosNumeros(s.numeros, dados.agora));
       if (s.recado) li.append(el('span', 'recado', s.recado));
       li.append(botoes);
       ul.append(li);
