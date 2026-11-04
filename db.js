@@ -1023,6 +1023,9 @@ function criarBanco(dono, opcoes) {
       fantasmasLimpos: state.global.fantasmasLimpos,
       fichasJuntadas: state.global.fichasJuntadas
     };
+    // foto e nome são de quem é a live, não pontuação: sem isto o ranking fica
+    // com o avatar padrão até a próxima conexão
+    const perfil = state.global.perfilStreamer;
     state.global = {
       totalDiamonds: 0, totalLikes: 0, totalComments: 0, totalFollows: 0, totalShares: 0,
       peakViewers: 0, currentViewers: 0, uniqueViewers: 0, startedAt: Date.now(),
@@ -1031,6 +1034,10 @@ function criarBanco(dono, opcoes) {
     Object.entries(jaMigrado).forEach(([marca, valor]) => {
       if (valor) state.global[marca] = valor;
     });
+    if (perfil) state.global.perfilStreamer = perfil;
+    // a série temporal mora fora do state: sem isto a curva velha ficaria no banco
+    amostrasPendentes = [];
+    banco.podarAmostras(dono, Number.MAX_SAFE_INTEGER);
     Object.keys(pendingLikes).forEach(k => delete pendingLikes[k]);
     Object.keys(likeActionRef).forEach(k => delete likeActionRef[k]);
     Object.keys(giftActionRef).forEach(k => delete giftActionRef[k]);

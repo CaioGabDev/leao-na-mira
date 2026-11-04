@@ -166,6 +166,14 @@ gravação no banco, ou o erro em vermelho se a gravação falhou. Os números v
 memória, que vai para o `dados.db` a cada 5 segundos; a hora só muda quando há
 algo novo pra gravar. A tela pública continua sem mostrar diamante nem horas.
 
+**Zerar pontuação**: o botão no card de cada sniper, e o **Zerar pontuação de
+todos** embaixo da lista, apagam **de vez** as lives, os diamantes, as horas e as
+indicações feitas por aquele sniper. Não há como desfazer: a tela pede pra digitar
+o @ (ou `ZERAR TUDO`), e o servidor confere de novo. O que foi apagado fica só no
+log, numa linha `[MIRA] pontuação ... zerada`. Com a live no ar, ela segue sendo
+acompanhada e volta a contar do zero. Foto e nome ficam. O "todos" vale só pra
+quem está na lista: sniper removido antes do reset volta com o que tinha.
+
 ### Rotas
 
 | Rota | Acesso |
@@ -292,6 +300,7 @@ teste/
   periodo.js       o período salvo pelo admin vence o padrão (banco temporário)
   snipers.js       adicionar/remover snipers e a passagem da lista padrão pra salva
   status.js        os números do admin, o que fica fora do público e a gravação no banco
+  zerar.js         zerar um sniper ou todos, com e sem live no ar (banco temporário)
 ```
 
 ---

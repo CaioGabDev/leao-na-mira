@@ -131,7 +131,46 @@ function criarCampanha({ clientes }) {
     });
   }
 
-  return { getRanking, invalidar, status, snipers: () => snipers.listar() };
+  // Apaga de vez as lives, os diamantes e as indicações feitas por este sniper.
+  // Devolve o que foi apagado, pro log: é o único rastro que sobra.
+  //
+  // Com a live no ar, ela volta a contar do zero a partir de agora: o resetAll
+  // leva a sessão junto, e sem o sessaoReiniciada() o resto dela não contaria.
+  function zerarUm(arroba) {
+    const { db, live } = clientes.abrir(arroba);
+    const { sessoes } = livesDoSniper(db, Date.now());
+    const apagado = somarLivesNoPeriodo(sessoes, -Infinity, Infinity);
+    db.resetAll();
+    live.sessaoReiniciada();
+    ultimaBoa.delete(arroba);
+    return { arroba, ...apagado, indicacoes: indicacoes.removerDoIndicador(arroba) };
+  }
+
+  function zerar(arroba) {
+    const apagado = zerarUm(arroba);
+    invalidar();
+    return apagado;
+  }
+
+  // Só quem está na lista. O dados.db pode guardar outros donos (sniper que saiu,
+  // clientes do ranking de taps), e nada disso é pontuação desta campanha.
+  // Um sniper com erro não pode deixar os outros pela metade.
+  function zerarTodos() {
+    const apagados = [];
+    const falhas = [];
+    for (const arroba of snipers.listar()) {
+      try {
+        apagados.push(zerarUm(arroba));
+      } catch (e) {
+        console.error(`[MIRA] não consegui zerar @${arroba}:`, e.message);
+        falhas.push(arroba);
+      }
+    }
+    invalidar();
+    return { apagados, falhas };
+  }
+
+  return { getRanking, invalidar, status, zerar, zerarTodos, snipers: () => snipers.listar() };
 }
 
 module.exports = criarCampanha;
