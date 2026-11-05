@@ -16,6 +16,7 @@
 const { TikTokLiveConnection, IsLiveRouteConfig, WebcastHttpClient } = require('tiktok-live-connector');
 const ConnectionClass = TikTokLiveConnection;
 const assinatura = require('./assinatura');
+const alerta = require('./alerta');
 
 // Bug da tiktok-live-connector 2.4.4: `isSecure()` está invertido, então ela usa
 // https só pra localhost e fala com o TikTok em http puro. Em casa isso passa,
@@ -94,7 +95,7 @@ async function lerSalaDoPerfil(dono, buscar) {
 // `criarConexao` existe pro teste: o bug do prêmio perdido é sobre ORDEM DE
 // CHEGADA dos eventos, e sem poder mandá-los na ordem que eu quero o teste
 // não testaria o que quebrou. Em produção ninguém passa, e cai no TikTok.
-function criarLive({ dono, db, emitir, criarConexao, buscar = fetch }) {
+function criarLive({ dono, db, emitir, criarConexao, buscar = fetch, avisar = alerta.enviar }) {
   if (!dono) throw new Error('criarLive precisa do @ da live.');
   if (!db) throw new Error('criarLive precisa do db daquele dono.');
   if (typeof emitir !== 'function') throw new Error('criarLive precisa de uma função emitir().');
@@ -105,6 +106,35 @@ function criarLive({ dono, db, emitir, criarConexao, buscar = fetch }) {
   // é indistinguível de "@ escrito errado", "streamer ainda não subiu" e
   // "o assinador recusou" — e o dono fica sem saber o que fazer.
   let ultimaTentativa = null;   // { em, ok, motivo, recado }
+
+  // Live desconectada não pontua, então um problema que dura precisa chegar em
+  // alguém. "Problema" é não conseguir conectar ou não conseguir saber se a live
+  // está no ar; "offline" confirmado é o estado normal e não conta. A espera
+  // deixa passar os tropeços que se resolvem sozinhos na tentativa seguinte.
+  const ALERTA_APOS_MS = Number(process.env.ALERTA_APOS_MS) || 3 * 60 * 1000;
+  let problemaDesde = null;
+  let alertou = false;
+
+  function marcarProblema() {
+    if (!problemaDesde) problemaDesde = Date.now();
+  }
+
+  function limparProblema(comoTerminou) {
+    problemaDesde = null;
+    if (!alertou) return;
+    alertou = false;
+    avisar(`✅ @${dono}: ${comoTerminou}`);
+  }
+
+  function alertarSeDemorou() {
+    if (!problemaDesde || alertou) return;
+    const passou = Date.now() - problemaDesde;
+    if (passou < ALERTA_APOS_MS) return;
+    alertou = true;
+    const motivo = String(ultimaTentativa?.recado || 'sem detalhes').slice(0, 300);
+    avisar(`⚠️ @${dono}: sem conexão há ${Math.round(passou / 60000)} min. ` +
+      `Se estiver ao vivo, não está pontuando.\n\n${motivo}`);
+  }
   let tentativasSeguidas = 0;
   let currentConnection = null;
   let lastEventAt = Date.now();
@@ -796,6 +826,8 @@ function criarLive({ dono, db, emitir, criarConexao, buscar = fetch }) {
   // e ele tem que ser barato — é nele que a live passa a maior parte do dia.
   function aguardarLiveComecar(motivo, recado, espera) {
     ultimaTentativa = { em: Date.now(), ok: false, motivo, recado };
+    if (motivo === 'offline') limparProblema('está offline, sem problema na conexão.');
+    else marcarProblema();
     // "streamer offline" não é falha de conexão: zerar aqui evita que o painel
     // mostre milhares de "tentativas" pra uma live que simplesmente não subiu.
     tentativasSeguidas = 0;
@@ -866,6 +898,7 @@ function criarLive({ dono, db, emitir, criarConexao, buscar = fetch }) {
       // sessão rodando — só abre uma sessão nova quando a live tinha mesmo
       // sido dada como encerrada.
       ultimaTentativa = { em: Date.now(), ok: true, motivo: 'conectado', recado: '' };
+      limparProblema('conectou de novo.');
       tentativasSeguidas = 0;
       guardarPerfilDoStreamer(state.roomInfo);
       if (!liveOnline) {
@@ -877,6 +910,8 @@ function criarLive({ dono, db, emitir, criarConexao, buscar = fetch }) {
       conectando = false;
       tentativasSeguidas++;
       ultimaTentativa = { em: Date.now(), ok: false, ...classificarFalha(err) };
+      if (ultimaTentativa.motivo === 'offline') limparProblema('está offline, sem problema na conexão.');
+      else marcarProblema();
       console.error('Erro ao conectar na live:', err?.message || err);
       motivosDaFalha(err).forEach((m, i) => console.error(`  fonte ${i + 1}: ${m}`));
 
@@ -2278,6 +2313,8 @@ function criarLive({ dono, db, emitir, criarConexao, buscar = fetch }) {
     // marca que a live seguia no ar; se o servidor reiniciar logo em seguida,
     // a duração é retomada em vez de voltar pro zero
     if (liveOnline) db.heartbeat();
+
+    alertarSeDemorou();
 
     // adversário que some no meio não gera evento de fim: fecha na unha
     if (db.fecharBatalhaAbandonada()) {

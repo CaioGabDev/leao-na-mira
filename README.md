@@ -218,6 +218,23 @@ sorteio, pra várias lives não voltarem no mesmo instante.
 
 ---
 
+## Alertas no Telegram
+
+O servidor avisa quando uma live passa 3 minutos sem conseguir conectar, ou sem
+conseguir saber se ela está no ar, e avisa de novo quando isso se resolve. Cada
+problema gera um alerta só, sem repetir. Streamer offline não gera alerta. Toda
+subida do servidor manda uma mensagem, e é assim que se confere a configuração.
+
+Pra ligar:
+
+1. No Telegram, fale com o `@BotFather`, mande `/newbot` e guarde o token.
+2. Mande qualquer mensagem pro bot novo.
+3. Abra `https://api.telegram.org/bot<TOKEN>/getUpdates` no navegador e copie o
+   número em `"chat":{"id":...}`.
+4. Defina `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID` no Railway.
+
+---
+
 ## Variáveis de ambiente
 
 | Variável | Pra que serve |
@@ -232,6 +249,8 @@ sorteio, pra várias lives não voltarem no mesmo instante.
 | `SIGN_API_URL` | Aponta o assinador pra outro servidor. Serve pra investigação. |
 | `INTERVALO_CHECAGEM_MS` | De quanto em quanto tempo perguntar se o sniper subiu. Padrão: `30000`. Não custa cota do assinador. |
 | `INTERVALO_EULER_MS` | Intervalo mínimo, por live, pra perguntar ao Euler quando o TikTok bloqueia as fontes gratuitas. Padrão: `180000`. Custa cota. |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | Bot e conversa que recebem os alertas. Sem os dois, os alertas ficam desligados. |
+| `ALERTA_APOS_MS` | Quanto tempo uma live fica com problema antes do alerta. Padrão: `180000`. |
 | `DEV_LOCAL=1` | **Só na sua máquina.** Aceita rodar sem `SESSION_SECRET` e manda o cookie de sessão por HTTP. Em qualquer deploy, não defina. |
 | `RAILWAY_ENVIRONMENT` | Quando existe, todos os arquivos de dados passam a morar em `/data`. |
 
@@ -278,6 +297,7 @@ live.js            o motor de uma live: conexão com o TikTok, eventos, reconex�
 db.js              os dados de uma live, em memória, com o banco como espelho
 banco.js           o SQLite (node:sqlite). Toda linha carrega o `dono`
 assinatura.js      o estado do assinador da conexão
+alerta.js          envia os alertas no Telegram
 protocru.js        lê o protobuf cru pra achar campo que a lib não conhece
 auth.js            contas, hash de senha, admin
 session-store.js   sessões em arquivo

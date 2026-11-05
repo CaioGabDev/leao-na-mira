@@ -4,6 +4,7 @@ const session = require('express-session');
 const path = require('path');
 const criarRegistro = require('./clientes');
 const assinatura = require('./assinatura');
+const alerta = require('./alerta');
 const auth = require('./auth');
 const { FileSessionStore } = require('./session-store');
 const snipers = require('./snipers');
@@ -430,6 +431,9 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`Servidor rodando em http://localhost:${PORT}`);
   console.log(assinatura.resumo());
+  console.log(alerta.resumo());
+  // Avisar a subida prova que o bot funciona, e um reinício sem deploy aparece.
+  alerta.enviar('✅ Leão na Mira ligado. Os alertas estão funcionando.');
 
   // Sobe a live de cada sniper: sem ela conectada não há o que pontuar.
   const lista = snipers.listar();

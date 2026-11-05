@@ -38,12 +38,13 @@ function paginaDoPerfil(usuario) {
 const paginaDeFirewall = { ok: true, status: 200, text: async () => '<html>firewall</html>' };
 
 // sem `perfil`, a página cai no firewall, como no bloqueio de verdade
-function montar({ euler, connect, perfil } = {}) {
-  const conta = { checagens: 0, conexoes: 0, perguntasAoEuler: 0, leiturasDePerfil: 0, salas: [] };
+function montar({ euler, connect, perfil, fetchIsLive } = {}) {
+  const conta = { checagens: 0, conexoes: 0, perguntasAoEuler: 0, leiturasDePerfil: 0, salas: [], alertas: [] };
   const live = criarLive({
     dono: 'teste',
     db: dbDeMentira,
     emitir: () => {},
+    avisar: async texto => { conta.alertas.push(texto); },
     buscar: async () => {
       conta.leiturasDePerfil++;
       return perfil ? paginaDoPerfil(perfil) : paginaDeFirewall;
@@ -51,7 +52,11 @@ function montar({ euler, connect, perfil } = {}) {
     criarConexao: () => ({
       on() {},
       disconnect() {},
-      fetchIsLive: async () => { conta.checagens++; throw falhaDasFontes(); },
+      fetchIsLive: async () => {
+        conta.checagens++;
+        if (fetchIsLive) return fetchIsLive();
+        throw falhaDasFontes();
+      },
       apiClient: euler && {
         anchors: {
           retrieveRoomId: async () => { conta.perguntasAoEuler++; return { data: euler }; }
@@ -218,6 +223,92 @@ test('bloqueio ao buscar a sala não manda conferir o @', async () => {
   const { motivo, recado } = live.estadoDaConexao().ultimaTentativa;
   assert.equal(motivo, 'bloqueio');
   assert.doesNotMatch(recado, /Confira/);
+  live.parar();
+});
+
+// anda o relógio aos poucos, deixando cada tentativa terminar
+async function passar(segundos) {
+  for (let s = 0; s < segundos; s += 10) {
+    mock.timers.tick(10000);
+    await assentar();
+  }
+}
+
+test('alerta: problema que dura 3 min avisa uma vez só, com o motivo', async () => {
+  const { live, conta } = montar();
+  live.iniciar();
+  await assentar();
+
+  await passar(150);
+  assert.equal(conta.alertas.length, 0, 'antes dos 3 min não avisa');
+
+  await passar(60);
+  assert.equal(conta.alertas.length, 1);
+  assert.match(conta.alertas[0], /@teste: sem conexão há 3 min/);
+  assert.match(conta.alertas[0], /bloqueado no HTML/);
+
+  await passar(60);
+  assert.equal(conta.alertas.length, 1, 'não pode repetir o mesmo problema');
+  live.parar();
+});
+
+test('alerta: avisa de novo quando a live conecta', async () => {
+  let bloqueado = true;
+  const { live, conta } = montar({
+    fetchIsLive: async () => {
+      if (bloqueado) throw falhaDasFontes();
+      return true;
+    }
+  });
+  live.iniciar();
+  await assentar();
+  await passar(210);
+  assert.equal(conta.alertas.length, 1);
+
+  bloqueado = false;
+  await passar(150);
+  assert.equal(conta.conexoes, 1);
+  assert.equal(conta.alertas.length, 2);
+  assert.match(conta.alertas[1], /@teste: conectou de novo/);
+  live.parar();
+});
+
+test('alerta: offline confirmado não avisa', async () => {
+  const { live, conta } = montar({ fetchIsLive: async () => false });
+  live.iniciar();
+  await assentar();
+  await passar(240);
+  assert.equal(conta.alertas.length, 0);
+  live.parar();
+});
+
+test('alerta: falha que passa antes dos 3 min não avisa', async () => {
+  let bloqueado = true;
+  const { live, conta } = montar({
+    fetchIsLive: async () => {
+      if (bloqueado) throw falhaDasFontes();
+      return false;
+    }
+  });
+  live.iniciar();
+  await assentar();
+  await passar(60);
+  bloqueado = false;
+  await passar(180);
+  assert.equal(conta.alertas.length, 0);
+  live.parar();
+});
+
+test('alerta: conectar falhando também avisa, mesmo com a checagem dizendo ao vivo', async () => {
+  const { live, conta } = montar({
+    fetchIsLive: async () => true,
+    connect: async () => { throw new Error('assinador caiu'); }
+  });
+  live.iniciar();
+  await assentar();
+  await passar(210);
+  assert.equal(conta.alertas.length, 1);
+  assert.match(conta.alertas[0], /assinador caiu/);
   live.parar();
 });
 
