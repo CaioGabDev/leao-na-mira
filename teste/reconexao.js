@@ -28,12 +28,26 @@ function falhaDasFontes() {
   return err;
 }
 
-function montar({ euler, connect } = {}) {
-  const conta = { checagens: 0, conexoes: 0, perguntasAoEuler: 0, salas: [] };
+function paginaDoPerfil(usuario) {
+  const dados = { __DEFAULT_SCOPE__: { 'webapp.user-detail': { userInfo: { user: usuario } } } };
+  const html = '<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">' +
+    JSON.stringify(dados) + '</script>';
+  return { ok: true, status: 200, text: async () => html };
+}
+
+const paginaDeFirewall = { ok: true, status: 200, text: async () => '<html>firewall</html>' };
+
+// sem `perfil`, a página cai no firewall, como no bloqueio de verdade
+function montar({ euler, connect, perfil } = {}) {
+  const conta = { checagens: 0, conexoes: 0, perguntasAoEuler: 0, leiturasDePerfil: 0, salas: [] };
   const live = criarLive({
     dono: 'teste',
     db: dbDeMentira,
     emitir: () => {},
+    buscar: async () => {
+      conta.leiturasDePerfil++;
+      return perfil ? paginaDoPerfil(perfil) : paginaDeFirewall;
+    },
     criarConexao: () => ({
       on() {},
       disconnect() {},
@@ -98,6 +112,54 @@ test('Reconectar do administrador conecta sem refazer a checagem', async () => {
 
   assert.equal(conta.checagens, 1, 'não podia ter checado de novo');
   assert.equal(conta.conexoes, 1);
+  live.parar();
+});
+
+test('perfil diz ao vivo: conecta na sala dele sem perguntar ao Euler', async () => {
+  const { live, conta } = montar({
+    perfil: { uniqueId: 'Teste', roomId: '555' },
+    euler: { code: 200, is_live: false }
+  });
+  live.iniciar();
+  await assentar();
+  assert.deepEqual(conta.salas, ['555']);
+  assert.equal(conta.perguntasAoEuler, 0);
+  live.parar();
+});
+
+test('perfil diz offline: não conecta nem pergunta ao Euler', async () => {
+  const { live, conta } = montar({
+    perfil: { uniqueId: 'teste', roomId: '' },
+    euler: { code: 200, is_live: true, room_id: '777' }
+  });
+  live.iniciar();
+  await assentar();
+  assert.equal(live.estadoDaConexao().ultimaTentativa.motivo, 'offline');
+  assert.equal(conta.conexoes, 0);
+  assert.equal(conta.perguntasAoEuler, 0);
+  live.parar();
+});
+
+test('perfil de outro @ não vale: a sala dele não é usada', async () => {
+  const { live, conta } = montar({
+    perfil: { uniqueId: 'outra_pessoa', roomId: '555' },
+    euler: { code: 200, is_live: false }
+  });
+  live.iniciar();
+  await assentar();
+  assert.equal(conta.conexoes, 0);
+  assert.equal(conta.perguntasAoEuler, 1);
+  live.parar();
+});
+
+test('perfil sem o campo roomId não vira "offline"', async () => {
+  const { live, conta } = montar({ perfil: { uniqueId: 'teste' } });
+  live.iniciar();
+  await assentar();
+  const { motivo, recado } = live.estadoDaConexao().ultimaTentativa;
+  assert.equal(motivo, 'erro');
+  assert.match(recado, /sem o campo roomId/);
+  assert.equal(conta.conexoes, 0);
   live.parar();
 });
 

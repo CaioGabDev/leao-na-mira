@@ -57,10 +57,44 @@ function motivosDaFalha(err) {
   return lista.map(e => String(e?.message || e).slice(0, 200));
 }
 
+// O perfil público aberto como celular diz se a live está no ar e já traz a
+// sala, de graça: `roomId` preenchido é ao vivo, vazio é offline. A mesma página
+// aberta como computador cai no firewall do TikTok. É a porta "html-celular" do
+// posse.js do Ranking de Taps, e aqui só entra quando as fontes da lib falham,
+// porque são 240KB por leitura e o limite do TikTok é por IP.
+const UA_CELULAR = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) ' +
+  'AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
+const TEMPO_LIMITE_PERFIL_MS = 12 * 1000;
+
+async function lerSalaDoPerfil(dono, buscar) {
+  const r = await buscar(`https://www.tiktok.com/@${encodeURIComponent(dono)}`, {
+    headers: {
+      'user-agent': UA_CELULAR,
+      'accept-language': 'pt-BR,pt;q=0.9,en;q=0.8',
+      referer: 'https://www.tiktok.com/'
+    },
+    signal: AbortSignal.timeout(TEMPO_LIMITE_PERFIL_MS)
+  });
+  if (!r.ok) throw new Error(`o TikTok respondeu ${r.status}`);
+
+  const bloco = (await r.text()).match(
+    /<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__"[^>]*>([\s\S]*?)<\/script>/);
+  if (!bloco) throw new Error('a página veio sem os dados do perfil (firewall do TikTok)');
+
+  const usuario = JSON.parse(bloco[1])?.__DEFAULT_SCOPE__?.['webapp.user-detail']?.userInfo?.user;
+  // Sem isto, um redirecionamento faria a live de outra pessoa contar pra este @.
+  if (String(usuario?.uniqueId || '').toLowerCase() !== dono.toLowerCase()) {
+    throw new Error('o perfil não veio ou veio de outro @');
+  }
+  // Campo sumido é mudança no TikTok, não "offline": não pode virar resposta.
+  if (typeof usuario.roomId !== 'string') throw new Error('o perfil veio sem o campo roomId');
+  return usuario.roomId;
+}
+
 // `criarConexao` existe pro teste: o bug do prêmio perdido é sobre ORDEM DE
 // CHEGADA dos eventos, e sem poder mandá-los na ordem que eu quero o teste
 // não testaria o que quebrou. Em produção ninguém passa, e cai no TikTok.
-function criarLive({ dono, db, emitir, criarConexao }) {
+function criarLive({ dono, db, emitir, criarConexao, buscar = fetch }) {
   if (!dono) throw new Error('criarLive precisa do @ da live.');
   if (!db) throw new Error('criarLive precisa do db daquele dono.');
   if (typeof emitir !== 'function') throw new Error('criarLive precisa de uma função emitir().');
@@ -669,8 +703,9 @@ function criarLive({ dono, db, emitir, criarConexao }) {
   const INTERVALO_CHECAGEM_MS = Number(process.env.INTERVALO_CHECAGEM_MS) || 30 * 1000;
 
   // O TikTok bloqueia o servidor de vez em quando (403 ou página de firewall nas
-  // duas fontes gratuitas). Aí quem responde é o Euler, em uma chamada que já
-  // traz a sala. Antes a saída era conectar às cegas a cada ~2 min, mesmo com o
+  // duas fontes da lib). Aí a pergunta vai pro perfil de celular, que é de graça,
+  // e só depois pro Euler, em uma chamada que já traz a sala. Antes a saída era
+  // conectar às cegas a cada ~2 min, mesmo com o
   // streamer offline, o que gastava até duas chamadas por tentativa.
   //
   // Atenção: sem chave, esta rota responde 401 "requires a Business plan". Se o
@@ -683,7 +718,7 @@ function criarLive({ dono, db, emitir, criarConexao }) {
   const INTERVALO_EULER_MS = Number(process.env.INTERVALO_EULER_MS) || 3 * 60 * 1000;
   let ultimaPerguntaAoEuler = 0;
   let eulerDisseOffline = false;
-  let salaDoEuler = null;       // a sala que o Euler passou, pra usar no connect()
+  let salaConfirmada = null;    // a sala que o perfil ou o Euler passou, pro connect()
   let falhasDeChecagem = 0;
   let motivoDaChecagem = '';   // por que a última checagem falhou, pro painel
 
@@ -691,6 +726,22 @@ function criarLive({ dono, db, emitir, criarConexao }) {
   // direto. Se a checagem é justamente o que está falhando, repeti-la não
   // adianta nada. Custa uma assinatura por clique, então só o botão usa isto.
   let conectarDireto = false;
+
+  // true/false quando o perfil respondeu; null quando ele também não abriu
+  async function perguntarAoPerfil() {
+    try {
+      const sala = await lerSalaDoPerfil(dono, buscar);
+      console.log(`Perfil respondeu por @${dono}: ${sala ? 'ao vivo' : 'offline'}`);
+      if (!sala) return false;
+      salaConfirmada = sala;
+      return true;
+    } catch (err) {
+      const recado = String(err?.message || err).slice(0, 200);
+      console.error(`O perfil também não respondeu por @${dono}: ${recado}`);
+      motivoDaChecagem = `Perfil: ${recado} | ${motivoDaChecagem}`;
+      return null;
+    }
+  }
 
   async function perguntarAoEuler(connection) {
     if (Date.now() - ultimaPerguntaAoEuler < INTERVALO_EULER_MS) {
@@ -709,7 +760,7 @@ function criarLive({ dono, db, emitir, criarConexao }) {
         eulerDisseOffline = true;
         return false;
       }
-      salaDoEuler = r.room_id || null;
+      salaConfirmada = r.room_id || null;
       return true;
     } catch (err) {
       const recado = String(err?.message || err).slice(0, 200);
@@ -735,7 +786,8 @@ function criarLive({ dono, db, emitir, criarConexao }) {
       console.error(`Não consegui checar se @${dono} está ao vivo ` +
         `(${falhasDeChecagem}ª falha seguida):`, err?.message || err);
       motivos.forEach((m, i) => console.error(`  fonte ${i + 1}: ${m}`));
-      return perguntarAoEuler(connection);
+      const peloPerfil = await perguntarAoPerfil();
+      return peloPerfil === null ? perguntarAoEuler(connection) : peloPerfil;
     }
   }
 
@@ -799,8 +851,8 @@ function criarLive({ dono, db, emitir, criarConexao }) {
           esperaDaChecagem(1 + Math.min(falhasDeChecagem, 3)));
         return null;
       }
-      const sala = salaDoEuler;
-      salaDoEuler = null;
+      const sala = salaConfirmada;
+      salaConfirmada = null;
       return connection.connect(sala || undefined);
     }).then(state => {
       if (state === null) return;   // não tinha live pra conectar
