@@ -218,12 +218,24 @@ sorteio, pra várias lives não voltarem no mesmo instante.
 
 ---
 
+## Foto dos snipers
+
+A foto vem do perfil público do TikTok, com ou sem live no ar: quem nunca fez
+live também aparece com foto. Ela é buscada em até 10 min depois que o servidor
+sobe e renovada a cada 12h, porque o link do TikTok vence em cerca de 2 dias.
+Se o TikTok não entregar, o ranking mostra o avatar padrão.
+
+---
+
 ## Alertas no Telegram
 
 O servidor avisa quando uma live passa 3 minutos sem conseguir conectar, ou sem
 conseguir saber se ela está no ar, e avisa de novo quando isso se resolve. Cada
 problema gera um alerta só, sem repetir. Streamer offline não gera alerta. Toda
 subida do servidor manda uma mensagem, e é assim que se confere a configuração.
+
+O alerta já traz o que aconteceu e os próximos passos, que mudam conforme o
+motivo (os textos estão em `alerta.js`). Os horários são de Brasília.
 
 Pra ligar:
 

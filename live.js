@@ -67,7 +67,7 @@ const UA_CELULAR = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) ' +
   'AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
 const TEMPO_LIMITE_PERFIL_MS = 12 * 1000;
 
-async function lerSalaDoPerfil(dono, buscar) {
+async function lerPerfilNoCelular(dono, buscar) {
   const r = await buscar(`https://www.tiktok.com/@${encodeURIComponent(dono)}`, {
     headers: {
       'user-agent': UA_CELULAR,
@@ -87,9 +87,7 @@ async function lerSalaDoPerfil(dono, buscar) {
   if (String(usuario?.uniqueId || '').toLowerCase() !== dono.toLowerCase()) {
     throw new Error('o perfil não veio ou veio de outro @');
   }
-  // Campo sumido é mudança no TikTok, não "offline": não pode virar resposta.
-  if (typeof usuario.roomId !== 'string') throw new Error('o perfil veio sem o campo roomId');
-  return usuario.roomId;
+  return usuario;
 }
 
 // `criarConexao` existe pro teste: o bug do prêmio perdido é sobre ORDEM DE
@@ -119,21 +117,24 @@ function criarLive({ dono, db, emitir, criarConexao, buscar = fetch, avisar = al
     if (!problemaDesde) problemaDesde = Date.now();
   }
 
-  function limparProblema(comoTerminou) {
+  function limparProblema(resultado) {
+    const desde = problemaDesde;
     problemaDesde = null;
     if (!alertou) return;
     alertou = false;
-    avisar(`✅ @${dono}: ${comoTerminou}`);
+    avisar(alerta.textoDaSolucao({ dono, desde, resultado }));
   }
 
   function alertarSeDemorou() {
     if (!problemaDesde || alertou) return;
-    const passou = Date.now() - problemaDesde;
-    if (passou < ALERTA_APOS_MS) return;
+    if (Date.now() - problemaDesde < ALERTA_APOS_MS) return;
     alertou = true;
-    const motivo = String(ultimaTentativa?.recado || 'sem detalhes').slice(0, 300);
-    avisar(`⚠️ @${dono}: sem conexão há ${Math.round(passou / 60000)} min. ` +
-      `Se estiver ao vivo, não está pontuando.\n\n${motivo}`);
+    avisar(alerta.textoDoProblema({
+      dono,
+      desde: problemaDesde,
+      motivo: ultimaTentativa?.motivo,
+      recado: ultimaTentativa?.recado
+    }));
   }
   let tentativasSeguidas = 0;
   let currentConnection = null;
@@ -721,6 +722,32 @@ function criarLive({ dono, db, emitir, criarConexao, buscar = fetch, avisar = al
   // API deles, não é bug do nosso código) — dá pra ver isso no log do servidor.
   let roomUserEventCount = 0;
 
+  // A foto do ranking não pode depender de a live ter conectado: quem nunca fez
+  // live ficava sem nenhuma. E o link do TikTok vence em ~2 dias, então mesmo
+  // quem conectou perdia a foto. Por isso ela é renovada a cada 12h, com folga.
+  //
+  // A primeira tentativa é sorteada dentro da espera pra um deploy não mandar
+  // todas as lives no perfil do TikTok no mesmo segundo: o limite dele é por IP.
+  const VALIDADE_FOTO_MS = 12 * 60 * 60 * 1000;
+  const ESPERA_FOTO_MS = 10 * 60 * 1000;
+  let ultimaBuscaDeFoto = Date.now() - ESPERA_FOTO_MS * Math.random();
+
+  async function renovarFotoSeVelha() {
+    const perfil = db.getPerfilDoStreamer();
+    if (perfil?.avatar && Date.now() - perfil.em < VALIDADE_FOTO_MS) return;
+    if (Date.now() - ultimaBuscaDeFoto < ESPERA_FOTO_MS) return;
+    ultimaBuscaDeFoto = Date.now();
+    try {
+      const usuario = await lerPerfilNoCelular(dono, buscar);
+      const avatar = usuario.avatarThumb || usuario.avatarMedium;
+      // sem foto nova, fica a que já existe: o nome sozinho apagaria ela
+      if (avatar) db.setPerfilDoStreamer({ avatar, nome: usuario.nickname });
+    } catch (err) {
+      // foto é enfeite: tenta de novo na próxima espera
+      console.error(`[MIRA] não renovei a foto de @${dono}:`, err?.message || err);
+    }
+  }
+
   // Um connect() que ainda não respondeu não pode ganhar um irmão: seria outra
   // conexão de verdade pedindo outra assinatura, e as duas contariam pro limite.
   // O teto de 2 min é a saída de emergência pro caso de o connect() nunca
@@ -760,7 +787,9 @@ function criarLive({ dono, db, emitir, criarConexao, buscar = fetch, avisar = al
   // true/false quando o perfil respondeu; null quando ele também não abriu
   async function perguntarAoPerfil() {
     try {
-      const sala = await lerSalaDoPerfil(dono, buscar);
+      const { roomId: sala } = await lerPerfilNoCelular(dono, buscar);
+      // Campo sumido é mudança no TikTok, não "offline": não pode virar resposta.
+      if (typeof sala !== 'string') throw new Error('o perfil veio sem o campo roomId');
       console.log(`Perfil respondeu por @${dono}: ${sala ? 'ao vivo' : 'offline'}`);
       if (!sala) return false;
       salaConfirmada = sala;
@@ -826,7 +855,7 @@ function criarLive({ dono, db, emitir, criarConexao, buscar = fetch, avisar = al
   // e ele tem que ser barato — é nele que a live passa a maior parte do dia.
   function aguardarLiveComecar(motivo, recado, espera) {
     ultimaTentativa = { em: Date.now(), ok: false, motivo, recado };
-    if (motivo === 'offline') limparProblema('está offline, sem problema na conexão.');
+    if (motivo === 'offline') limparProblema('offline');
     else marcarProblema();
     // "streamer offline" não é falha de conexão: zerar aqui evita que o painel
     // mostre milhares de "tentativas" pra uma live que simplesmente não subiu.
@@ -877,7 +906,7 @@ function criarLive({ dono, db, emitir, criarConexao, buscar = fetch, avisar = al
       }
       if (aoVivo === 'incerto') {
         conectando = false;
-        aguardarLiveComecar('erro',
+        aguardarLiveComecar('incerto',
           'Não consegui confirmar se a live está no ar. Tentando de novo em instantes.' +
             (motivoDaChecagem ? ` Motivo: ${motivoDaChecagem.slice(0, 300)}` : ''),
           esperaDaChecagem(1 + Math.min(falhasDeChecagem, 3)));
@@ -898,7 +927,7 @@ function criarLive({ dono, db, emitir, criarConexao, buscar = fetch, avisar = al
       // sessão rodando — só abre uma sessão nova quando a live tinha mesmo
       // sido dada como encerrada.
       ultimaTentativa = { em: Date.now(), ok: true, motivo: 'conectado', recado: '' };
-      limparProblema('conectou de novo.');
+      limparProblema('conectou');
       tentativasSeguidas = 0;
       guardarPerfilDoStreamer(state.roomInfo);
       if (!liveOnline) {
@@ -910,7 +939,7 @@ function criarLive({ dono, db, emitir, criarConexao, buscar = fetch, avisar = al
       conectando = false;
       tentativasSeguidas++;
       ultimaTentativa = { em: Date.now(), ok: false, ...classificarFalha(err) };
-      if (ultimaTentativa.motivo === 'offline') limparProblema('está offline, sem problema na conexão.');
+      if (ultimaTentativa.motivo === 'offline') limparProblema('offline');
       else marcarProblema();
       console.error('Erro ao conectar na live:', err?.message || err);
       motivosDaFalha(err).forEach((m, i) => console.error(`  fonte ${i + 1}: ${m}`));
@@ -2315,6 +2344,7 @@ function criarLive({ dono, db, emitir, criarConexao, buscar = fetch, avisar = al
     if (liveOnline) db.heartbeat();
 
     alertarSeDemorou();
+    renovarFotoSeVelha();
 
     // adversário que some no meio não gera evento de fim: fecha na unha
     if (db.fecharBatalhaAbandonada()) {
