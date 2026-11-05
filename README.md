@@ -123,13 +123,14 @@ Empate: mais diamantes, depois mais horas.
   servidor estava fora do ar, o sniper entrou depois) **não existe** pra conta.
 - **Presentes em combo**: contam quando o combo fecha, ou quando a live acaba, ou
   depois de 30s parados, o que vier primeiro. Um presente que o TikTok nunca
-  chegou a enviar não tem como contar: nesse caso, use os pontos manuais.
+  chegou a enviar não tem como contar: nesse caso, corrija os diamantes no painel.
 - **Bordas do período**: a duração é cortada no início e no fim. O diamante vai
   pela live inteira, porque a sessão guarda o total e não a hora de cada presente.
-- **Pontos manuais**: lançados pelo administrador em `/mira-admin.html`, pra
-  compensar o que o sistema não contou. Cada lançamento guarda motivo e autor, e
-  soma direto no total, sem depender do período. O ranking público mostra só o
-  total. Um lançamento errado se desfaz removendo a linha, e "Zerar" leva junto.
+- **Correções**: o administrador digita em `/mira-admin.html` os diamantes e os
+  minutos reais do período, e a pontuação sai da conta normal. Fica guardada a
+  diferença, então as lives seguintes somam por cima. Cada correção guarda motivo
+  e autor, e se desfaz removendo a linha. "Zerar" leva junto. Pontos lançados
+  antes das correções seguem somando até serem removidos.
 - **Indicações**: entrada manual do administrador em `/mira-admin.html`, gravada
   na tabela `indicacoes` do `dados.db`. Um mesmo indicado só pode ser
   creditado uma vez.
@@ -325,7 +326,8 @@ campanha.config.js valores da pontuação, período, snipers
 pontuacao.js       a conta da campanha (pura, testada)
 campanha.js        o ranking com cache e último dado bom, e o status das lives
 indicacoes.js      quem indicou quem (tabela `indicacoes` no dados.db)
-pontos-manuais.js  os pontos lançados pelo admin (tabela `pontos_manuais`)
+correcoes.js       diamantes e minutos corrigidos pelo admin (tabela `correcoes`)
+pontos-manuais.js  pontos lançados antes das correções (tabela `pontos_manuais`)
 snipers.js         a lista de snipers: a salva pelo admin, ou a padrão
 ajustes.js         a tabela `campanha_ajustes` (chave -> JSON) que os dois usam
 periodo.js         início e fim da campanha: o salvo pelo admin, ou o padrão

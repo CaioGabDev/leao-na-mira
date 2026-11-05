@@ -166,24 +166,36 @@
     </table>
   </div>
 
-  <div class="caixa">
-    <h2>Pontos manuais</h2>
-    <form id="formPontos">
-      <p class="origem">Pra compensar o que o sistema não contou. Soma direto no total do ranking, sem depender do período da campanha.</p>
-      <label>Sniper
-        <select id="pontosSniper" required></select>
+  <div class="caixa" id="caixaCorrecao">
+    <h2>Corrigir diamantes e minutos</h2>
+    <form id="formCorrecao">
+      <p class="origem">Digite os números reais do período da campanha. A pontuação é recalculada sozinha, e as próximas lives continuam somando em cima.</p>
+      <label class="inteira">Sniper
+        <select id="correcaoSniper" required></select>
       </label>
-      <label>Pontos
-        <input type="number" id="pontosValor" required min="1" max="100000" step="1" inputmode="numeric" placeholder="30">
+      <label>Diamantes reais
+        <input type="number" id="correcaoDiamantes" required min="0" max="100000000" step="1" inputmode="numeric">
+      </label>
+      <label>Minutos reais de live
+        <input type="number" id="correcaoMinutos" required min="0" max="100000" step="1" inputmode="numeric">
       </label>
       <label class="inteira">Motivo
-        <input type="text" id="pontosMotivo" required minlength="3" maxlength="200" autocomplete="off" placeholder="Live de 05/11 das 01:20 às 01:35 não foi contada">
+        <input type="text" id="correcaoMotivo" required minlength="3" maxlength="200" autocomplete="off" placeholder="Live de 05/11: combo no fim não foi contado">
       </label>
       <div class="acoes">
-        <button type="submit" class="principal">Adicionar pontos</button>
+        <button type="submit" class="principal">Salvar correção</button>
       </div>
     </form>
-    <div class="msg" id="msgPontos"></div>
+    <div class="msg" id="msgCorrecao"></div>
+    <table>
+      <thead><tr><th>Sniper</th><th>Mudança</th><th>Motivo</th><th>Feita</th><th></th></tr></thead>
+      <tbody id="listaCorrecoes"></tbody>
+    </table>
+  </div>
+
+  <div class="caixa" id="caixaPontosAntigos" hidden>
+    <h2>Pontos lançados antes</h2>
+    <p class="origem">Continuam somando no total. Pra usar a correção no lugar deles, remova aqui e corrija os números acima.</p>
     <table>
       <thead><tr><th>Sniper</th><th>Pontos</th><th>Motivo</th><th>Lançado</th><th></th></tr></thead>
       <tbody id="listaPontos"></tbody>
@@ -232,6 +244,7 @@
   let editando = null;   // id da indicação em edição, ou null
   let itens = [];
   let snipersAtuais = [];
+  let numerosPorSniper = {};   // os números de cada sniper, pro formulário de correção
 
   function el(tag, classe, texto) {
     const e = document.createElement(tag);
@@ -386,13 +399,14 @@
     return span;
   }
 
-  function linhasDosNumeros({ noPeriodo, tudo, gravacao }, agora) {
+  function linhasDosNumeros({ noPeriodo, tudo, pontos, gravacao }, agora) {
     const numeros = el('span', 'numeros');
     numeros.title = 'O que conta pro ranking: só o que está dentro do período da campanha';
     numeros.append(
       numero(milhar(noPeriodo.diamantes), 'diamantes'),
       numero(duracao(noPeriodo.segundos), 'de live'),
-      numero(emLives(noPeriodo.lives), 'no período')
+      numero(emLives(noPeriodo.lives), 'no período'),
+      numero(milhar(pontos), pontos === 1 ? 'ponto' : 'pontos')
     );
     const linhas = [numeros];
     if (tudo.diamantes !== noPeriodo.diamantes || tudo.segundos !== noPeriodo.segundos) {
@@ -414,6 +428,9 @@
     const ul = $('status');
     ul.replaceChildren();
     $('zerarTodos').hidden = !dados.snipers.length;
+    numerosPorSniper = {};
+    dados.snipers.forEach(s => { if (s.numeros) numerosPorSniper[s.arroba] = s.numeros.noPeriodo; });
+    if (!correcaoMexida) preencherCorrecao();
     if (!dados.snipers.length) {
       ul.append(el('li', 'vazio', 'Nenhum sniper na campanha. Adicione o primeiro aqui em cima.'));
       return;
@@ -430,9 +447,13 @@
       remover.onclick = () => removerSniper(s.arroba);
       const zerar = el('button', 'perigo', 'Zerar pontuação');
       zerar.type = 'button';
-      zerar.title = 'Apaga de vez as lives, os diamantes, as indicações e os pontos manuais deste sniper';
+      zerar.title = 'Apaga de vez as lives, os diamantes, as indicações e as correções deste sniper';
       zerar.onclick = () => zerarSniper(s.arroba);
-      botoes.append(reconectar, zerar, remover);
+      const corrigir = el('button', '', 'Corrigir números');
+      corrigir.type = 'button';
+      corrigir.title = 'Ajusta os diamantes e os minutos reais deste sniper';
+      corrigir.onclick = () => corrigirSniper(s.arroba);
+      botoes.append(reconectar, corrigir, zerar, remover);
       li.append(
         el('span', 'bola'),
         el('span', 'arroba', '@' + s.arroba),
@@ -454,7 +475,7 @@
 
   // a lista de snipers também é a dos campos "Quem indicou" e "Sniper"
   async function snipersMudaram() {
-    await Promise.all([carregarStatus(), carregar(), carregarPontos()]);
+    await Promise.all([carregarStatus(), carregar(), carregarCorrecoes()]);
   }
 
   $('formSniper').addEventListener('submit', async ev => {
@@ -501,7 +522,7 @@
 
   async function zerarSniper(arroba) {
     const confirmar = confirmarDigitando(
-      `Zerar a pontuação de @${arroba}?\n\nApaga do banco as lives, os diamantes, as horas, as indicações feitas por @${arroba} e os pontos manuais dele. ` +
+      `Zerar a pontuação de @${arroba}?\n\nApaga do banco as lives, os diamantes, as horas, as indicações feitas por @${arroba} e as correções dele. ` +
       'Se a live estiver no ar, ela volta a contar do zero a partir de agora.',
       arroba, semArroba);
     if (!confirmar) return;
@@ -514,7 +535,7 @@
 
   $('zerarTodos').onclick = async () => {
     const confirmar = confirmarDigitando(
-      'Zerar a pontuação de TODOS os snipers da lista?\n\nApaga do banco as lives, os diamantes, as horas, as indicações e os pontos manuais de cada um. ' +
+      'Zerar a pontuação de TODOS os snipers da lista?\n\nApaga do banco as lives, os diamantes, as horas, as indicações e as correções de cada um. ' +
       'As lives no ar voltam a contar do zero a partir de agora.',
       'ZERAR TUDO', texto => texto.trim());
     if (!confirmar) return;
@@ -525,79 +546,163 @@
     await snipersMudaram().catch(() => {});
   };
 
-  // ---------- pontos manuais ----------
-  function avisoPontos(texto, tipo) {
-    $('msgPontos').textContent = texto || '';
-    $('msgPontos').className = 'msg ' + (tipo || '');
+  // ---------- correções ----------
+  function avisoCorrecao(texto, tipo) {
+    $('msgCorrecao').textContent = texto || '';
+    $('msgCorrecao').className = 'msg ' + (tipo || '');
   }
 
-  function desenharPontos(lancamentos, snipers) {
-    const lista = $('listaPontos');
-    lista.replaceChildren();
-    if (!lancamentos.length) {
-      const tr = el('tr'); const td = el('td', 'vazio', 'Nenhum ponto manual lançado.');
-      td.colSpan = 5; tr.append(td); lista.append(tr);
+  // Os campos começam com o número atual, e só o que mudou vai pro servidor. Com
+  // a live no ar o minuto da tela fica velho, e mandar ele de volta cortaria
+  // o tempo que passou enquanto o formulário estava aberto.
+  let baseCorrecao = null;
+  let correcaoMexida = false;
+
+  function preencherCorrecao() {
+    const s = numerosPorSniper[$('correcaoSniper').value];
+    if (!s) return;
+    baseCorrecao = { diamantes: s.diamantes, minutos: Math.floor(s.segundos / 60) };
+    $('correcaoDiamantes').value = baseCorrecao.diamantes;
+    $('correcaoMinutos').value = baseCorrecao.minutos;
+    correcaoMexida = false;
+  }
+
+  function corrigirSniper(arroba) {
+    $('correcaoSniper').value = arroba;
+    preencherCorrecao();
+    avisoCorrecao('');
+    $('caixaCorrecao').scrollIntoView({ behavior: 'smooth' });
+    $('correcaoDiamantes').focus({ preventScroll: true });
+  }
+
+  $('correcaoSniper').addEventListener('change', preencherCorrecao);
+  $('correcaoDiamantes').addEventListener('input', () => { correcaoMexida = true; });
+  $('correcaoMinutos').addEventListener('input', () => { correcaoMexida = true; });
+
+  function botaoRemover(texto, acao) {
+    const td = el('td', 'btns');
+    const botao = el('button', 'perigo', texto);
+    botao.type = 'button';
+    botao.onclick = acao;
+    td.append(botao);
+    return td;
+  }
+
+  // quem saiu da lista guarda o que tinha, mas não aparece no ranking
+  function celulaDoSniper(arroba, snipers) {
+    const td = el('td', '', '@' + arroba);
+    if (!snipers.includes(arroba)) td.append(' ', el('span', 'fora', '(fora da campanha)'));
+    return td;
+  }
+
+  function celulaDeQuando(item) {
+    const quando = new Date(item.criadoEm).toLocaleString('pt-BR');
+    return el('td', 'fora', item.autor ? `${quando} por ${item.autor}` : quando);
+  }
+
+  function textoDaMudanca({ de, para }) {
+    const partes = [];
+    if (para.diamantes !== null) partes.push(`${milhar(de.diamantes)} → ${milhar(para.diamantes)} diamantes`);
+    if (para.minutos !== null) partes.push(`${milhar(de.minutos)} → ${milhar(para.minutos)} min`);
+    return partes.join(', ');
+  }
+
+  function desenharCorrecoes(lista, snipers) {
+    const corpo = $('listaCorrecoes');
+    corpo.replaceChildren();
+    if (!lista.length) {
+      const tr = el('tr'); const td = el('td', 'vazio', 'Nenhuma correção feita.');
+      td.colSpan = 5; tr.append(td); corpo.append(tr);
       return;
     }
-    lancamentos.forEach(p => {
+    lista.forEach(c => {
       const tr = el('tr');
-      // quem saiu da lista guarda os pontos, mas não aparece no ranking
-      const quem = el('td', '', '@' + p.arroba);
-      if (!snipers.includes(p.arroba)) quem.append(' ', el('span', 'fora', '(fora da campanha)'));
-      const btns = el('td', 'btns');
-      const remover = el('button', 'perigo', 'Remover');
-      remover.type = 'button';
-      remover.onclick = () => removerPontos(p);
-      btns.append(remover);
-      const quando = new Date(p.criadoEm).toLocaleString('pt-BR');
       tr.append(
-        quem,
-        el('td', 'sim', '+' + milhar(p.pontos)),
-        el('td', '', p.motivo),
-        el('td', 'fora', p.autor ? `${quando} por ${p.autor}` : quando),
-        btns
+        celulaDoSniper(c.arroba, snipers),
+        el('td', 'sim', textoDaMudanca(c)),
+        el('td', '', c.motivo),
+        celulaDeQuando(c),
+        botaoRemover('Desfazer', () => desfazerCorrecao(c))
       );
-      lista.append(tr);
+      corpo.append(tr);
     });
   }
 
-  async function carregarPontos() {
-    const dados = await api('GET', '/api/mira/pontos');
-    const sel = $('pontosSniper');
+  function desenharPontosAntigos(lista, snipers) {
+    $('caixaPontosAntigos').hidden = !lista.length;
+    const corpo = $('listaPontos');
+    corpo.replaceChildren();
+    lista.forEach(p => {
+      const tr = el('tr');
+      tr.append(
+        celulaDoSniper(p.arroba, snipers),
+        el('td', 'sim', '+' + milhar(p.pontos)),
+        el('td', '', p.motivo),
+        celulaDeQuando(p),
+        botaoRemover('Remover', () => removerPontos(p))
+      );
+      corpo.append(tr);
+    });
+  }
+
+  async function carregarCorrecoes() {
+    const dados = await api('GET', '/api/mira/correcoes');
+    const sel = $('correcaoSniper');
     const escolhido = sel.value;
     sel.replaceChildren();
     dados.snipers.forEach(s => {
       const o = el('option', '', '@' + s); o.value = s; sel.append(o);
     });
     if (dados.snipers.includes(escolhido)) sel.value = escolhido;
-    desenharPontos(dados.lancamentos, dados.snipers);
+    if (!correcaoMexida) preencherCorrecao();
+    desenharCorrecoes(dados.correcoes, dados.snipers);
+    desenharPontosAntigos(dados.pontosAntigos, dados.snipers);
   }
 
-  $('formPontos').addEventListener('submit', async ev => {
+  $('formCorrecao').addEventListener('submit', async ev => {
     ev.preventDefault();
-    const corpo = {
-      arroba: $('pontosSniper').value,
-      pontos: Number($('pontosValor').value),
-      motivo: $('pontosMotivo').value
-    };
+    const arroba = $('correcaoSniper').value;
+    const diamantes = Number($('correcaoDiamantes').value);
+    const minutos = Number($('correcaoMinutos').value);
+    const corpo = { arroba, motivo: $('correcaoMotivo').value };
+    const mudancas = [];
+    if (!baseCorrecao || diamantes !== baseCorrecao.diamantes) {
+      corpo.diamantes = diamantes;
+      mudancas.push(`${milhar(diamantes)} diamantes`);
+    }
+    if (!baseCorrecao || minutos !== baseCorrecao.minutos) {
+      corpo.minutos = minutos;
+      mudancas.push(`${milhar(minutos)} min de live`);
+    }
+    if (!mudancas.length) return avisoCorrecao('Esses já são os números atuais. Nada mudou.', 'erro');
     // vai pro ranking público: um zero a mais não pode passar batido
-    if (!confirm(`Adicionar ${milhar(corpo.pontos)} pontos para @${corpo.arroba}?\n\nO ranking público atualiza em até 2 minutos.`)) return;
+    if (!confirm(`Corrigir @${arroba} para ${mudancas.join(' e ')}?\n\nO ranking público atualiza em até 2 minutos.`)) return;
     try {
-      await api('POST', '/api/mira/pontos', corpo);
-      $('pontosValor').value = '';
-      $('pontosMotivo').value = '';
-      avisoPontos(`${milhar(corpo.pontos)} pontos adicionados para @${corpo.arroba}.`, 'ok');
-      await carregarPontos();
-    } catch (e) { avisoPontos(e.message, 'erro'); }
+      const { linha } = await api('POST', '/api/mira/correcoes', corpo);
+      $('correcaoMotivo').value = '';
+      correcaoMexida = false;
+      avisoCorrecao(`Agora @${arroba} tem ${milhar(linha.diamantes)} diamantes, ${duracao(linha.segundos)} de live e ${milhar(linha.total)} pontos.`, 'ok');
+      await snipersMudaram();
+    } catch (e) { avisoCorrecao(e.message, 'erro'); }
   });
+
+  async function desfazerCorrecao(c) {
+    if (!confirm(`Desfazer a correção de @${c.arroba}?\n\n${textoDaMudanca(c)}\nMotivo: ${c.motivo}`)) return;
+    try {
+      await api('DELETE', '/api/mira/correcoes/' + encodeURIComponent(c.id));
+      correcaoMexida = false;
+      avisoCorrecao(`Correção de @${c.arroba} desfeita.`, 'ok');
+      await snipersMudaram();
+    } catch (e) { avisoCorrecao(e.message, 'erro'); }
+  }
 
   async function removerPontos(p) {
     if (!confirm(`Remover ${milhar(p.pontos)} pontos de @${p.arroba}?\n\nMotivo do lançamento: ${p.motivo}`)) return;
     try {
       await api('DELETE', '/api/mira/pontos/' + encodeURIComponent(p.id));
-      avisoPontos(`${milhar(p.pontos)} pontos removidos de @${p.arroba}.`, 'ok');
-      await carregarPontos();
-    } catch (e) { avisoPontos(e.message, 'erro'); }
+      avisoCorrecao(`${milhar(p.pontos)} pontos removidos de @${p.arroba}.`, 'ok');
+      await snipersMudaram();
+    } catch (e) { avisoCorrecao(e.message, 'erro'); }
   }
 
   // ---------- administradores ----------
@@ -734,7 +839,7 @@
   atualizarStatus();
   carregarPeriodo().catch(e => avisoPeriodo(e.message, 'erro'));
   carregarAdmins().catch(e => avisoAdmin(e.message, 'erro'));
-  carregarPontos().catch(e => avisoPontos(e.message, 'erro'));
+  carregarCorrecoes().catch(e => avisoCorrecao(e.message, 'erro'));
 </script>
 </body>
 </html>

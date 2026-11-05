@@ -10,6 +10,7 @@ const { FileSessionStore } = require('./session-store');
 const snipers = require('./snipers');
 const criarCampanha = require('./campanha');
 const indicacoes = require('./indicacoes');
+const correcoes = require('./correcoes');
 const pontosManuais = require('./pontos-manuais');
 const periodo = require('./periodo');
 
@@ -291,21 +292,35 @@ app.delete('/api/mira/indicacoes/:id', requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
-// ---------- PONTOS MANUAIS ----------
-// O log guarda o que foi lançado e removido: remover apaga a linha do banco, e
+// ---------- CORREÇÕES ----------
+// O log guarda o que foi feito e desfeito: remover apaga a linha do banco, e
 // aqui é o único rastro que sobra.
-app.get('/api/mira/pontos', requireAdmin, (req, res) => {
-  res.json({ snipers: campanha.snipers(), lancamentos: pontosManuais.listar() });
+app.get('/api/mira/correcoes', requireAdmin, (req, res) => {
+  res.json({
+    snipers: campanha.snipers(),
+    correcoes: correcoes.listar(),
+    pontosAntigos: pontosManuais.listar()
+  });
 });
 
-app.post('/api/mira/pontos', requireAdmin, (req, res) => {
-  const r = pontosManuais.criar(req.body, req.session.user);
+app.post('/api/mira/correcoes', requireAdmin, (req, res) => {
+  const r = campanha.corrigir(req.body, req.session.user);
   if (r.erro) return res.status(400).json({ error: r.erro });
-  campanha.invalidar();
-  console.log(`[MIRA] ${req.session.user} lançou pontos manuais:`, JSON.stringify(r.lancamento));
-  res.json({ ok: true, lancamento: r.lancamento });
+  console.log(`[MIRA] ${req.session.user} corrigiu números:`, JSON.stringify(r.correcao));
+  res.json({ ok: true, correcao: r.correcao, linha: r.linha });
 });
 
+app.delete('/api/mira/correcoes/:id', requireAdmin, (req, res) => {
+  const correcao = correcoes.buscar(req.params.id);
+  if (!correcao || !correcoes.remover(correcao.id)) {
+    return res.status(404).json({ error: 'Correção não encontrada.' });
+  }
+  campanha.invalidar();
+  console.log(`[MIRA] ${req.session.user} desfez correção:`, JSON.stringify(correcao));
+  res.json({ ok: true });
+});
+
+// Pontos lançados antes das correções: só dá pra remover.
 app.delete('/api/mira/pontos/:id', requireAdmin, (req, res) => {
   const lancamento = pontosManuais.buscar(req.params.id);
   if (!lancamento || !pontosManuais.remover(lancamento.id)) {

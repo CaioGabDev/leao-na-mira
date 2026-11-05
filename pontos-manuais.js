@@ -1,25 +1,11 @@
 // ============================================================================
-// PONTOS MANUAIS — o que o administrador lança à mão
+// PONTOS MANUAIS — o que foi lançado antes das correções
 // ----------------------------------------------------------------------------
-// Live que o sistema não acompanhou não existe pra conta, e os pontos dela não
-// voltam sozinhos. Aqui o administrador compensa isso.
-//
-// Cada lançamento é uma linha própria, com motivo e autor, em vez de mexer nos
-// diamantes ou nas horas: assim sempre dá pra saber de onde veio cada ponto, e
-// um lançamento errado se desfaz removendo a linha.
-//
-// Mora no mesmo dados.db, do mesmo jeito do indicacoes.js.
+// Compensar live perdida agora é corrigir diamantes e minutos (correcoes.js),
+// e não se lança mais ponto. O que já foi lançado continua contando até o
+// administrador remover: apagar sozinho tiraria ponto de quem foi compensado.
 // ============================================================================
-const crypto = require('crypto');
 const banco = require('./banco');
-const campanha = require('./campanha.config');
-const snipers = require('./snipers');
-
-// o teto pega dedo escorregando, não limita a regra: o total de uma campanha
-// inteira costuma ficar bem abaixo disto
-const MAXIMO_POR_LANCAMENTO = 100000;
-const MOTIVO_MINIMO = 3;
-const MOTIVO_MAXIMO = 200;
 
 let preparado = null;
 function bd() {
@@ -47,22 +33,6 @@ function buscar(id) {
   try { return l ? JSON.parse(l.dados) : null; } catch (e) { return null; }
 }
 
-function criar(corpo, autor) {
-  const arroba = campanha.normalizar(corpo && corpo.arroba);
-  const pontos = Number(corpo && corpo.pontos);
-  const motivo = String((corpo && corpo.motivo) || '').trim();
-
-  if (!snipers.inclui(arroba)) return { erro: `@${arroba} não é sniper da campanha.` };
-  if (!Number.isInteger(pontos) || pontos < 1) return { erro: 'Os pontos precisam ser um número inteiro maior que zero.' };
-  if (pontos > MAXIMO_POR_LANCAMENTO) return { erro: `O máximo por lançamento é ${MAXIMO_POR_LANCAMENTO} pontos.` };
-  if (motivo.length < MOTIVO_MINIMO) return { erro: 'Escreva o motivo: é o que explica esses pontos depois.' };
-  if (motivo.length > MOTIVO_MAXIMO) return { erro: `O motivo pode ter até ${MOTIVO_MAXIMO} caracteres.` };
-
-  const item = { id: crypto.randomUUID(), arroba, pontos, motivo, criadoEm: Date.now(), autor: String(autor || '') };
-  bd().prepare('INSERT INTO pontos_manuais (id, dados) VALUES (?, ?)').run(item.id, JSON.stringify(item));
-  return { lancamento: item };
-}
-
 function remover(id) {
   const r = bd().prepare('DELETE FROM pontos_manuais WHERE id = ?').run(String(id));
   return Number(r.changes || 0) > 0;
@@ -82,4 +52,4 @@ function somaPorSniper() {
   return conta;
 }
 
-module.exports = { listar, buscar, criar, remover, removerDoSniper, somaPorSniper };
+module.exports = { listar, buscar, remover, removerDoSniper, somaPorSniper };

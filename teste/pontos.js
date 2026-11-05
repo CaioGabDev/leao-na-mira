@@ -1,5 +1,5 @@
 // ============================================================================
-// PONTOS MANUAIS — o que o administrador lança pra compensar live perdida
+// PONTOS MANUAIS — os lançados antes das correções continuam valendo
 // ----------------------------------------------------------------------------
 // Roda num dados.db de uma pasta temporária, com o db de verdade e uma live de
 // mentira no lugar do TikTok.
@@ -18,6 +18,7 @@ delete process.env.RAILWAY_ENVIRONMENT;
 process.env.MIRA_SNIPERS = 'ana,bia';
 
 const raiz = arquivo => path.join(__dirname, '..', arquivo);
+const banco = require(raiz('banco.js'));
 const dbFabrica = require(raiz('db.js'));
 const pontos = require(raiz('pontos-manuais.js'));
 const criarCampanha = require(raiz('campanha.js'));
@@ -40,6 +41,15 @@ function novaCampanha() {
   return criarCampanha({ clientes });
 }
 
+// Não existe mais lançar ponto: isto é o que ficou gravado de antes.
+let proximo = 0;
+function jaLancado({ arroba, pontos: quantos, motivo }) {
+  pontos.listar();   // garante que a tabela existe
+  const item = { id: 'antigo' + (++proximo), arroba, pontos: quantos, motivo, criadoEm: proximo, autor: 'chefe' };
+  banco.abrir().prepare('INSERT INTO pontos_manuais (id, dados) VALUES (?, ?)').run(item.id, JSON.stringify(item));
+  return item;
+}
+
 const totalDe = (campanha, arroba) => campanha.getRanking().ranking.find(l => l.arroba === arroba).total;
 
 beforeEach(() => {
@@ -52,38 +62,12 @@ test('a conta soma os pontos manuais no total', () => {
   assert.equal(r.total, r.pontosHoras + 25);
 });
 
-test('lançamento guarda quem, quanto, motivo e autor', () => {
-  const { lancamento } = pontos.criar({ arroba: '@Ana', pontos: 30, motivo: '  live perdida  ' }, 'chefe');
-  assert.equal(lancamento.arroba, 'ana');
-  assert.equal(lancamento.pontos, 30);
-  assert.equal(lancamento.motivo, 'live perdida');
-  assert.equal(lancamento.autor, 'chefe');
-  assert.deepEqual(pontos.listar().map(p => p.id), [lancamento.id]);
-});
-
-test('recusa o que não é lançamento de verdade', () => {
-  const certo = { arroba: 'ana', pontos: 10, motivo: 'live perdida' };
-  const casos = [
-    { ...certo, arroba: 'ninguem' },
-    { ...certo, pontos: 0 },
-    { ...certo, pontos: -5 },
-    { ...certo, pontos: 1.5 },
-    { ...certo, pontos: 'muito' },
-    { ...certo, pontos: 100001 },
-    { ...certo, motivo: '' },
-    { ...certo, motivo: '  a ' },
-    { ...certo, motivo: 'x'.repeat(201) }
-  ];
-  for (const caso of casos) assert.ok(pontos.criar(caso, 'chefe').erro, JSON.stringify(caso).slice(0, 80));
-  assert.equal(pontos.listar().length, 0);
-});
-
-test('entra no ranking na hora e sai ao remover', () => {
+test('seguem no ranking e saem ao remover', () => {
   const campanha = novaCampanha();
   assert.equal(totalDe(campanha, 'ana'), 0);
 
-  const { lancamento } = pontos.criar({ arroba: 'ana', pontos: 40, motivo: 'live perdida' }, 'chefe');
-  pontos.criar({ arroba: 'ana', pontos: 5, motivo: 'outra falha' }, 'chefe');
+  const lancamento = jaLancado({ arroba: 'ana', pontos: 40, motivo: 'live perdida' });
+  jaLancado({ arroba: 'ana', pontos: 5, motivo: 'outra falha' });
   campanha.invalidar();
   assert.equal(totalDe(campanha, 'ana'), 45);
   assert.equal(totalDe(campanha, 'bia'), 0);
@@ -95,14 +79,14 @@ test('entra no ranking na hora e sai ao remover', () => {
 
 test('quem tem mais pontos manuais sobe no ranking', () => {
   const campanha = novaCampanha();
-  pontos.criar({ arroba: 'bia', pontos: 10, motivo: 'live perdida' }, 'chefe');
+  jaLancado({ arroba: 'bia', pontos: 10, motivo: 'live perdida' });
   campanha.invalidar();
   assert.equal(campanha.getRanking().ranking[0].arroba, 'bia');
 });
 
 test('o ranking público mostra só o total, sem o motivo', () => {
   const campanha = novaCampanha();
-  pontos.criar({ arroba: 'ana', pontos: 40, motivo: 'segredo do admin' }, 'chefe');
+  jaLancado({ arroba: 'ana', pontos: 40, motivo: 'segredo do admin' });
   campanha.invalidar();
   assert.doesNotMatch(JSON.stringify(campanha.getRanking()), /segredo do admin|pontosManuais/);
 });
@@ -113,8 +97,8 @@ test('remover o que não existe devolve false', () => {
 
 test('zerar um sniper leva os pontos manuais dele, e só dele', () => {
   const campanha = novaCampanha();
-  pontos.criar({ arroba: 'ana', pontos: 40, motivo: 'live perdida' }, 'chefe');
-  pontos.criar({ arroba: 'bia', pontos: 7, motivo: 'live perdida' }, 'chefe');
+  jaLancado({ arroba: 'ana', pontos: 40, motivo: 'live perdida' });
+  jaLancado({ arroba: 'bia', pontos: 7, motivo: 'live perdida' });
 
   const apagado = campanha.zerar('ana');
   assert.equal(apagado.pontosManuais, 40);
@@ -124,8 +108,8 @@ test('zerar um sniper leva os pontos manuais dele, e só dele', () => {
 
 test('zerar todos leva os pontos manuais de todos', () => {
   const campanha = novaCampanha();
-  pontos.criar({ arroba: 'ana', pontos: 40, motivo: 'live perdida' }, 'chefe');
-  pontos.criar({ arroba: 'bia', pontos: 7, motivo: 'live perdida' }, 'chefe');
+  jaLancado({ arroba: 'ana', pontos: 40, motivo: 'live perdida' });
+  jaLancado({ arroba: 'bia', pontos: 7, motivo: 'live perdida' });
   campanha.zerarTodos();
   assert.deepEqual(pontos.listar(), []);
 });

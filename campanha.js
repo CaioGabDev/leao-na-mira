@@ -9,6 +9,7 @@
 // linha boa em vez de sumir da tabela — e se tudo falhar, vale o último ranking.
 // ============================================================================
 const config = require('./campanha.config');
+const correcoes = require('./correcoes');
 const indicacoes = require('./indicacoes');
 const pontosManuais = require('./pontos-manuais');
 const periodo = require('./periodo');
@@ -27,11 +28,30 @@ function criarCampanha({ clientes }) {
     return { sessoes, atual };
   }
 
-  function linhaDoSniper(arroba, oficiais, manuais, agora, { inicio, fim }) {
+  // o que vem de outras tabelas: lido uma vez por recálculo, não uma por sniper
+  function dadosDaCampanha() {
+    return {
+      oficiais: indicacoes.oficiaisPorIndicador(),
+      manuais: pontosManuais.somaPorSniper(),
+      corrigidos: correcoes.somaPorSniper()
+    };
+  }
+
+  // A correção é uma diferença. Se o período mudar depois, a soma pode ficar
+  // abaixo de zero, e número negativo não existe aqui.
+  function corrigido(soma, correcao) {
+    return {
+      segundos: Math.max(0, soma.segundos + (correcao ? correcao.segundos : 0)),
+      diamantes: Math.max(0, soma.diamantes + (correcao ? correcao.diamantes : 0)),
+      lives: soma.lives
+    };
+  }
+
+  function linhaDoSniper(arroba, { oficiais, manuais, corrigidos }, agora, { inicio, fim }) {
     const { db } = clientes.abrir(arroba);
     const { sessoes, atual } = livesDoSniper(db, agora);
 
-    const soma = somarLivesNoPeriodo(sessoes, inicio, fim);
+    const soma = corrigido(somarLivesNoPeriodo(sessoes, inicio, fim), corrigidos.get(arroba));
     const nIndicacoes = oficiais.get(arroba) || 0;
     const pontos = calcularPontuacao({
       segundosDeLive: soma.segundos,
@@ -48,6 +68,7 @@ function criarCampanha({ clientes }) {
       aoVivo: !!atual,
       segundos: soma.segundos,
       diamantes: soma.diamantes,
+      lives: soma.lives,
       indicacoes: nIndicacoes,
       ...pontos
     };
@@ -57,12 +78,11 @@ function criarCampanha({ clientes }) {
     const agora = Date.now();
     // lido a cada recálculo: o administrador pode mudar o período na tela
     const p = periodo.get();
-    const oficiais = indicacoes.oficiaisPorIndicador();
-    const manuais = pontosManuais.somaPorSniper();
+    const dados = dadosDaCampanha();
     const linhas = [];
     for (const arroba of snipers.listar()) {
       try {
-        const linha = linhaDoSniper(arroba, oficiais, manuais, agora, p);
+        const linha = linhaDoSniper(arroba, dados, agora, p);
         ultimaBoa.set(arroba, linha);
         linhas.push(linha);
       } catch (e) {
@@ -101,6 +121,20 @@ function criarCampanha({ clientes }) {
   // indicação ou período mudou: o próximo pedido recalcula em vez de esperar o cache vencer
   function invalidar() { cache = null; }
 
+  // O número digitado vale sobre o que o ranking usa agora, com a live no ar e
+  // as correções anteriores incluídas. Devolve a linha nova pra tela mostrar a
+  // pontuação que deu.
+  function corrigir(corpo, autor) {
+    const arroba = config.normalizar(corpo && corpo.arroba);
+    if (!snipers.inclui(arroba)) return { erro: `@${arroba} não é sniper da campanha.` };
+    const p = periodo.get();
+    const atual = linhaDoSniper(arroba, dadosDaCampanha(), Date.now(), p);
+    const r = correcoes.criar({ ...corpo, arroba, atual }, autor);
+    if (r.erro) return r;
+    invalidar();
+    return { ...r, linha: linhaDoSniper(arroba, dadosDaCampanha(), Date.now(), p) };
+  }
+
   // Status da conexão de cada sniper, pro admin (não passa pelo cache: é
   // barato e precisa estar fresco). "Atualizado em" é a última vez que o
   // servidor soube algo daquela live: com ela no ar, o último evento do
@@ -112,13 +146,15 @@ function criarCampanha({ clientes }) {
   // período apareceria como zero e pareceria que nada foi registrado.
   function status() {
     const agora = Date.now();
-    const { inicio, fim } = periodo.get();
+    const p = periodo.get();
+    const dados = dadosDaCampanha();
     return snipers.listar().map(arroba => {
       try {
         const { db, live } = clientes.abrir(arroba);
         const c = live.estadoDaConexao();
         const { sessoes } = livesDoSniper(db, agora);
         const checagem = (c.ultimaTentativa && c.ultimaTentativa.em) || null;
+        const linha = linhaDoSniper(arroba, dados, agora, p);
         return {
           arroba,
           conectado: !!c.online,
@@ -126,8 +162,9 @@ function criarCampanha({ clientes }) {
           // o recado é o texto pra gente ler ("não está ao vivo agora"…)
           recado: (!c.online && c.ultimaTentativa && c.ultimaTentativa.recado) || null,
           numeros: {
-            noPeriodo: somarLivesNoPeriodo(sessoes, inicio, fim),
-            tudo: somarLivesNoPeriodo(sessoes, -Infinity, Infinity),
+            noPeriodo: { segundos: linha.segundos, diamantes: linha.diamantes, lives: linha.lives },
+            tudo: corrigido(somarLivesNoPeriodo(sessoes, -Infinity, Infinity), dados.corrigidos.get(arroba)),
+            pontos: linha.total,
             gravacao: db.ultimaGravacao()
           }
         };
@@ -138,8 +175,8 @@ function criarCampanha({ clientes }) {
     });
   }
 
-  // Apaga de vez as lives, os diamantes, as indicações feitas por este sniper e
-  // os pontos manuais dele.
+  // Apaga de vez as lives, os diamantes, as indicações feitas por este sniper, os
+  // pontos manuais e as correções dele.
   // Devolve o que foi apagado, pro log: é o único rastro que sobra.
   //
   // Com a live no ar, ela volta a contar do zero a partir de agora: o resetAll
@@ -155,7 +192,8 @@ function criarCampanha({ clientes }) {
       arroba,
       ...apagado,
       indicacoes: indicacoes.removerDoIndicador(arroba),
-      pontosManuais: pontosManuais.removerDoSniper(arroba)
+      pontosManuais: pontosManuais.removerDoSniper(arroba),
+      correcoes: correcoes.removerDoSniper(arroba)
     };
   }
 
@@ -183,7 +221,7 @@ function criarCampanha({ clientes }) {
     return { apagados, falhas };
   }
 
-  return { getRanking, invalidar, status, zerar, zerarTodos, snipers: () => snipers.listar() };
+  return { getRanking, invalidar, corrigir, status, zerar, zerarTodos, snipers: () => snipers.listar() };
 }
 
 module.exports = criarCampanha;
