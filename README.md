@@ -121,6 +121,9 @@ Empate: mais diamantes, depois mais horas.
   mais a live que estiver no ar). Isso exige que o `@` esteja na lista de
   snipers, porque só assim a live dele fica conectada. Live que não foi acompanhada (o
   servidor estava fora do ar, o sniper entrou depois) **não existe** pra conta.
+- **Presentes em combo**: contam quando o combo fecha, ou quando a live acaba, ou
+  depois de 30s parados, o que vier primeiro. Um presente que o TikTok nunca
+  chegou a enviar não tem como contar: nesse caso, use os pontos manuais.
 - **Bordas do período**: a duração é cortada no início e no fim. O diamante vai
   pela live inteira, porque a sessão guarda o total e não a hora de cada presente.
 - **Pontos manuais**: lançados pelo administrador em `/mira-admin.html`, pra

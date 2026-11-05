@@ -666,8 +666,81 @@ function criarLive({ dono, db, emitir, criarConexao, buscar = fetch, avisar = al
   // nada.
   const OFFLINE_GRACE_MS = 90 * 1000;
 
+  // ---------- PRESENTES ----------
+  // Presente em combo chega várias vezes, com a contagem subindo, e só o último
+  // aviso (repeatEnd) traz o total. Esperar só por ele perdia diamante: a lib
+  // desliga assim que a live encerra, e um combo aberto nessa hora sumia inteiro.
+  // Caso real: live com 300 diamantes, combo no último minuto, fechou com 500 e
+  // o site ficou nos 300.
+  //
+  // Agora o combo fica guardado até fechar por um destes caminhos: o aviso de
+  // fim, o fim da live, ou COMBO_PARADO_MS sem novidade. `contados` é o que já
+  // foi somado: um aviso que chega atrasado soma só o que faltava.
+  const COMBO_PARADO_MS = 30 * 1000;
+  const COMBO_GUARDADO_MS = 10 * 60 * 1000;
+  const combosAbertos = new Map();
+
+  function contarPresente({ uniqueId, nickname, giftNameEn, diamondCount, avatar }, quantidade) {
+    // Nunca espera a tradução: usa o que já tiver em cache (ou o nome em
+    // inglês como fallback) e processa o presente na hora — assim uma chuva
+    // de presentes não fica travada esperando resposta de uma API externa.
+    // Se o nome ainda não tá traduzido, dispara a tradução em segundo plano
+    // só pra esquentar o cache pros próximos presentes iguais.
+    const giftNamePt = translationCache[giftNameEn] || giftNameEn;
+    if (giftNameEn && !translationCache[giftNameEn]) translateGiftName(giftNameEn);
+
+    // Power-up tem placar próprio, mas o diamante dele é da campanha como
+    // qualquer outro. Sem isto, Foguete e Universo contavam zero.
+    if (POWERUP_GIFTS.includes(giftNameEn)) db.addPowerUp(uniqueId, nickname, giftNamePt, avatar);
+    db.addGift(uniqueId, nickname, giftNamePt, diamondCount * quantidade, avatar);
+    broadcastRanking();
+    broadcastGlobalStats();
+  }
+
+  function fecharCombo(combo, motivo) {
+    const falta = combo.repeatCount - combo.contados;
+    if (falta <= 0) return;
+    contarPresente(combo, falta);
+    combo.contados = combo.repeatCount;
+    console.log(`Combo de ${combo.giftNameEn} x${combo.repeatCount} contado sem o aviso de fim (${motivo}).`);
+  }
+
+  // O combo fica no mapa depois de contado, pra reconhecer o aviso atrasado.
+  function fecharCombosAbertos(motivo, paradosDesde = Infinity) {
+    for (const combo of combosAbertos.values()) {
+      if (combo.vistoEm <= paradosDesde) fecharCombo(combo, motivo);
+    }
+  }
+
+  function revisarCombos() {
+    const agora = Date.now();
+    fecharCombosAbertos('parado', agora - COMBO_PARADO_MS);
+    for (const [chave, combo] of combosAbertos) {
+      if (agora - combo.vistoEm > COMBO_GUARDADO_MS) combosAbertos.delete(chave);
+    }
+  }
+
+  function registrarCombo(presente, data) {
+    const repeatCount = data.repeatCount || 1;
+    const chave = `${presente.uniqueId}|${data.giftId}|${data.groupId || ''}`;
+    let aberto = combosAbertos.get(chave);
+    // Contagem que volta é outro combo do mesmo fã: o anterior fecha como está.
+    if (aberto && repeatCount < aberto.repeatCount) {
+      fecharCombo(aberto, 'começou outro');
+      aberto = null;
+    }
+    const combo = { ...presente, repeatCount, contados: aberto?.contados || 0, vistoEm: Date.now() };
+    if (!data.repeatEnd) {
+      combosAbertos.set(chave, combo);
+      return;
+    }
+    combosAbertos.delete(chave);
+    if (repeatCount > combo.contados) contarPresente(combo, repeatCount - combo.contados);
+  }
+
   function markSessionEndedIfNeeded(motivo) {
     if (!liveOnline) return;
+    fecharCombosAbertos('fim da live');
     console.log(`Encerrando sessão (motivo: ${motivo})`);
     liveOnline = false;
     db.markLiveOffline();
@@ -762,6 +835,7 @@ function criarLive({ dono, db, emitir, criarConexao, buscar = fetch, avisar = al
   // O teto de 2 min é a saída de emergência pro caso de o connect() nunca
   // responder — sem ele, um único travamento deixaria a live sem reconectar.
   const CONNECT_TRAVADO_MS = 2 * 60 * 1000;
+  const ESPERA_FIM_DA_LIVE_MS = 3 * 1000;
 
   // Esperar a live começar agora é de graça (ver o bloco no topo do arquivo),
   // então a checagem pode ser frequente sem torrar cota: o streamer sobe e o
@@ -995,14 +1069,20 @@ function criarLive({ dono, db, emitir, criarConexao, buscar = fetch, avisar = al
       console.error(`Erro do connection [conn #${myId}]:`, err?.message || err);
     });
 
+    let encerrando = false;
     connection.on('streamEnd', (reason) => {
       if (myId !== activeConnectionId) return;
       console.log('Live encerrada pelo streamer (streamEnd):', reason);
       // streamEnd é um sinal explícito do TikTok de que a live acabou de
-      // verdade, então aqui sim fechamos a sessão na hora (diferente de uma
-      // simples queda de conexão).
-      markSessionEndedIfNeeded('streamEnd');
-      forceReconnect('streamEnd');
+      // verdade, então a sessão fecha aqui (diferente de uma simples queda de
+      // conexão). Só não fecha no mesmo instante: o que veio no mesmo lote do
+      // fim ainda está sendo entregue, e é justamente o último presente.
+      encerrando = true;
+      setTimeout(() => {
+        if (myId !== activeConnectionId) return;
+        markSessionEndedIfNeeded('streamEnd');
+        forceReconnect('streamEnd');
+      }, ESPERA_FIM_DA_LIVE_MS);
     });
 
     connection.on('like', data => {
@@ -2326,37 +2406,22 @@ function criarLive({ dono, db, emitir, criarConexao, buscar = fetch, avisar = al
     connection.on('gift', data => {
       processarBadges(data);
       if (myId !== activeConnectionId) return;
-      if (data.gift?.type === 1 && !data.repeatEnd) return;
       lastEventAt = Date.now();
 
-      const uniqueId = data.user?.displayId || data.user?.uniqueId || data.uniqueId;
-      const nickname = data.user?.nickname || data.nickname;
-      const giftNameEn = data.gift?.name;
-      const diamondCount = data.gift?.diamondCount || 0;
-      const repeatCount = data.repeatCount || 1;
-      const avatar = getAvatar(data);
-
-      const isPowerUp = POWERUP_GIFTS.includes(giftNameEn);
-
-      // Nunca espera a tradução: usa o que já tiver em cache (ou o nome em
-      // inglês como fallback) e processa o presente na hora — assim uma chuva
-      // de presentes não fica travada esperando resposta de uma API externa.
-      // Se o nome ainda não tá traduzido, dispara a tradução em segundo plano
-      // só pra esquentar o cache pros próximos presentes iguais.
-      const giftNamePt = translationCache[giftNameEn] || giftNameEn;
-      if (giftNameEn && !translationCache[giftNameEn]) translateGiftName(giftNameEn);
-
-      if (isPowerUp) {
-        db.addPowerUp(uniqueId, nickname, giftNamePt, avatar);
-      } else {
-        db.addGift(uniqueId, nickname, giftNamePt, diamondCount * repeatCount, avatar);
-      }
-      broadcastRanking();
-      broadcastGlobalStats();
+      const presente = {
+        uniqueId: data.user?.displayId || data.user?.uniqueId || data.uniqueId,
+        nickname: data.user?.nickname || data.nickname,
+        giftNameEn: data.gift?.name,
+        diamondCount: data.gift?.diamondCount || 0,
+        avatar: getAvatar(data)
+      };
+      if (data.gift?.type === 1) registrarCombo(presente, data);
+      else contarPresente(presente, data.repeatCount || 1);
     });
 
     connection.on('disconnected', () => {
-      if (myId !== activeConnectionId) return;
+      // no fim da live a lib desliga sozinha, e quem fecha é o streamEnd
+      if (myId !== activeConnectionId || encerrando) return;
       console.log(`Desconectado da live [conn #${myId}]. Tentando reconectar...`);
       // Não fecha a sessão aqui — pode ser só uma queda de rede rápida. Quem
       // decide se isso virou "live encerrada" é o watchdog abaixo, depois de
@@ -2378,6 +2443,7 @@ function criarLive({ dono, db, emitir, criarConexao, buscar = fetch, avisar = al
     if (liveOnline) db.heartbeat();
 
     alertarSeDemorou();
+    revisarCombos();
 
     // adversário que some no meio não gera evento de fim: fecha na unha
     if (db.fecharBatalhaAbandonada()) {
