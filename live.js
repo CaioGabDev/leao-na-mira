@@ -668,10 +668,22 @@ function criarLive({ dono, db, emitir, criarConexao }) {
   // ranking aparece em menos de um minuto.
   const INTERVALO_CHECAGEM_MS = Number(process.env.INTERVALO_CHECAGEM_MS) || 30 * 1000;
 
-  // Se as duas fontes gratuitas caírem, a alternativa seria ficar sem conectar
-  // NUNCA — o que é pior do que gastar. Depois de tantas falhas seguidas a
-  // gente tenta às cegas, gastando uma assinatura, e volta a perguntar depois.
-  const MAX_FALHAS_CHECAGEM = 3;
+  // O TikTok bloqueia o servidor de vez em quando (403 ou página de firewall nas
+  // duas fontes gratuitas). Aí quem responde é o Euler, em uma chamada que já
+  // traz a sala. Antes a saída era conectar às cegas a cada ~2 min, mesmo com o
+  // streamer offline, o que gastava até duas chamadas por tentativa.
+  //
+  // Atenção: sem chave, esta rota responde 401 "requires a Business plan". Se o
+  // plano da chave também não cobrir, o painel mostra esse motivo e a live só
+  // conecta quando uma checagem gratuita passar.
+  //
+  // É pago, então vale no máximo uma pergunta por intervalo em cada live: 3 min
+  // dão 480 por dia por live bloqueada o dia inteiro. Dentro do intervalo, um
+  // "offline" do Euler continua valendo; "ao vivo" não precisa, já conectou.
+  const INTERVALO_EULER_MS = Number(process.env.INTERVALO_EULER_MS) || 3 * 60 * 1000;
+  let ultimaPerguntaAoEuler = 0;
+  let eulerDisseOffline = false;
+  let salaDoEuler = null;       // a sala que o Euler passou, pra usar no connect()
   let falhasDeChecagem = 0;
   let motivoDaChecagem = '';   // por que a última checagem falhou, pro painel
 
@@ -679,6 +691,34 @@ function criarLive({ dono, db, emitir, criarConexao }) {
   // direto. Se a checagem é justamente o que está falhando, repeti-la não
   // adianta nada. Custa uma assinatura por clique, então só o botão usa isto.
   let conectarDireto = false;
+
+  async function perguntarAoEuler(connection) {
+    if (Date.now() - ultimaPerguntaAoEuler < INTERVALO_EULER_MS) {
+      return eulerDisseOffline ? false : 'incerto';
+    }
+    ultimaPerguntaAoEuler = Date.now();
+    eulerDisseOffline = false;
+    try {
+      // o cliente do Euler não lança erro em 4xx: a recusa vem no `code`
+      const r = (await connection.apiClient.anchors.retrieveRoomId(dono)).data;
+      if (r?.code !== 200 || r.is_live === undefined) {
+        throw new Error(`código ${r?.code}: ${r?.message || 'resposta sem is_live'}`);
+      }
+      console.log(`Euler respondeu por @${dono}: ${r.is_live ? 'ao vivo' : 'offline'}`);
+      if (!r.is_live) {
+        eulerDisseOffline = true;
+        return false;
+      }
+      salaDoEuler = r.room_id || null;
+      return true;
+    } catch (err) {
+      const recado = String(err?.message || err).slice(0, 200);
+      console.error(`O Euler também não respondeu por @${dono}: ${recado}`);
+      // na frente: o painel corta o texto, e este é o motivo que decide o que fazer
+      motivoDaChecagem = `Euler: ${recado} | ${motivoDaChecagem}`;
+      return 'incerto';
+    }
+  }
 
   // true = tem live no ar | false = não tem | 'incerto' = não deu pra saber
   async function conferirAoVivo(connection) {
@@ -693,16 +733,9 @@ function criarLive({ dono, db, emitir, criarConexao }) {
       const motivos = motivosDaFalha(err);
       motivoDaChecagem = motivos.join(' | ');
       console.error(`Não consegui checar se @${dono} está ao vivo ` +
-        `(${falhasDeChecagem}/${MAX_FALHAS_CHECAGEM}):`, err?.message || err);
+        `(${falhasDeChecagem}ª falha seguida):`, err?.message || err);
       motivos.forEach((m, i) => console.error(`  fonte ${i + 1}: ${m}`));
-      if (falhasDeChecagem >= MAX_FALHAS_CHECAGEM) {
-        falhasDeChecagem = 0;
-        registrarDiagnostico('assinatura',
-          'As fontes gratuitas de "está ao vivo?" falharam seguidas vezes. ' +
-          'Vou tentar conectar às cegas desta vez, o que gasta uma assinatura.');
-        return true;
-      }
-      return 'incerto';
+      return perguntarAoEuler(connection);
     }
   }
 
@@ -763,10 +796,12 @@ function criarLive({ dono, db, emitir, criarConexao }) {
         aguardarLiveComecar('erro',
           'Não consegui confirmar se a live está no ar. Tentando de novo em instantes.' +
             (motivoDaChecagem ? ` Motivo: ${motivoDaChecagem.slice(0, 300)}` : ''),
-          esperaDaChecagem(1 + falhasDeChecagem));
+          esperaDaChecagem(1 + Math.min(falhasDeChecagem, 3)));
         return null;
       }
-      return connection.connect();
+      const sala = salaDoEuler;
+      salaDoEuler = null;
+      return connection.connect(sala || undefined);
     }).then(state => {
       if (state === null) return;   // não tinha live pra conectar
       conectando = false;
@@ -2217,6 +2252,11 @@ function criarLive({ dono, db, emitir, criarConexao }) {
     }
     if (assinatura.ehErroDeAssinatura(err)) {
       return { motivo: 'assinatura', recado: assinatura.explicar(err) };
+    }
+    // Vem antes do "Room ID": um bloqueio também falha ao buscar a sala, e
+    // mandar conferir um @ que está certo só faz perder tempo.
+    if (/status code 403|blocked by TikTok|captcha/i.test(motivosDaFalha(err).join(' '))) {
+      return { motivo: 'bloqueio', recado: 'O TikTok bloqueou o servidor e não deu pra achar a sala da live. Tentando de novo em instantes.' };
     }
     if (/Room ID|room_id/i.test(msg)) {
       return { motivo: 'arroba', recado: 'Não achei essa live. Confira se o @ está escrito exatamente como no TikTok.' };
