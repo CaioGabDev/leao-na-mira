@@ -25,7 +25,7 @@
   form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   label { display: grid; gap: 6px; font-size: 13px; color: var(--ink-dim); }
   label.marca { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; color: var(--ink); }
-  input[type=text], select {
+  input[type=text], input[type=number], select {
     background: var(--card-2); color: var(--ink); border: 1px solid var(--line);
     border-radius: 4px; padding: 10px; font: inherit; width: 100%;
   }
@@ -163,6 +163,30 @@
     <table>
       <thead><tr><th>Indicou</th><th>Indicado</th><th>Vale ponto?</th><th></th></tr></thead>
       <tbody id="lista"></tbody>
+    </table>
+  </div>
+
+  <div class="caixa">
+    <h2>Pontos manuais</h2>
+    <form id="formPontos">
+      <p class="origem">Pra compensar o que o sistema não contou. Soma direto no total do ranking, sem depender do período da campanha.</p>
+      <label>Sniper
+        <select id="pontosSniper" required></select>
+      </label>
+      <label>Pontos
+        <input type="number" id="pontosValor" required min="1" max="100000" step="1" inputmode="numeric" placeholder="30">
+      </label>
+      <label class="inteira">Motivo
+        <input type="text" id="pontosMotivo" required minlength="3" maxlength="200" autocomplete="off" placeholder="Live de 05/11 das 01:20 às 01:35 não foi contada">
+      </label>
+      <div class="acoes">
+        <button type="submit" class="principal">Adicionar pontos</button>
+      </div>
+    </form>
+    <div class="msg" id="msgPontos"></div>
+    <table>
+      <thead><tr><th>Sniper</th><th>Pontos</th><th>Motivo</th><th>Lançado</th><th></th></tr></thead>
+      <tbody id="listaPontos"></tbody>
     </table>
   </div>
 
@@ -406,7 +430,7 @@
       remover.onclick = () => removerSniper(s.arroba);
       const zerar = el('button', 'perigo', 'Zerar pontuação');
       zerar.type = 'button';
-      zerar.title = 'Apaga de vez as lives, os diamantes e as indicações deste sniper';
+      zerar.title = 'Apaga de vez as lives, os diamantes, as indicações e os pontos manuais deste sniper';
       zerar.onclick = () => zerarSniper(s.arroba);
       botoes.append(reconectar, zerar, remover);
       li.append(
@@ -428,9 +452,9 @@
     $('msgSniper').className = 'msg ' + (tipo || '');
   }
 
-  // a lista de snipers também é a do campo "Quem indicou"
+  // a lista de snipers também é a dos campos "Quem indicou" e "Sniper"
   async function snipersMudaram() {
-    await Promise.all([carregarStatus(), carregar()]);
+    await Promise.all([carregarStatus(), carregar(), carregarPontos()]);
   }
 
   $('formSniper').addEventListener('submit', async ev => {
@@ -477,7 +501,7 @@
 
   async function zerarSniper(arroba) {
     const confirmar = confirmarDigitando(
-      `Zerar a pontuação de @${arroba}?\n\nApaga do banco as lives, os diamantes, as horas e as indicações feitas por @${arroba}. ` +
+      `Zerar a pontuação de @${arroba}?\n\nApaga do banco as lives, os diamantes, as horas, as indicações feitas por @${arroba} e os pontos manuais dele. ` +
       'Se a live estiver no ar, ela volta a contar do zero a partir de agora.',
       arroba, semArroba);
     if (!confirmar) return;
@@ -490,7 +514,7 @@
 
   $('zerarTodos').onclick = async () => {
     const confirmar = confirmarDigitando(
-      'Zerar a pontuação de TODOS os snipers da lista?\n\nApaga do banco as lives, os diamantes, as horas e as indicações de cada um. ' +
+      'Zerar a pontuação de TODOS os snipers da lista?\n\nApaga do banco as lives, os diamantes, as horas, as indicações e os pontos manuais de cada um. ' +
       'As lives no ar voltam a contar do zero a partir de agora.',
       'ZERAR TUDO', texto => texto.trim());
     if (!confirmar) return;
@@ -500,6 +524,81 @@
     } catch (e) { avisoSniper(e.message, 'erro'); }
     await snipersMudaram().catch(() => {});
   };
+
+  // ---------- pontos manuais ----------
+  function avisoPontos(texto, tipo) {
+    $('msgPontos').textContent = texto || '';
+    $('msgPontos').className = 'msg ' + (tipo || '');
+  }
+
+  function desenharPontos(lancamentos, snipers) {
+    const lista = $('listaPontos');
+    lista.replaceChildren();
+    if (!lancamentos.length) {
+      const tr = el('tr'); const td = el('td', 'vazio', 'Nenhum ponto manual lançado.');
+      td.colSpan = 5; tr.append(td); lista.append(tr);
+      return;
+    }
+    lancamentos.forEach(p => {
+      const tr = el('tr');
+      // quem saiu da lista guarda os pontos, mas não aparece no ranking
+      const quem = el('td', '', '@' + p.arroba);
+      if (!snipers.includes(p.arroba)) quem.append(' ', el('span', 'fora', '(fora da campanha)'));
+      const btns = el('td', 'btns');
+      const remover = el('button', 'perigo', 'Remover');
+      remover.type = 'button';
+      remover.onclick = () => removerPontos(p);
+      btns.append(remover);
+      const quando = new Date(p.criadoEm).toLocaleString('pt-BR');
+      tr.append(
+        quem,
+        el('td', 'sim', '+' + milhar(p.pontos)),
+        el('td', '', p.motivo),
+        el('td', 'fora', p.autor ? `${quando} por ${p.autor}` : quando),
+        btns
+      );
+      lista.append(tr);
+    });
+  }
+
+  async function carregarPontos() {
+    const dados = await api('GET', '/api/mira/pontos');
+    const sel = $('pontosSniper');
+    const escolhido = sel.value;
+    sel.replaceChildren();
+    dados.snipers.forEach(s => {
+      const o = el('option', '', '@' + s); o.value = s; sel.append(o);
+    });
+    if (dados.snipers.includes(escolhido)) sel.value = escolhido;
+    desenharPontos(dados.lancamentos, dados.snipers);
+  }
+
+  $('formPontos').addEventListener('submit', async ev => {
+    ev.preventDefault();
+    const corpo = {
+      arroba: $('pontosSniper').value,
+      pontos: Number($('pontosValor').value),
+      motivo: $('pontosMotivo').value
+    };
+    // vai pro ranking público: um zero a mais não pode passar batido
+    if (!confirm(`Adicionar ${milhar(corpo.pontos)} pontos para @${corpo.arroba}?\n\nO ranking público atualiza em até 2 minutos.`)) return;
+    try {
+      await api('POST', '/api/mira/pontos', corpo);
+      $('pontosValor').value = '';
+      $('pontosMotivo').value = '';
+      avisoPontos(`${milhar(corpo.pontos)} pontos adicionados para @${corpo.arroba}.`, 'ok');
+      await carregarPontos();
+    } catch (e) { avisoPontos(e.message, 'erro'); }
+  });
+
+  async function removerPontos(p) {
+    if (!confirm(`Remover ${milhar(p.pontos)} pontos de @${p.arroba}?\n\nMotivo do lançamento: ${p.motivo}`)) return;
+    try {
+      await api('DELETE', '/api/mira/pontos/' + encodeURIComponent(p.id));
+      avisoPontos(`${milhar(p.pontos)} pontos removidos de @${p.arroba}.`, 'ok');
+      await carregarPontos();
+    } catch (e) { avisoPontos(e.message, 'erro'); }
+  }
 
   // ---------- administradores ----------
   function avisoAdmin(texto, tipo) {
@@ -635,6 +734,7 @@
   atualizarStatus();
   carregarPeriodo().catch(e => avisoPeriodo(e.message, 'erro'));
   carregarAdmins().catch(e => avisoAdmin(e.message, 'erro'));
+  carregarPontos().catch(e => avisoPontos(e.message, 'erro'));
 </script>
 </body>
 </html>

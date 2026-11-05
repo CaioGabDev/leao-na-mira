@@ -10,6 +10,7 @@
 // ============================================================================
 const config = require('./campanha.config');
 const indicacoes = require('./indicacoes');
+const pontosManuais = require('./pontos-manuais');
 const periodo = require('./periodo');
 const snipers = require('./snipers');
 const { calcularPontuacao, somarLivesNoPeriodo, ordenarRanking } = require('./pontuacao');
@@ -26,13 +27,18 @@ function criarCampanha({ clientes }) {
     return { sessoes, atual };
   }
 
-  function linhaDoSniper(arroba, oficiais, agora, { inicio, fim }) {
+  function linhaDoSniper(arroba, oficiais, manuais, agora, { inicio, fim }) {
     const { db } = clientes.abrir(arroba);
     const { sessoes, atual } = livesDoSniper(db, agora);
 
     const soma = somarLivesNoPeriodo(sessoes, inicio, fim);
     const nIndicacoes = oficiais.get(arroba) || 0;
-    const pontos = calcularPontuacao({ segundosDeLive: soma.segundos, diamantes: soma.diamantes, indicacoes: nIndicacoes });
+    const pontos = calcularPontuacao({
+      segundosDeLive: soma.segundos,
+      diamantes: soma.diamantes,
+      indicacoes: nIndicacoes,
+      pontosManuais: manuais.get(arroba) || 0
+    });
     const perfil = db.getPerfilDoStreamer();
 
     return {
@@ -52,10 +58,11 @@ function criarCampanha({ clientes }) {
     // lido a cada recálculo: o administrador pode mudar o período na tela
     const p = periodo.get();
     const oficiais = indicacoes.oficiaisPorIndicador();
+    const manuais = pontosManuais.somaPorSniper();
     const linhas = [];
     for (const arroba of snipers.listar()) {
       try {
-        const linha = linhaDoSniper(arroba, oficiais, agora, p);
+        const linha = linhaDoSniper(arroba, oficiais, manuais, agora, p);
         ultimaBoa.set(arroba, linha);
         linhas.push(linha);
       } catch (e) {
@@ -131,7 +138,8 @@ function criarCampanha({ clientes }) {
     });
   }
 
-  // Apaga de vez as lives, os diamantes e as indicações feitas por este sniper.
+  // Apaga de vez as lives, os diamantes, as indicações feitas por este sniper e
+  // os pontos manuais dele.
   // Devolve o que foi apagado, pro log: é o único rastro que sobra.
   //
   // Com a live no ar, ela volta a contar do zero a partir de agora: o resetAll
@@ -143,7 +151,12 @@ function criarCampanha({ clientes }) {
     db.resetAll();
     live.sessaoReiniciada();
     ultimaBoa.delete(arroba);
-    return { arroba, ...apagado, indicacoes: indicacoes.removerDoIndicador(arroba) };
+    return {
+      arroba,
+      ...apagado,
+      indicacoes: indicacoes.removerDoIndicador(arroba),
+      pontosManuais: pontosManuais.removerDoSniper(arroba)
+    };
   }
 
   function zerar(arroba) {

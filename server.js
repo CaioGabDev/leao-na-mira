@@ -10,6 +10,7 @@ const { FileSessionStore } = require('./session-store');
 const snipers = require('./snipers');
 const criarCampanha = require('./campanha');
 const indicacoes = require('./indicacoes');
+const pontosManuais = require('./pontos-manuais');
 const periodo = require('./periodo');
 
 const app = express();
@@ -287,6 +288,31 @@ app.put('/api/mira/indicacoes/:id', requireAdmin, (req, res) => {
 app.delete('/api/mira/indicacoes/:id', requireAdmin, (req, res) => {
   if (!indicacoes.remover(req.params.id)) return res.status(404).json({ error: 'Indicação não encontrada.' });
   campanha.invalidar();
+  res.json({ ok: true });
+});
+
+// ---------- PONTOS MANUAIS ----------
+// O log guarda o que foi lançado e removido: remover apaga a linha do banco, e
+// aqui é o único rastro que sobra.
+app.get('/api/mira/pontos', requireAdmin, (req, res) => {
+  res.json({ snipers: campanha.snipers(), lancamentos: pontosManuais.listar() });
+});
+
+app.post('/api/mira/pontos', requireAdmin, (req, res) => {
+  const r = pontosManuais.criar(req.body, req.session.user);
+  if (r.erro) return res.status(400).json({ error: r.erro });
+  campanha.invalidar();
+  console.log(`[MIRA] ${req.session.user} lançou pontos manuais:`, JSON.stringify(r.lancamento));
+  res.json({ ok: true, lancamento: r.lancamento });
+});
+
+app.delete('/api/mira/pontos/:id', requireAdmin, (req, res) => {
+  const lancamento = pontosManuais.buscar(req.params.id);
+  if (!lancamento || !pontosManuais.remover(lancamento.id)) {
+    return res.status(404).json({ error: 'Lançamento não encontrado.' });
+  }
+  campanha.invalidar();
+  console.log(`[MIRA] ${req.session.user} removeu pontos manuais:`, JSON.stringify(lancamento));
   res.json({ ok: true });
 });
 

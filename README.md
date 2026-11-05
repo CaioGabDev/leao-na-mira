@@ -123,6 +123,10 @@ Empate: mais diamantes, depois mais horas.
   servidor estava fora do ar, o sniper entrou depois) **não existe** pra conta.
 - **Bordas do período**: a duração é cortada no início e no fim. O diamante vai
   pela live inteira, porque a sessão guarda o total e não a hora de cada presente.
+- **Pontos manuais**: lançados pelo administrador em `/mira-admin.html`, pra
+  compensar o que o sistema não contou. Cada lançamento guarda motivo e autor, e
+  soma direto no total, sem depender do período. O ranking público mostra só o
+  total. Um lançamento errado se desfaz removendo a linha, e "Zerar" leva junto.
 - **Indicações**: entrada manual do administrador em `/mira-admin.html`, gravada
   na tabela `indicacoes` do `dados.db`. Um mesmo indicado só pode ser
   creditado uma vez.
@@ -318,6 +322,7 @@ campanha.config.js valores da pontuação, período, snipers
 pontuacao.js       a conta da campanha (pura, testada)
 campanha.js        o ranking com cache e último dado bom, e o status das lives
 indicacoes.js      quem indicou quem (tabela `indicacoes` no dados.db)
+pontos-manuais.js  os pontos lançados pelo admin (tabela `pontos_manuais`)
 snipers.js         a lista de snipers: a salva pelo admin, ou a padrão
 ajustes.js         a tabela `campanha_ajustes` (chave -> JSON) que os dois usam
 periodo.js         início e fim da campanha: o salvo pelo admin, ou o padrão

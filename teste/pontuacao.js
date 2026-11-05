@@ -41,7 +41,7 @@ test('indicação vale 20 por amigo', () => {
 
 test('total soma as três partes', () => {
   const r = calcularPontuacao({ segundosDeLive: 2 * 3600 + 59 * 60, diamantes: 1499, indicacoes: 1 }, REGRAS);
-  assert.deepEqual(r, { horas: 2, pontosHoras: 20, pontosDiamantes: 60, pontosIndicacoes: 20, total: 100 });
+  assert.deepEqual(r, { horas: 2, pontosHoras: 20, pontosDiamantes: 60, pontosIndicacoes: 20, pontosManuais: 0, total: 100 });
 });
 
 test('entrada torta conta como zero', () => {

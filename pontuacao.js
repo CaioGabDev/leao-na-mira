@@ -12,20 +12,23 @@ const inteiro = n => Math.max(0, Math.floor(Number(n) || 0));
 
 // Só hora completa conta, somando todas as lives: 59 min = 0, 60 min = 1h.
 // Diamante só em bloco fechado: 499 = 0, 500 = 1 bloco, 999 = 1 bloco.
-function calcularPontuacao({ segundosDeLive = 0, diamantes = 0, indicacoes = 0 } = {}, regras = regrasPadrao) {
+// Ponto manual entra como veio: é o administrador compensando o que não foi contado.
+function calcularPontuacao({ segundosDeLive = 0, diamantes = 0, indicacoes = 0, pontosManuais = 0 } = {}, regras = regrasPadrao) {
   const horas = Math.floor(inteiro(segundosDeLive) / 3600);
   const blocos = Math.floor(inteiro(diamantes) / regras.DIAMANTES_POR_BLOCO);
 
   const pontosHoras = horas * regras.PONTOS_POR_HORA;
   const pontosDiamantes = blocos * regras.PONTOS_POR_BLOCO;
   const pontosIndicacoes = inteiro(indicacoes) * regras.PONTOS_POR_INDICACAO;
+  const manuais = inteiro(pontosManuais);
 
   return {
     horas,
     pontosHoras,
     pontosDiamantes,
     pontosIndicacoes,
-    total: pontosHoras + pontosDiamantes + pontosIndicacoes
+    pontosManuais: manuais,
+    total: pontosHoras + pontosDiamantes + pontosIndicacoes + manuais
   };
 }
 
