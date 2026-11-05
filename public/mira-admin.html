@@ -58,7 +58,11 @@
   .status .arroba { font-weight: 700; overflow: hidden; text-overflow: ellipsis; }
   .status .estado { font-size: 13px; font-weight: 600; color: var(--ink-dim); }
   .status .on .estado { color: var(--green); }
-  .status .quando, .status .recado { grid-column: 2 / -1; font-size: 12.5px; color: var(--ink-dim); }
+  .status .quando, .status .recado, .status .detalhe { grid-column: 2 / -1; font-size: 12.5px; color: var(--ink-dim); }
+  .status .detalhe.falha { color: var(--red); font-weight: 600; }
+  .status .numeros { grid-column: 2 / -1; display: flex; gap: 4px 18px; flex-wrap: wrap; margin-top: 4px; font-size: 13px; color: var(--ink-dim); }
+  .status .numeros b { font-size: 16px; color: var(--ink); }
+  .zerarTodos { margin-top: 12px; text-align: right; }
   .status li.vazio { display: block; }
   input[type=datetime-local] {
     background: var(--card-2); color: var(--ink); border: 1px solid var(--line);
@@ -113,6 +117,7 @@
     </form>
     <div class="msg" id="msgSniper"></div>
     <ul class="status" id="status"><li class="vazio">Carregando…</li></ul>
+    <div class="zerarTodos"><button type="button" class="perigo" id="zerarTodos" hidden>Zerar pontuação de todos</button></div>
   </div>
 
   <div class="caixa">
@@ -328,20 +333,63 @@
   // ---------- status das lives ----------
   // "Atualizado" é a última vez que o servidor soube algo da live: o último
   // evento do TikTok com ela no ar, ou a última checagem com ela fora do ar.
-  function quando(ms, agora) {
-    if (!ms) return 'Sem notícia desde que o servidor subiu';
+  function horario(ms, agora) {
     const d = new Date(ms);
     const hoje = new Date(agora).toDateString() === d.toDateString();
     const hora = d.toLocaleTimeString('pt-BR');
     const texto = hoje ? hora : d.toLocaleDateString('pt-BR') + ' ' + hora;
     const min = Math.floor((agora - ms) / 60000);
-    return 'Atualizado às ' + texto + (min >= 1 ? ` (há ${min} min)` : ' (agora há pouco)');
+    return texto + (min >= 1 ? ` (há ${min} min)` : ' (agora há pouco)');
+  }
+
+  function quando(ms, agora) {
+    return ms ? 'Atualizado às ' + horario(ms, agora) : 'Sem notícia desde que o servidor subiu';
+  }
+
+  // ---------- diamantes e tempo de live de cada sniper ----------
+  const milhar = n => n.toLocaleString('pt-BR');
+  const emLives = n => (n === 1 ? '1 live' : milhar(n) + ' lives');
+
+  function duracao(segundos) {
+    const h = Math.floor(segundos / 3600);
+    const min = Math.floor((segundos % 3600) / 60);
+    return h ? `${milhar(h)}h ${min}min` : `${min}min`;
+  }
+
+  function numero(valor, rotulo) {
+    const span = el('span');
+    span.append(el('b', '', valor), ' ' + rotulo);
+    return span;
+  }
+
+  function linhasDosNumeros({ noPeriodo, tudo, gravacao }, agora) {
+    const numeros = el('span', 'numeros');
+    numeros.title = 'O que conta pro ranking: só o que está dentro do período da campanha';
+    numeros.append(
+      numero(milhar(noPeriodo.diamantes), 'diamantes'),
+      numero(duracao(noPeriodo.segundos), 'de live'),
+      numero(emLives(noPeriodo.lives), 'no período')
+    );
+    const linhas = [numeros];
+    if (tudo.diamantes !== noPeriodo.diamantes || tudo.segundos !== noPeriodo.segundos) {
+      linhas.push(el('span', 'detalhe',
+        `Contando fora do período: ${milhar(tudo.diamantes)} diamantes, ${duracao(tudo.segundos)} de live, ${emLives(tudo.lives)}`));
+    }
+    if (gravacao.erro) {
+      linhas.push(el('span', 'detalhe falha', 'Falha ao gravar no banco: ' + gravacao.erro));
+    } else {
+      linhas.push(el('span', 'detalhe', gravacao.em
+        ? 'Gravado no banco às ' + horario(gravacao.em, agora)
+        : 'Nada novo pra gravar no banco desde que o servidor subiu'));
+    }
+    return linhas;
   }
 
   async function carregarStatus() {
     const dados = await api('GET', '/api/mira/status');
     const ul = $('status');
     ul.replaceChildren();
+    $('zerarTodos').hidden = !dados.snipers.length;
     if (!dados.snipers.length) {
       ul.append(el('li', 'vazio', 'Nenhum sniper na campanha. Adicione o primeiro aqui em cima.'));
       return;
@@ -356,13 +404,18 @@
       const remover = el('button', 'perigo', 'Remover');
       remover.type = 'button';
       remover.onclick = () => removerSniper(s.arroba);
-      botoes.append(reconectar, remover);
+      const zerar = el('button', 'perigo', 'Zerar pontuação');
+      zerar.type = 'button';
+      zerar.title = 'Apaga de vez as lives, os diamantes e as indicações deste sniper';
+      zerar.onclick = () => zerarSniper(s.arroba);
+      botoes.append(reconectar, zerar, remover);
       li.append(
         el('span', 'bola'),
         el('span', 'arroba', '@' + s.arroba),
         el('span', 'estado', s.conectado ? 'Live conectada' : 'Desconectada'),
         el('span', 'quando', quando(s.atualizadoEm, dados.agora))
       );
+      if (s.numeros) li.append(...linhasDosNumeros(s.numeros, dados.agora));
       if (s.recado) li.append(el('span', 'recado', s.recado));
       li.append(botoes);
       ul.append(li);
@@ -408,6 +461,45 @@
       setTimeout(atualizarStatus, 10000);
     } catch (e) { avisoSniper(e.message, 'erro'); }
   }
+
+  // ---------- zerar pontuação ----------
+  // Não tem volta, então um "OK" no susto não basta: tem que digitar o alvo.
+  // Devolve o que foi digitado, ou null se cancelou ou digitou errado.
+  function confirmarDigitando(mensagem, esperado, limpar) {
+    const digitado = prompt(`${mensagem}\n\nNão tem como desfazer. Digite ${esperado} para confirmar:`);
+    if (digitado === null) return null;
+    if (limpar(digitado) === esperado) return esperado;
+    avisoSniper('O texto não bateu. Nada foi apagado.', 'erro');
+    return null;
+  }
+
+  const semArroba = texto => texto.trim().replace(/^@+/, '').toLowerCase();
+
+  async function zerarSniper(arroba) {
+    const confirmar = confirmarDigitando(
+      `Zerar a pontuação de @${arroba}?\n\nApaga do banco as lives, os diamantes, as horas e as indicações feitas por @${arroba}. ` +
+      'Se a live estiver no ar, ela volta a contar do zero a partir de agora.',
+      arroba, semArroba);
+    if (!confirmar) return;
+    try {
+      await api('POST', '/api/mira/snipers/' + encodeURIComponent(arroba) + '/zerar', { confirmar });
+      avisoSniper(`A pontuação de @${arroba} foi zerada.`, 'ok');
+      await snipersMudaram();
+    } catch (e) { avisoSniper(e.message, 'erro'); }
+  }
+
+  $('zerarTodos').onclick = async () => {
+    const confirmar = confirmarDigitando(
+      'Zerar a pontuação de TODOS os snipers da lista?\n\nApaga do banco as lives, os diamantes, as horas e as indicações de cada um. ' +
+      'As lives no ar voltam a contar do zero a partir de agora.',
+      'ZERAR TUDO', texto => texto.trim());
+    if (!confirmar) return;
+    try {
+      await api('POST', '/api/mira/zerar-todos', { confirmar });
+      avisoSniper('A pontuação de todos os snipers foi zerada.', 'ok');
+    } catch (e) { avisoSniper(e.message, 'erro'); }
+    await snipersMudaram().catch(() => {});
+  };
 
   // ---------- administradores ----------
   function avisoAdmin(texto, tipo) {

@@ -329,6 +329,33 @@ app.post('/api/mira/snipers/:arroba/reconectar', requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+// Zerar não tem volta, então o corpo precisa repetir o alvo: a tela pede pra
+// digitar, e uma chamada solta (ou um clique perdido) não apaga nada.
+const CONFIRMA_ZERAR_TODOS = 'ZERAR TUDO';
+
+app.post('/api/mira/snipers/:arroba/zerar', requireAdmin, (req, res) => {
+  const { arroba } = req.params;
+  if (!snipers.inclui(arroba)) return res.status(404).json({ error: 'Esse @ não está na campanha.' });
+  if (!req.body || req.body.confirmar !== arroba) {
+    return res.status(400).json({ error: 'Confirmação errada. Nada foi apagado.' });
+  }
+  const apagado = campanha.zerar(arroba);
+  console.log(`[MIRA] pontuação de @${arroba} zerada por ${req.session.user}. Apagado:`, JSON.stringify(apagado));
+  res.json({ ok: true, apagado });
+});
+
+app.post('/api/mira/zerar-todos', requireAdmin, (req, res) => {
+  if (!req.body || req.body.confirmar !== CONFIRMA_ZERAR_TODOS) {
+    return res.status(400).json({ error: 'Confirmação errada. Nada foi apagado.' });
+  }
+  const { apagados, falhas } = campanha.zerarTodos();
+  console.log(`[MIRA] pontuação de todos zerada por ${req.session.user}. Apagado:`, JSON.stringify(apagados));
+  if (falhas.length) {
+    return res.status(500).json({ error: `Não consegui zerar: ${falhas.map(a => '@' + a).join(', ')}. Os outros foram zerados.` });
+  }
+  res.json({ ok: true, apagados });
+});
+
 // ---------- ADMINISTRADORES ----------
 // Remover tira só a marca de admin: a conta fica no users.json (igual às
 // antigas do ranking de taps) e deixa de entrar na próxima requisição.

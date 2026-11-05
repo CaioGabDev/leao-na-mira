@@ -93,6 +93,13 @@ function remover(id) {
   return Number(r.changes || 0) > 0;
 }
 
+// Só as feitas por este sniper: ter sido indicado por outro é ponto do outro.
+function removerDoIndicador(arroba) {
+  const dele = listar().filter(i => i.indicador === arroba);
+  dele.forEach(i => remover(i.id));
+  return dele.length;
+}
+
 // sniper -> quantas indicações oficiais ele tem
 function oficiaisPorIndicador() {
   const conta = new Map();
@@ -102,4 +109,4 @@ function oficiaisPorIndicador() {
   return conta;
 }
 
-module.exports = { listar, buscar, criar, atualizar, remover, oficiaisPorIndicador };
+module.exports = { listar, buscar, criar, atualizar, remover, removerDoIndicador, oficiaisPorIndicador };

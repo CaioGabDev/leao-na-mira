@@ -18,13 +18,17 @@ function criarCampanha({ clientes }) {
   let cache = null;               // { atualizadoEm, ranking, periodo }
   const ultimaBoa = new Map();    // sniper -> última linha calculada sem erro
 
-  function linhaDoSniper(arroba, oficiais, agora, { inicio, fim }) {
-    const { db } = clientes.abrir(arroba);
+  // a live que está no ar ainda não entrou no histórico: entra aqui até agora
+  function livesDoSniper(db, agora) {
     const sessoes = db.getSessions();
-
-    // a live que está no ar ainda não entrou no histórico: entra aqui até agora
     const atual = db.numerosDaLiveAtual();
     if (atual) sessoes.push({ startedAt: atual.comecouEm, endedAt: agora, totalDiamonds: atual.diamantes });
+    return { sessoes, atual };
+  }
+
+  function linhaDoSniper(arroba, oficiais, agora, { inicio, fim }) {
+    const { db } = clientes.abrir(arroba);
+    const { sessoes, atual } = livesDoSniper(db, agora);
 
     const soma = somarLivesNoPeriodo(sessoes, inicio, fim);
     const nIndicacoes = oficiais.get(arroba) || 0;
@@ -94,17 +98,31 @@ function criarCampanha({ clientes }) {
   // barato e precisa estar fresco). "Atualizado em" é a última vez que o
   // servidor soube algo daquela live: com ela no ar, o último evento do
   // TikTok; fora do ar, a última checagem de se ela tinha começado.
+  //
+  // `numeros` é a conferência do admin, e só sai por aqui: a tela pública não
+  // mostra diamante nem horas (ver publico()). `noPeriodo` é o que o ranking
+  // usa; `tudo` conta também o que ficou fora das datas, senão uma live fora do
+  // período apareceria como zero e pareceria que nada foi registrado.
   function status() {
+    const agora = Date.now();
+    const { inicio, fim } = periodo.get();
     return snipers.listar().map(arroba => {
       try {
-        const c = clientes.abrir(arroba).live.estadoDaConexao();
+        const { db, live } = clientes.abrir(arroba);
+        const c = live.estadoDaConexao();
+        const { sessoes } = livesDoSniper(db, agora);
         const checagem = (c.ultimaTentativa && c.ultimaTentativa.em) || null;
         return {
           arroba,
           conectado: !!c.online,
           atualizadoEm: c.online ? Math.max(c.ultimoEventoEm || 0, checagem || 0) : checagem,
           // o recado é o texto pra gente ler ("não está ao vivo agora"…)
-          recado: (!c.online && c.ultimaTentativa && c.ultimaTentativa.recado) || null
+          recado: (!c.online && c.ultimaTentativa && c.ultimaTentativa.recado) || null,
+          numeros: {
+            noPeriodo: somarLivesNoPeriodo(sessoes, inicio, fim),
+            tudo: somarLivesNoPeriodo(sessoes, -Infinity, Infinity),
+            gravacao: db.ultimaGravacao()
+          }
         };
       } catch (e) {
         console.error(`[MIRA] não li o status de @${arroba}:`, e.message);
@@ -113,7 +131,46 @@ function criarCampanha({ clientes }) {
     });
   }
 
-  return { getRanking, invalidar, status, snipers: () => snipers.listar() };
+  // Apaga de vez as lives, os diamantes e as indicações feitas por este sniper.
+  // Devolve o que foi apagado, pro log: é o único rastro que sobra.
+  //
+  // Com a live no ar, ela volta a contar do zero a partir de agora: o resetAll
+  // leva a sessão junto, e sem o sessaoReiniciada() o resto dela não contaria.
+  function zerarUm(arroba) {
+    const { db, live } = clientes.abrir(arroba);
+    const { sessoes } = livesDoSniper(db, Date.now());
+    const apagado = somarLivesNoPeriodo(sessoes, -Infinity, Infinity);
+    db.resetAll();
+    live.sessaoReiniciada();
+    ultimaBoa.delete(arroba);
+    return { arroba, ...apagado, indicacoes: indicacoes.removerDoIndicador(arroba) };
+  }
+
+  function zerar(arroba) {
+    const apagado = zerarUm(arroba);
+    invalidar();
+    return apagado;
+  }
+
+  // Só quem está na lista. O dados.db pode guardar outros donos (sniper que saiu,
+  // clientes do ranking de taps), e nada disso é pontuação desta campanha.
+  // Um sniper com erro não pode deixar os outros pela metade.
+  function zerarTodos() {
+    const apagados = [];
+    const falhas = [];
+    for (const arroba of snipers.listar()) {
+      try {
+        apagados.push(zerarUm(arroba));
+      } catch (e) {
+        console.error(`[MIRA] não consegui zerar @${arroba}:`, e.message);
+        falhas.push(arroba);
+      }
+    }
+    invalidar();
+    return { apagados, falhas };
+  }
+
+  return { getRanking, invalidar, status, zerar, zerarTodos, snipers: () => snipers.listar() };
 }
 
 module.exports = criarCampanha;
