@@ -37,16 +37,23 @@ function paginaDoPerfil(usuario) {
 
 const paginaDeFirewall = { ok: true, status: 200, text: async () => '<html>firewall</html>' };
 
+function respostaDaApi({ uniqueId, roomId, status }) {
+  const corpo = JSON.stringify({ data: { user: { uniqueId, roomId }, liveRoom: { status } } });
+  return { ok: true, status: 200, text: async () => corpo };
+}
+
 // sem `perfil`, a página cai no firewall, como no bloqueio de verdade
-function montar({ euler, connect, perfil, fetchIsLive, db = dbDeMentira } = {}) {
+function montar({ euler, connect, perfil, api, pagina, fetchIsLive, db = dbDeMentira } = {}) {
   const conta = { checagens: 0, conexoes: 0, perguntasAoEuler: 0, leiturasDePerfil: 0, salas: [], alertas: [] };
   const live = criarLive({
     dono: 'teste',
     db,
     emitir: () => {},
     avisar: async texto => { conta.alertas.push(texto); },
-    buscar: async () => {
+    buscar: async url => {
+      if (url.includes('api-live')) return api ? respostaDaApi(api) : paginaDeFirewall;
       conta.leiturasDePerfil++;
+      if (pagina) return pagina;
       return perfil ? paginaDoPerfil(perfil) : paginaDeFirewall;
     },
     criarConexao: () => ({
@@ -117,6 +124,65 @@ test('Reconectar do administrador conecta sem refazer a checagem', async () => {
 
   assert.equal(conta.checagens, 1, 'não podia ter checado de novo');
   assert.equal(conta.conexoes, 1);
+  live.parar();
+});
+
+test('perfil é a primeira porta: respondeu, a lib nem é chamada', async () => {
+  const { live, conta } = montar({ perfil: { uniqueId: 'teste', roomId: '' } });
+  live.iniciar();
+  await assentar();
+  assert.equal(live.estadoDaConexao().ultimaTentativa.motivo, 'offline');
+  assert.equal(conta.checagens, 0);
+  live.parar();
+});
+
+test('perfil sem dados: a api-live responde e conecta na sala dela', async () => {
+  const { live, conta } = montar({ api: { uniqueId: 'teste', roomId: '888', status: 2 } });
+  live.iniciar();
+  await assentar();
+  assert.deepEqual(conta.salas, ['888']);
+  assert.equal(conta.checagens, 0);
+  live.parar();
+});
+
+test('api-live com live encerrada é offline, mesmo trazendo a sala antiga', async () => {
+  const { live, conta } = montar({ api: { uniqueId: 'teste', roomId: '888', status: 4 } });
+  live.iniciar();
+  await assentar();
+  assert.equal(live.estadoDaConexao().ultimaTentativa.motivo, 'offline');
+  assert.equal(conta.conexoes, 0);
+  live.parar();
+});
+
+test('api-live de outro @ não vale', async () => {
+  const { live, conta } = montar({ api: { uniqueId: 'outra_pessoa', roomId: '888', status: 2 } });
+  live.iniciar();
+  await assentar();
+  assert.equal(conta.conexoes, 0);
+  assert.equal(conta.checagens, 1, 'tinha que cair na lib');
+  live.parar();
+});
+
+test('página sem o perfil: o motivo mostra o que veio nela', async () => {
+  const dados = { __DEFAULT_SCOPE__: { 'webapp.user-detail': { statusCode: 10221, statusMsg: 'banido' } } };
+  const html = '<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__">' + JSON.stringify(dados) + '</script>';
+  const { live } = montar({ pagina: { ok: true, status: 200, text: async () => html } });
+  live.iniciar();
+  await assentar();
+  const { recado } = live.estadoDaConexao().ultimaTentativa;
+  assert.match(recado, /statusCode 10221/);
+  assert.match(recado, /webapp\.user-detail/);
+  live.parar();
+});
+
+test('sem resposta, a próxima tentativa sai em até 10s', async () => {
+  const { live, conta } = montar();
+  live.iniciar();
+  await assentar();
+  assert.equal(conta.leiturasDePerfil, 1);
+  mock.timers.tick(10000);
+  await assentar();
+  assert.equal(conta.leiturasDePerfil, 2);
   live.parar();
 });
 
@@ -204,6 +270,10 @@ test('o Euler também recusa: fica incerto, mostra o motivo e não conecta', asy
   assert.equal(motivo, 'incerto');
   assert.match(recado, /Euler: código 403: sem permissao/);
   assert.equal(conta.conexoes, 0);
+
+  // recusa de plano não muda sozinha: passado o intervalo, não pergunta de novo
+  await passar(180);
+  assert.equal(conta.perguntasAoEuler, 1);
   live.parar();
 });
 
@@ -334,64 +404,48 @@ function dbComFoto(inicial) {
 const PERFIL_OFFLINE = { uniqueId: 'teste', roomId: '', nickname: 'Fulano', avatarThumb: 'https://foto/nova.webp' };
 const DOZE_HORAS = 12 * 60 * 60 * 1000;
 
-// sem isto a primeira busca é sorteada; 1 faz ela acontecer já no primeiro giro
-const primeiraBuscaJa = () => mock.method(Math, 'random', () => 1);
-
-test('foto: quem nunca fez live ganha foto e nome do perfil', async () => {
-  primeiraBuscaJa();
+test('foto: quem nunca fez live ganha foto e nome na primeira checagem', async () => {
   const { db, guardado } = dbComFoto();
-  const { live } = montar({ db, perfil: PERFIL_OFFLINE, fetchIsLive: async () => false });
+  const { live } = montar({ db, perfil: PERFIL_OFFLINE });
   live.iniciar();
   await assentar();
-  await passar(30);
   assert.equal(guardado.perfil.avatar, 'https://foto/nova.webp');
   assert.equal(guardado.perfil.nome, 'Fulano');
   live.parar();
 });
 
-test('foto: a recente não é buscada de novo', async () => {
-  primeiraBuscaJa();
-  const { db } = dbComFoto({ avatar: 'https://foto/atual.webp', nome: 'x', em: Date.now() });
-  const { live, conta } = montar({ db, perfil: PERFIL_OFFLINE, fetchIsLive: async () => false });
+test('foto: a recente é mantida', async () => {
+  const { db, guardado } = dbComFoto({ avatar: 'https://foto/atual.webp', nome: 'x', em: Date.now() });
+  const { live } = montar({ db, perfil: PERFIL_OFFLINE });
   live.iniciar();
   await assentar();
-  await passar(60);
-  assert.equal(conta.leiturasDePerfil, 0);
+  assert.equal(guardado.perfil.avatar, 'https://foto/atual.webp');
   live.parar();
 });
 
 test('foto: a de mais de 12h é renovada antes de o link vencer', async () => {
-  primeiraBuscaJa();
   const { db, guardado } = dbComFoto({ avatar: 'https://foto/velha.webp', nome: 'x', em: Date.now() - DOZE_HORAS });
-  const { live } = montar({ db, perfil: PERFIL_OFFLINE, fetchIsLive: async () => false });
+  const { live } = montar({ db, perfil: PERFIL_OFFLINE });
   live.iniciar();
   await assentar();
-  await passar(30);
   assert.equal(guardado.perfil.avatar, 'https://foto/nova.webp');
   live.parar();
 });
 
-test('foto: TikTok bloqueado mantém a foto antiga e não insiste a cada giro', async () => {
-  primeiraBuscaJa();
-  const antiga = { avatar: 'https://foto/velha.webp', nome: 'x', em: Date.now() - DOZE_HORAS };
-  const { db, guardado } = dbComFoto(antiga);
-  const { live, conta } = montar({ db, fetchIsLive: async () => false });
+test('foto: TikTok bloqueado mantém a foto antiga', async () => {
+  const { db, guardado } = dbComFoto({ avatar: 'https://foto/velha.webp', nome: 'x', em: Date.now() - DOZE_HORAS });
+  const { live } = montar({ db, fetchIsLive: async () => false });
   live.iniciar();
   await assentar();
-  await passar(120);
-  assert.equal(conta.leiturasDePerfil, 1);
   assert.equal(guardado.perfil.avatar, 'https://foto/velha.webp');
   live.parar();
 });
 
 test('foto: perfil sem foto não apaga a que já existe', async () => {
-  primeiraBuscaJa();
-  const antiga = { avatar: 'https://foto/velha.webp', nome: 'x', em: Date.now() - DOZE_HORAS };
-  const { db, guardado } = dbComFoto(antiga);
-  const { live } = montar({ db, perfil: { uniqueId: 'teste', roomId: '', nickname: 'Fulano' }, fetchIsLive: async () => false });
+  const { db, guardado } = dbComFoto({ avatar: 'https://foto/velha.webp', nome: 'x', em: Date.now() - DOZE_HORAS });
+  const { live } = montar({ db, perfil: { uniqueId: 'teste', roomId: '', nickname: 'Fulano' } });
   live.iniciar();
   await assentar();
-  await passar(30);
   assert.equal(guardado.perfil.avatar, 'https://foto/velha.webp');
   live.parar();
 });

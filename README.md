@@ -221,9 +221,9 @@ sorteio, pra várias lives não voltarem no mesmo instante.
 ## Foto dos snipers
 
 A foto vem do perfil público do TikTok, com ou sem live no ar: quem nunca fez
-live também aparece com foto. Ela é buscada em até 10 min depois que o servidor
-sobe e renovada a cada 12h, porque o link do TikTok vence em cerca de 2 dias.
-Se o TikTok não entregar, o ranking mostra o avatar padrão.
+live também aparece com foto. Ela vem na checagem de "está ao vivo?" e é renovada
+a cada 12h, porque o link do TikTok vence em cerca de 2 dias. Se o TikTok não
+entregar, o ranking mostra o avatar padrão.
 
 ---
 
@@ -260,7 +260,7 @@ Pra ligar:
 | `EULERSTREAM_API_KEY` / `SIGN_API_KEY` | Chave do assinador. Necessária na prática pra mais de uma live. |
 | `SIGN_API_URL` | Aponta o assinador pra outro servidor. Serve pra investigação. |
 | `INTERVALO_CHECAGEM_MS` | De quanto em quanto tempo perguntar se o sniper subiu. Padrão: `30000`. Não custa cota do assinador. |
-| `INTERVALO_EULER_MS` | Intervalo mínimo, por live, pra perguntar ao Euler quando o TikTok bloqueia as fontes gratuitas. Padrão: `180000`. Custa cota. |
+| `INTERVALO_EULER_MS` | Intervalo mínimo, por live, pra perguntar ao Euler quando nenhuma fonte gratuita responde. Padrão: `180000`. Custa cota, e a rota exige o plano Business. |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | Bot e conversa que recebem os alertas. Sem os dois, os alertas ficam desligados. |
 | `ALERTA_APOS_MS` | Quanto tempo uma live fica com problema antes do alerta. Padrão: `180000`. |
 | `DEV_LOCAL=1` | **Só na sua máquina.** Aceita rodar sem `SESSION_SECRET` e manda o cookie de sessão por HTTP. Em qualquer deploy, não defina. |
