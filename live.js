@@ -13,9 +13,18 @@
 //              vira `io.to(sala).emit` e é a ÚNICA troca necessária pra um
 //              cliente parar de enxergar a live do outro.
 // ============================================================================
-const { TikTokLiveConnection, IsLiveRouteConfig } = require('tiktok-live-connector');
+const { TikTokLiveConnection, IsLiveRouteConfig, WebcastHttpClient } = require('tiktok-live-connector');
 const ConnectionClass = TikTokLiveConnection;
 const assinatura = require('./assinatura');
+
+// Bug da tiktok-live-connector 2.4.4: `isSecure()` está invertido, então ela usa
+// https só pra localhost e fala com o TikTok em http puro. Em casa isso passa,
+// porque o TikTok responde 301 pro https. No servidor ele respondeu 403 direto
+// no http, antes do redirecionamento: o erro trazia a URL ainda em http://, e o
+// `got` mostra a URL final, então o https nunca foi alcançado.
+WebcastHttpClient.prototype.getBaseUrl = function (host) {
+  return `https://${host}`;
+};
 
 // ============================================================================
 // A CHECAGEM DE "ELE TÁ AO VIVO?" NÃO PODE CUSTAR ASSINATURA

@@ -54,6 +54,13 @@ test.afterEach(() => {
   mock.restoreAll();
 });
 
+test('fala com o TikTok em https, não no http que a lib usa por padrão', () => {
+  const { TikTokLiveConnection } = require('tiktok-live-connector');
+  const { webClient } = new TikTokLiveConnection('teste', {});
+  assert.equal(webClient.getBaseUrl('www.tiktok.com'), 'https://www.tiktok.com');
+  assert.equal(webClient.getBaseUrl('webcast.tiktok.com'), 'https://webcast.tiktok.com');
+});
+
 test('o painel mostra o motivo de cada fonte, não só o erro genérico', async () => {
   const { live, conta } = montar();
   live.iniciar();
