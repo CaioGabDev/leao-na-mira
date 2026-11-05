@@ -38,6 +38,16 @@ const assinatura = require('./assinatura');
 // o HTML. Melhor falhar visível do que gastar escondido.
 IsLiveRouteConfig.skipFetchRoomIdFromEulerRoute = true;
 
+// Quando todas as fontes falham, a lib joga um erro genérico ("Failed to
+// retrieve live status from all sources") e guarda o motivo de cada uma em
+// `config.requestErrs`, que o console mostra só como [Array]. Sem abrir essa
+// lista, o log não diz se foi bloqueio do TikTok, timeout ou resposta nova.
+function motivosDaFalha(err) {
+  const lista = err?.config?.requestErrs || err?.requestErrs;
+  if (!Array.isArray(lista)) return [];
+  return lista.map(e => String(e?.message || e).slice(0, 200));
+}
+
 // `criarConexao` existe pro teste: o bug do prêmio perdido é sobre ORDEM DE
 // CHEGADA dos eventos, e sem poder mandá-los na ordem que eu quero o teste
 // não testaria o que quebrou. Em produção ninguém passa, e cai no TikTok.
@@ -571,7 +581,9 @@ function criarLive({ dono, db, emitir, criarConexao }) {
     return true;
   }
 
-  function forceReconnect(motivo) {
+  function forceReconnect(motivo, opcoes) {
+    // antes do `return`: um clique com a reconexão já marcada ainda vale
+    if (opcoes?.direto) conectarDireto = true;
     if (reconnecting) return;
     reconnecting = true;
     console.log(`Forçando reconexão (motivo: ${motivo})`);
@@ -652,6 +664,12 @@ function criarLive({ dono, db, emitir, criarConexao }) {
   // gente tenta às cegas, gastando uma assinatura, e volta a perguntar depois.
   const MAX_FALHAS_CHECAGEM = 3;
   let falhasDeChecagem = 0;
+  let motivoDaChecagem = '';   // por que a última checagem falhou, pro painel
+
+  // Pedido do administrador: a próxima tentativa pula a checagem e conecta
+  // direto. Se a checagem é justamente o que está falhando, repeti-la não
+  // adianta nada. Custa uma assinatura por clique, então só o botão usa isto.
+  let conectarDireto = false;
 
   // true = tem live no ar | false = não tem | 'incerto' = não deu pra saber
   async function conferirAoVivo(connection) {
@@ -663,8 +681,11 @@ function criarLive({ dono, db, emitir, criarConexao }) {
       return !!vivo;
     } catch (err) {
       falhasDeChecagem++;
+      const motivos = motivosDaFalha(err);
+      motivoDaChecagem = motivos.join(' | ');
       console.error(`Não consegui checar se @${dono} está ao vivo ` +
         `(${falhasDeChecagem}/${MAX_FALHAS_CHECAGEM}):`, err?.message || err);
+      motivos.forEach((m, i) => console.error(`  fonte ${i + 1}: ${m}`));
       if (falhasDeChecagem >= MAX_FALHAS_CHECAGEM) {
         falhasDeChecagem = 0;
         registrarDiagnostico('assinatura',
@@ -703,6 +724,8 @@ function criarLive({ dono, db, emitir, criarConexao }) {
     }
     conectando = true;
     conectandoDesde = Date.now();
+    const direto = conectarDireto;
+    conectarDireto = false;
     // Rede de segurança: um connect() que nunca responde não cai no .catch, e
     // o vigia só age com a live JÁ no ar — ou seja, ninguém remarcaria a
     // próxima tentativa e a live ficaria parada pra sempre. Este agendamento
@@ -718,7 +741,7 @@ function criarLive({ dono, db, emitir, criarConexao }) {
 
     // A pergunta barata vem ANTES da cara: o connect() só sai se o TikTok
     // confirmar que existe live no ar pra assinar.
-    conferirAoVivo(connection).then(aoVivo => {
+    (direto ? Promise.resolve(true) : conferirAoVivo(connection)).then(aoVivo => {
       if (aoVivo === false) {
         conectando = false;
         aguardarLiveComecar('offline',
@@ -729,7 +752,8 @@ function criarLive({ dono, db, emitir, criarConexao }) {
       if (aoVivo === 'incerto') {
         conectando = false;
         aguardarLiveComecar('erro',
-          'Não consegui confirmar se a live está no ar. Tentando de novo em instantes.',
+          'Não consegui confirmar se a live está no ar. Tentando de novo em instantes.' +
+            (motivoDaChecagem ? ` Motivo: ${motivoDaChecagem.slice(0, 300)}` : ''),
           esperaDaChecagem(1 + falhasDeChecagem));
         return null;
       }
@@ -758,6 +782,7 @@ function criarLive({ dono, db, emitir, criarConexao }) {
       tentativasSeguidas++;
       ultimaTentativa = { em: Date.now(), ok: false, ...classificarFalha(err) };
       console.error('Erro ao conectar na live:', err?.message || err);
+      motivosDaFalha(err).forEach((m, i) => console.error(`  fonte ${i + 1}: ${m}`));
 
       // Falha de assinatura não é queda de rede: a rede pode estar ótima e a
       // live não conectar porque o assinador recusou (limite estourado, por

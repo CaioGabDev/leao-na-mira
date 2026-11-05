@@ -321,10 +321,11 @@ app.delete('/api/mira/snipers/:arroba', requireAdmin, (req, res) => {
 });
 
 // Pra quando o status mostra a live parada e o sniper jura que está no ar:
-// derruba a conexão e confere de novo em 5 segundos.
+// derruba a conexão e conecta direto em 5 segundos, sem passar pela checagem
+// de "está ao vivo?" (que pode ser justamente o que está falhando).
 app.post('/api/mira/snipers/:arroba/reconectar', requireAdmin, (req, res) => {
   if (!snipers.inclui(req.params.arroba)) return res.status(404).json({ error: 'Esse @ não está na campanha.' });
-  clientes.iniciar(req.params.arroba).live.forceReconnect('pedido do administrador');
+  clientes.iniciar(req.params.arroba).live.forceReconnect('pedido do administrador', { direto: true });
   res.json({ ok: true });
 });
 
