@@ -463,3 +463,36 @@ test('reconexão automática continua passando pela checagem', async () => {
   assert.equal(conta.conexoes, 0);
   live.parar();
 });
+
+// Caso real (@lidi_jk e @jp.feitosaaa): o status parou por dias e o Reconectar
+// não fazia nada. Um forceReconnect no meio de um connect() em voo marcava
+// `reconnecting`; o connect() dava certo e cancelava o timer que ia desmarcar.
+// A flag ficava ligada pra sempre: o fim da live, o vigia e o botão do
+// administrador batiam nela e voltavam sem agendar nada.
+test('Reconectar durante um connect() em voo não trava a live pra sempre', async () => {
+  let soltar;
+  let conexoes = 0;
+  const { live } = montar({
+    perfil: { uniqueId: 'teste', roomId: '123' },
+    connect: () => {
+      conexoes++;
+      if (conexoes === 1) return new Promise(resolve => { soltar = resolve; });
+      return Promise.resolve({ roomId: '123', roomInfo: null });
+    }
+  });
+  live.iniciar();
+  await assentar();
+  assert.equal(conexoes, 1, 'o primeiro connect() devia estar em voo');
+
+  live.forceReconnect('pedido do administrador', { direto: true });
+  soltar({ roomId: '123', roomInfo: null });
+  await assentar();
+
+  // a live acaba (ou o administrador clica de novo): tem que tentar de novo
+  live.forceReconnect('streamEnd', { direto: true });
+  mock.timers.tick(5000);
+  await assentar();
+
+  assert.equal(conexoes, 2, 'a reconexão ficou travada e nunca mais tentou');
+  live.parar();
+});

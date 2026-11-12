@@ -227,9 +227,14 @@ function criarLive({ dono, db, emitir, criarConexao, buscar = fetch, avisar = al
     return Math.round(cheia * (0.5 + Math.random() * 0.5));
   }
 
+  // `reconnecting` só vale enquanto existe um timer pra desmarcá-la. Antes, um
+  // connect() que dava certo cancelava o timer do forceReconnect e a flag ficava
+  // ligada pra sempre: o fim da live, o vigia e o Reconectar do administrador
+  // batiam nela e voltavam sem agendar nada. A live morria calada por dias.
   function cancelarReconexao() {
     if (timerReconexao) clearTimeout(timerReconexao);
     timerReconexao = null;
+    reconnecting = false;
   }
 
   function agendarReconexao(ms, motivo, silencioso) {
@@ -767,7 +772,6 @@ function criarLive({ dono, db, emitir, criarConexao, buscar = fetch, avisar = al
     // antes do `return`: um clique com a reconexão já marcada ainda vale
     if (opcoes?.direto) conectarDireto = true;
     if (reconnecting) return;
-    reconnecting = true;
     console.log(`Forçando reconexão (motivo: ${motivo})`);
     activeConnectionId = -1;
     if (!disconnectedSince) disconnectedSince = Date.now();
@@ -779,6 +783,8 @@ function criarLive({ dono, db, emitir, criarConexao, buscar = fetch, avisar = al
     }
 
     agendarReconexao(5000, motivo);
+    // depois de agendar: o agendarReconexao cancela o timer antigo, e isso desmarca
+    reconnecting = true;
   }
 
   function getAvatar(data) {
