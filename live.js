@@ -685,7 +685,8 @@ function criarLive({ dono, db, emitir, criarConexao, buscar = fetch, avisar = al
   const COMBO_GUARDADO_MS = 10 * 60 * 1000;
   const combosAbertos = new Map();
 
-  function contarPresente({ uniqueId, nickname, giftNameEn, diamondCount, avatar }, quantidade) {
+  // `em`: quando o presente foi mandado, pra campanha cortar no fim do período
+  function contarPresente({ uniqueId, nickname, giftNameEn, diamondCount, avatar }, quantidade, em) {
     // Nunca espera a tradução: usa o que já tiver em cache (ou o nome em
     // inglês como fallback) e processa o presente na hora — assim uma chuva
     // de presentes não fica travada esperando resposta de uma API externa.
@@ -697,7 +698,7 @@ function criarLive({ dono, db, emitir, criarConexao, buscar = fetch, avisar = al
     // Power-up tem placar próprio, mas o diamante dele é da campanha como
     // qualquer outro. Sem isto, Foguete e Universo contavam zero.
     if (POWERUP_GIFTS.includes(giftNameEn)) db.addPowerUp(uniqueId, nickname, giftNamePt, avatar);
-    db.addGift(uniqueId, nickname, giftNamePt, diamondCount * quantidade, avatar);
+    db.addGift(uniqueId, nickname, giftNamePt, diamondCount * quantidade, avatar, em);
     broadcastRanking();
     broadcastGlobalStats();
   }
@@ -705,7 +706,9 @@ function criarLive({ dono, db, emitir, criarConexao, buscar = fetch, avisar = al
   function fecharCombo(combo, motivo) {
     const falta = combo.repeatCount - combo.contados;
     if (falta <= 0) return;
-    contarPresente(combo, falta);
+    // conta no minuto do último toque visto, não no da hora em que fechou:
+    // combo parado às 23:59:50 e fechado 30s depois ainda é do período
+    contarPresente(combo, falta, combo.vistoEm);
     combo.contados = combo.repeatCount;
     console.log(`Combo de ${combo.giftNameEn} x${combo.repeatCount} contado sem o aviso de fim (${motivo}).`);
   }
@@ -2447,6 +2450,12 @@ function criarLive({ dono, db, emitir, criarConexao, buscar = fetch, avisar = al
     // marca que a live seguia no ar; se o servidor reiniciar logo em seguida,
     // a duração é retomada em vez de voltar pro zero
     if (liveOnline) db.heartbeat();
+    // Servidor reiniciou com a live no ar e ela não voltou: fecha no histórico
+    // na última batida. Sem isto ela ficava "ao vivo" no banco, somando horas.
+    else if (db.fecharSessaoParada()) {
+      console.log('Live de antes do reinício não voltou: fechada na última batida.');
+      broadcastLiveStatus();
+    }
 
     alertarSeDemorou();
     revisarCombos();

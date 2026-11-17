@@ -32,9 +32,36 @@ function calcularPontuacao({ segundosDeLive = 0, diamantes = 0, indicacoes = 0, 
   };
 }
 
+const MINUTO = 60 * 1000;
+
+// Diamante de uma live que conta no período. A sessão guarda o que entrou em
+// cada minuto (`diamantesPorMinuto`, chave = início do minuto), e só vale o
+// minuto que começa dentro do período: com o fim às 23:59:59, o minuto 23:59
+// conta e o 00:00 não. Assim, na virada do fim, para de subir mesmo com a live
+// no ar.
+//
+// Live gravada antes de existir essa conta não tem hora nenhuma, e a parte sem
+// hora (presente de antes do deploy, com a live já no ar) também não: essas
+// vão pela live inteira, como sempre foi.
+function diamantesNoPeriodo(s, inicio, fim) {
+  const total = inteiro(s.totalDiamonds);
+  const porMinuto = s.diamantesPorMinuto;
+  if (!porMinuto || typeof porMinuto !== 'object') return total;
+  const desde = Math.floor(inicio / MINUTO) * MINUTO;
+  let comHora = 0;
+  let dentro = 0;
+  for (const [chave, valor] of Object.entries(porMinuto)) {
+    const minuto = Number(chave);
+    const d = inteiro(valor);
+    comHora += d;
+    if (minuto >= desde && minuto < fim) dentro += d;
+  }
+  return dentro + Math.max(0, total - comHora);
+}
+
 // Soma as lives que tocam o período. A duração é cortada nas bordas (só o
-// trecho dentro da campanha conta); o diamante vai pela live inteira, porque
-// a sessão guarda o total dela e não a hora de cada presente.
+// trecho dentro da campanha conta), e o diamante também, pelo minuto em que
+// o presente chegou (ver diamantesNoPeriodo).
 function somarLivesNoPeriodo(sessoes, inicio, fim) {
   let segundos = 0;
   let diamantes = 0;
@@ -47,7 +74,7 @@ function somarLivesNoPeriodo(sessoes, inicio, fim) {
     const ate = Math.min(termino, fim);
     if (ate <= de) continue;
     segundos += Math.floor((ate - de) / 1000);
-    diamantes += inteiro(s.totalDiamonds);
+    diamantes += diamantesNoPeriodo(s, inicio, fim);
     lives++;
   }
   return { segundos, diamantes, lives };

@@ -62,6 +62,41 @@ test('lives: corta a duração nas bordas do período', () => {
   assert.deepEqual(r, { segundos: 3 * 3600, diamantes: 600, lives: 3 });
 });
 
+test('diamantes: param na virada do fim, mesmo com a live no ar', () => {
+  const M = 60 * 1000;
+  const inicio = 0;
+  const fim = 100 * M - 1;           // "23:59" salvo como 23:59:59.999
+  const r = somarLivesNoPeriodo([{
+    startedAt: 90 * M, endedAt: 130 * M, totalDiamonds: 1000,
+    diamantesPorMinuto: { [95 * M]: 300, [99 * M]: 200, [100 * M]: 400, [120 * M]: 100 }
+  }], inicio, fim);
+  // o minuto 99 (23:59) conta; o 100 (00:00) em diante não
+  assert.equal(r.diamantes, 500);
+  assert.equal(r.lives, 1);
+});
+
+test('diamantes: o início também corta pelo minuto do presente', () => {
+  const M = 60 * 1000;
+  const r = somarLivesNoPeriodo([{
+    startedAt: 0, endedAt: 60 * M, totalDiamonds: 300,
+    diamantesPorMinuto: { [5 * M]: 100, [30 * M]: 200 }
+  }], 30 * M, 200 * M);
+  assert.equal(r.diamantes, 200);
+});
+
+test('diamantes: live sem a hora dos presentes vai pela live inteira', () => {
+  const M = 60 * 1000;
+  // gravada antes da conta por minuto existir
+  const antiga = somarLivesNoPeriodo([{ startedAt: 90 * M, endedAt: 130 * M, totalDiamonds: 1000 }], 0, 100 * M - 1);
+  assert.equal(antiga.diamantes, 1000);
+  // no ar durante o deploy: 600 sem hora (de antes) + só o que entrou até o fim
+  const meio = somarLivesNoPeriodo([{
+    startedAt: 90 * M, endedAt: 130 * M, totalDiamonds: 1000,
+    diamantesPorMinuto: { [99 * M]: 100, [110 * M]: 300 }
+  }], 0, 100 * M - 1);
+  assert.equal(meio.diamantes, 700);
+});
+
 test('desempate: mais diamantes, depois mais horas', () => {
   const r = ordenarRanking([
     { arroba: 'a', total: 50, diamantes: 100, segundos: 10 },

@@ -124,8 +124,17 @@ Empate: mais diamantes, depois mais horas.
 - **Presentes em combo**: contam quando o combo fecha, ou quando a live acaba, ou
   depois de 30s parados, o que vier primeiro. Um presente que o TikTok nunca
   chegou a enviar não tem como contar: nesse caso, corrija os diamantes no painel.
-- **Bordas do período**: a duração é cortada no início e no fim. O diamante vai
-  pela live inteira, porque a sessão guarda o total e não a hora de cada presente.
+- **Deploy com live no ar**: se o servidor volta em menos de 3 minutos, é a
+  mesma live e segue de onde estava. Se demora mais, a live de antes vai pro
+  histórico até o último sinal e começa outra. Se a live acabou com o servidor
+  fora, ela é fechada no último sinal (em até 30s depois de passar os 3 min).
+  Em todos os casos, o que aconteceu com o servidor fora não conta.
+- **Bordas do período**: a duração e os diamantes são cortados no início e no
+  fim. Cada live guarda quantos diamantes entraram em cada minuto, e só conta o
+  minuto que começa dentro do período: com fim às 23:59, o que chega a partir de
+  00:00 não soma, mesmo com a live ainda no ar. Combo conta no minuto do último
+  toque. Live gravada antes disso existir (e o que entrou antes do deploy numa
+  live que já estava no ar) não tem hora: vai pela live inteira.
 - **Correções**: o administrador digita em `/mira-admin.html` os diamantes e os
   minutos reais do período, e a pontuação sai da conta normal. Fica guardada a
   diferença, então as lives seguintes somam por cima. Cada correção guarda motivo

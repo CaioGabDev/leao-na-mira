@@ -594,9 +594,19 @@ function criarBanco(dono, opcoes) {
   // Ex: se "Rose" for enviada 50 vezes pela mesma pessoa, vira 1 linha só com count:50 e value somado.
   const giftActionRef = {}; // chave: `${uniqueId}::${giftName}`
 
-  function addGift(uniqueId, nickname, giftName, value, avatar) {
+  // `em` é quando o presente foi mandado (num combo fechado depois, o último
+  // toque visto); sem ele, agora.
+  function addGift(uniqueId, nickname, giftName, value, avatar, em) {
     state.global.totalDiamonds += value;
     dirty = true;
+    // O minuto do presente vai pra sessão: é o que deixa a campanha parar de
+    // contar diamante na hora do fim, mesmo com a live seguindo no ar.
+    const snap = state.currentSessionSnapshot;
+    if (snap && value > 0) {
+      const minuto = Math.floor((Number(em) || Date.now()) / PASSO_AMOSTRA_MS) * PASSO_AMOSTRA_MS;
+      snap.diamantesPorMinuto = snap.diamantesPorMinuto || {};
+      snap.diamantesPorMinuto[minuto] = (snap.diamantesPorMinuto[minuto] || 0) + value;
+    }
     if (!ensureUser(uniqueId, nickname, avatar)) return false;
     state.users[uniqueId].gifts_count += 1;
     state.users[uniqueId].gifts_value += value;
@@ -1156,16 +1166,35 @@ function criarBanco(dono, opcoes) {
       || (s.totalShares || 0) > 0;
   }
 
+  // Live que o banco diz estar no ar, mas que ninguém acompanha há mais de
+  // RETOMAR_SESSAO_MS. Acontece quando o servidor reinicia no meio de uma live:
+  // o `liveOnline` do live.js é de memória e volta false, então nada fecharia
+  // essa sessão — se o streamer encerrou enquanto o servidor estava fora, ela
+  // ficava "ao vivo" pra sempre e a campanha somava horas sem live.
+  //
+  // Fecha na última batida, que é o último instante em que se sabia que a live
+  // estava no ar: o tempo com o servidor fora não conta, porque ninguém viu.
+  function fecharSessaoParada(agora = Date.now()) {
+    const g = state.global;
+    const snap = state.currentSessionSnapshot;
+    if (!g.liveActive || !snap) return false;
+    if (agora - (g.lastActivityAt || 0) < RETOMAR_SESSAO_MS) return false;
+    markLiveOffline(Math.max(snap.startedAt, g.lastActivityAt || snap.startedAt));
+    return true;
+  }
+
   function markLiveOnline() {
     const now = Date.now();
+
+    // A live de antes do restart, parada há tempo demais pra ser a mesma: vai
+    // pro histórico até a última batida, em vez de ser jogada fora quando a
+    // foto nova for tirada logo abaixo.
+    fecharSessaoParada(now);
 
     // Um deploy/restart no meio da live derrubava startedAt pro instante da
     // reconexão e a duração voltava do zero. Se a live estava no ar e a última
     // batida foi agora há pouco, é a mesma live: mantém o relógio andando.
-    const mesmaLive =
-      state.global.liveActive &&
-      state.currentSessionSnapshot &&
-      now - (state.global.lastActivityAt || 0) < RETOMAR_SESSAO_MS;
+    const mesmaLive = state.global.liveActive && state.currentSessionSnapshot;
 
     state.global.liveActive = true;
     state.global.lastActivityAt = now;
@@ -1189,7 +1218,8 @@ function criarBanco(dono, opcoes) {
       totalLikes: state.global.totalLikes,
       totalComments: state.global.totalComments,
       totalFollows: state.global.totalFollows,
-      totalShares: state.global.totalShares
+      totalShares: state.global.totalShares,
+      diamantesPorMinuto: {}
     };
     dirty = true;
   }
@@ -1197,10 +1227,11 @@ function criarBanco(dono, opcoes) {
   // Chamado quando a live cai/termina. Calcula os números só dessa live
   // (delta contra o snapshot tirado no markLiveOnline) e guarda no histórico.
   // O uptime não zera: fica congelado na duração dessa live até a próxima começar.
-  function markLiveOffline() {
+  // `fimEm`: quando a live acabou, se não foi agora (ver fecharSessaoParada).
+  function markLiveOffline(fimEm) {
     if (state.global.liveActive && state.currentSessionSnapshot) {
       const snap = state.currentSessionSnapshot;
-      const endedAt = Date.now();
+      const endedAt = Number.isFinite(fimEm) ? fimEm : Date.now();
       const durationSeconds = Math.floor((endedAt - snap.startedAt) / 1000);
 
       const sessao = {
@@ -1215,6 +1246,9 @@ function criarBanco(dono, opcoes) {
         totalShares: state.global.totalShares - snap.totalShares,
         peakViewers: state.global.sessionPeakViewers || 0
       };
+      // sessão aberta antes de existir a conta por minuto fica sem: o
+      // diamante dela vai pela live inteira (ver pontuacao.js)
+      if (snap.diamantesPorMinuto) sessao.diamantesPorMinuto = { ...snap.diamantesPorMinuto };
 
       // Só entra no histórico o que teve SINAL DE VIDA.
       //
@@ -1610,7 +1644,8 @@ function criarBanco(dono, opcoes) {
       comentarios:   Math.max(0, g.totalComments  - snap.totalComments),
       seguidores:    Math.max(0, g.totalFollows   - snap.totalFollows),
       compartilhou:  Math.max(0, g.totalShares    - snap.totalShares),
-      pico:          g.sessionPeakViewers || 0
+      pico:          g.sessionPeakViewers || 0,
+      diamantesPorMinuto: snap.diamantesPorMinuto ? { ...snap.diamantesPorMinuto } : null
     };
   }
 
@@ -1835,7 +1870,7 @@ function criarBanco(dono, opcoes) {
     registrarCartaGanha, registrarCartaUsada, getEstoqueCartas, VALIDADE_CARTA_MS,
     definirItensDaPremiacao, definirItensDasPendentes, limparItensDePremiacoes,
     getGlobalStats, updateViewerCount, addComment, addFollow, addShare,
-    markLiveOnline, markLiveOffline, checkLevelUp, getTropa, limparTropa, getSessions,
+    markLiveOnline, markLiveOffline, fecharSessaoParada, checkLevelUp, getTropa, limparTropa, getSessions,
     heartbeat,
     registrarSuperfa, removerDaTropa, removerUsuario, registrarSubidaDeNivel, setLogListener,
     iniciarBatalha, atualizarPlacarBatalha, finalizarBatalha, fecharBatalhaAbandonada,

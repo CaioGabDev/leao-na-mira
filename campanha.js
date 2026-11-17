@@ -24,7 +24,12 @@ function criarCampanha({ clientes }) {
   function livesDoSniper(db, agora) {
     const sessoes = db.getSessions();
     const atual = db.numerosDaLiveAtual();
-    if (atual) sessoes.push({ startedAt: atual.comecouEm, endedAt: agora, totalDiamonds: atual.diamantes });
+    if (atual) {
+      sessoes.push({
+        startedAt: atual.comecouEm, endedAt: agora,
+        totalDiamonds: atual.diamantes, diamantesPorMinuto: atual.diamantesPorMinuto
+      });
+    }
     return { sessoes, atual };
   }
 

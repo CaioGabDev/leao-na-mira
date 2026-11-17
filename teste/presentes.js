@@ -196,3 +196,43 @@ test('Foguete, Universo e GG somam diamantes na campanha', async () => {
   assert.equal(diamantesDaLive(db), 20000 + 34999 + 3);
   live.parar();
 });
+
+test('a sessão guarda o minuto de cada presente, e o fim da campanha corta ali', async () => {
+  const { somarLivesNoPeriodo } = require(raiz('pontuacao.js'));
+  const { db, live, conexao } = await liveNoAr();
+  conexao().emitir('gift', presente({ diamantes: 300 }));
+  const fim = Date.now();                       // a campanha acaba aqui
+  mock.timers.tick(2 * 60 * 1000);
+  conexao().emitir('gift', presente({ diamantes: 200 }));
+
+  // com a live no ar: o que veio depois do fim não entra
+  const atual = db.numerosDaLiveAtual();
+  const noAr = [{ startedAt: atual.comecouEm, endedAt: Date.now(),
+    totalDiamonds: atual.diamantes, diamantesPorMinuto: atual.diamantesPorMinuto }];
+  assert.equal(somarLivesNoPeriodo(noAr, -Infinity, fim).diamantes, 300);
+
+  // e depois de fechada, igual
+  conexao().emitir('streamEnd', { action: 3 });
+  mock.timers.tick(3000);
+  await assentar();
+  const [sessao] = db.getSessions();
+  assert.equal(sessao.totalDiamonds, 500);
+  assert.equal(somarLivesNoPeriodo([sessao], -Infinity, fim).diamantes, 300);
+  live.parar();
+});
+
+test('combo parado conta no minuto do último toque, não no que fechou', async () => {
+  const { db, live, conexao } = await liveNoAr();
+  // começo de um minuto cheio, pra os 30s de espera caírem no minuto seguinte
+  // aos poucos, como no teste do combo parado
+  let falta = 60000 - (Date.now() % 60000) + 40000;
+  while (falta > 0) { const passo = Math.min(5000, falta); mock.timers.tick(passo); falta -= passo; }
+  conexao().emitir('gift', combo({ repeticoes: 3, diamantes: 10 }));
+  const tocouEm = Math.floor(Date.now() / 60000) * 60000;
+  // o vigia passa de 30 em 30s numa fase qualquer: 70s garantem uma passada
+  // depois dos 30s parados, e o fechamento já cai noutro minuto
+  for (let i = 0; i < 7; i++) mock.timers.tick(10000);
+  assert.equal(diamantesDaLive(db), 30);
+  assert.deepEqual(db.numerosDaLiveAtual().diamantesPorMinuto, { [tocouEm]: 30 });
+  live.parar();
+});
